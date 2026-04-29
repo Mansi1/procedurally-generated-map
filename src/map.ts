@@ -1,5 +1,4 @@
-// map.ts
-import {FractalNoise, MapGenerator, type MapTile, SimplexNoise, type TileType} from "./noise"; // aus voriger Nachricht
+import {FractalNoise, MapGenerator, type MapTile, SimplexNoise, type TileType} from "./noise";
 
 export type ResourceType = "none" | "wood" | "gold" | "stone" | "berries";
 
@@ -14,17 +13,17 @@ export class ChunkManager {
   private chunkSize: number;
 
   constructor(
-    private mapGen: MapGenerator,
-    chunkSize: number = 32,
-    seed: string,
+      private mapGen: MapGenerator,
+      chunkSize: number = 32,
+      seed: string,
   ) {
     this.chunkSize = chunkSize;
     // Extra Noise Layer für Ressourcen wie in AoE2
     this.resourceNoise = new FractalNoise(
-      new SimplexNoise(seed + "_resources"),
-      3,
-      0.7,
-      2,
+        new SimplexNoise(seed + "_resources"),
+        3,
+        0.7,
+        2,
     );
   }
 
@@ -33,8 +32,8 @@ export class ChunkManager {
   }
 
   private worldToChunk(
-    x: number,
-    y: number,
+      x: number,
+      y: number,
   ): { cx: number; cy: number; lx: number; ly: number } {
     const cx = Math.floor(x / this.chunkSize);
     const cy = Math.floor(y / this.chunkSize);
@@ -49,7 +48,7 @@ export class ChunkManager {
   } {
     const r = this.resourceNoise.noise2D(tile.x * 0.05, tile.y * 0.05);
 
-    // AoE2 Logik: Ressourcen spawnen nur auf passendem Terrain
+    // Logik: Ressourcen spawnen nur auf passendem Terrain
     if (tile.tileType === "forest" && r > 0.3) {
       return { type: "wood", amount: Math.floor((r + 1) * 50) };
     }
@@ -81,18 +80,21 @@ export class ChunkManager {
     return renderChunk;
   }
 
-  getTile(x: number, y: number): RenderTile {
+  getTile(worldX: number, worldY: number): RenderTile {
+    const x = Math.floor(worldX);
+    const y = Math.floor(worldY);
     const { cx, cy, lx, ly } = this.worldToChunk(x, y);
-    return this.getChunk(cx, cy)[ly][lx];
+    const chunk = this.getChunk(cx, cy);
+
+    return chunk[ly][lx];
   }
 
-  // Viewport Culling: nur sichtbare Chunks laden
   getVisibleChunks(
-    cameraX: number,
-    cameraY: number,
-    viewportWidth: number,
-    viewportHeight: number,
-    tileSize: number,
+      cameraX: number,
+      cameraY: number,
+      viewportWidth: number,
+      viewportHeight: number,
+      tileSize: number,
   ): Map<string, RenderTile[][]> {
     const tilesX = Math.ceil(viewportWidth / tileSize);
     const tilesY = Math.ceil(viewportHeight / tileSize);
@@ -116,13 +118,12 @@ export class ChunkManager {
     return visible;
   }
 
-  // Optional: Chunks außerhalb vom Viewport aus RAM werfen
   unloadDistantChunks(
-    cameraX: number,
-    cameraY: number,
-    maxDistance: number = 10,
+      cameraX: number,
+      cameraY: number,
+      maxDistance: number = 10,
   ) {
-    const camCx = Math.floor(cameraX / this.chunkSize / 16); // grob in Tile-Koords
+    const camCx = Math.floor(cameraX / this.chunkSize / 16);
     const camCy = Math.floor(cameraY / this.chunkSize / 16);
 
     for (const key of this.chunks.keys()) {
@@ -135,13 +136,12 @@ export class ChunkManager {
 
 export class MapRenderer {
   constructor(
-    private canvas: HTMLCanvasElement,
-    private chunkManager: ChunkManager,
-    private tileSize: number = 8, // 8px = AoE2 MiniMap Style, 32px = näher dran
+      private canvas: HTMLCanvasElement,
+      private chunkManager: ChunkManager,
+      public tileSize: number = 8,
   ) {}
 
   private getTileColor(tile: RenderTile): string {
-    // Basis-Biom Farbe
     const baseColors: Record<TileType, [number, number, number]> = {
       water: [32, 64, 180],
       grass: [34, 139, 34],
@@ -152,14 +152,12 @@ export class MapRenderer {
 
     let [r, g, b] = baseColors[tile.tileType];
 
-    // Höhe = Helligkeit wie bei AoE2
-    const heightFactor = (tile.height + 1) * 0.5; // 0-1
+    const heightFactor = (tile.height + 1) * 0.5;
     r = Math.floor(r * (0.6 + heightFactor * 0.4));
     g = Math.floor(g * (0.6 + heightFactor * 0.4));
     b = Math.floor(b * (0.6 + heightFactor * 0.4));
 
-    // Ressourcen Overlay
-    if (tile.resource !== "none" && tile.resourceAmount > 0) {
+    if (tile.resource!== "none" && tile.resourceAmount > 0) {
       const resourceColors: Record<ResourceType, [number, number, number]> = {
         none: [0, 0, 0],
         wood: [101, 67, 33],
@@ -177,22 +175,22 @@ export class MapRenderer {
     return `rgb(${r},${g},${b})`;
   }
 
-  render(cameraX: number, cameraY: number) {
+  render(cameraX: number, cameraY: number, mouseTileX?: number, mouseTileY?: number) {
     const ctx = this.canvas.getContext("2d")!;
     const { width, height } = this.canvas;
     ctx.clearRect(0, 0, width, height);
 
     const visibleChunks = this.chunkManager.getVisibleChunks(
-      cameraX,
-      cameraY,
-      width,
-      height,
-      this.tileSize,
+        cameraX,
+        cameraY,
+        width,
+        height,
+        this.tileSize,
     );
 
     visibleChunks.forEach((chunk, key) => {
       const [cx, cy] = key.split("_").map(Number);
-      const chunkWorldX = cx * 32; // chunkSize aus ChunkManager
+      const chunkWorldX = cx * 32;
       const chunkWorldY = cy * 32;
 
       for (let y = 0; y < chunk.length; y++) {
@@ -201,12 +199,11 @@ export class MapRenderer {
           const screenX = (chunkWorldX + x) * this.tileSize - cameraX;
           const screenY = (chunkWorldY + y) * this.tileSize - cameraY;
 
-          // Nur zeichnen wenn im Viewport
           if (
-            screenX + this.tileSize < 0 ||
-            screenX > width ||
-            screenY + this.tileSize < 0 ||
-            screenY > height
+              screenX + this.tileSize < 0 ||
+              screenX > width ||
+              screenY + this.tileSize < 0 ||
+              screenY > height
           )
             continue;
 
@@ -215,13 +212,20 @@ export class MapRenderer {
         }
       }
     });
+
+    if (mouseTileX!== undefined && mouseTileY!== undefined) {
+      const screenX = mouseTileX * this.tileSize - cameraX;
+      const screenY = mouseTileY * this.tileSize - cameraY;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(screenX + 1, screenY + 1, this.tileSize - 2, this.tileSize - 2);
+    }
   }
 }
 
 export class MiniMap {
   private ctx: CanvasRenderingContext2D;
-  private mapPixelSize = 1; // 1 Pixel = 1 Tile
-  private mapRadius = 150; // 150 Tiles Radius um Kamera = 300x300 Map
+  private mapRadius = 150;
 
   constructor(
       private canvas: HTMLCanvasElement,
@@ -233,7 +237,6 @@ export class MiniMap {
   }
 
   private getTileColorSimple(tile: RenderTile): string {
-    // Vereinfachte Farben für MiniMap wie AoE2
     const colors: Record<TileType, string> = {
       water: '#1E40AF',
       grass: '#22C55E',
@@ -244,36 +247,39 @@ export class MiniMap {
     return colors[tile.tileType];
   }
 
-  render(camTileX: number, camTileY: number, viewportTilesX: number, viewportTilesY: number) {
+  render(camTopLeftTileX: number, camTopLeftTileY: number, viewportTilesX: number, viewportTilesY: number) {
     const ctx = this.ctx;
-    const { width, height } = this.canvas;
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, 300, 300);
 
-    // Mittelpunkt der MiniMap = Kamera Position
-    const startX = camTileX - this.mapRadius;
-    const startY = camTileY - this.mapRadius;
+    const viewportCenterTileX = camTopLeftTileX + viewportTilesX / 2;
+    const viewportCenterTileY = camTopLeftTileY + viewportTilesY / 2;
 
-    // Tiles zeichnen
+    const startTileX = Math.floor(viewportCenterTileX - this.mapRadius);
+    const startTileY = Math.floor(viewportCenterTileY - this.mapRadius);
+
     for (let y = 0; y < this.mapRadius * 2; y++) {
       for (let x = 0; x < this.mapRadius * 2; x++) {
-        const worldX = startX + x;
-        const worldY = startY + y;
+        const worldX = startTileX + x;
+        const worldY = startTileY + y;
         const tile = this.chunkManager.getTile(worldX, worldY);
-
         ctx.fillStyle = this.getTileColorSimple(tile);
         ctx.fillRect(x, y, 1, 1);
       }
     }
 
-    // Viewport-Rechteck = was du gerade siehst
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 2;
-    const viewX = this.mapRadius - viewportTilesX / 2;
-    const viewY = this.mapRadius - viewportTilesY / 2;
-    ctx.strokeRect(viewX, viewY, viewportTilesX, viewportTilesY);
+    ctx.lineWidth = 1;
+    const rectX = this.mapRadius - viewportTilesX / 2;
+    const rectY = this.mapRadius - viewportTilesY / 2;
+    ctx.strokeRect(
+        Math.floor(rectX) + 0.5,
+        Math.floor(rectY) + 0.5,
+        Math.floor(viewportTilesX),
+        Math.floor(viewportTilesY)
+    );
 
     // Kamera-Mittelpunkt
     ctx.fillStyle = '#FFFF00';
-    ctx.fillRect(this.mapRadius - 1, this.mapRadius - 1, 3, 3);
+    ctx.fillRect(149, 149, 2, 2);
   }
 }
