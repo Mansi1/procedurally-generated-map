@@ -226,6 +226,11 @@ export class MapRenderer {
 export class MiniMap {
   private ctx: CanvasRenderingContext2D;
   private mapRadius = 150;
+  private offscreenCanvas: HTMLCanvasElement;
+  private offscreenCtx: CanvasRenderingContext2D;
+  private lastCamX = -999;
+  private lastCamY = -999999;
+  private lastTileSize = -1;
 
   constructor(
       private canvas: HTMLCanvasElement,
@@ -234,6 +239,12 @@ export class MiniMap {
     this.canvas.width = this.mapRadius * 2;
     this.canvas.height = this.mapRadius * 2;
     this.ctx = canvas.getContext('2d')!;
+
+    // Offscreen für Terrain - wird nur bei Camera Move neu gezeichnet
+    this.offscreenCanvas = document.createElement('canvas');
+    this.offscreenCanvas.width = this.mapRadius * 2;
+    this.offscreenCanvas.height = this.mapRadius * 2;
+    this.offscreenCtx = this.offscreenCanvas.getContext('2d')!;
   }
 
   private getTileColorSimple(tile: RenderTile): string {
@@ -247,31 +258,59 @@ export class MiniMap {
     return colors[tile.tileType];
   }
 
-  render(camTopLeftTileX: number, camTopLeftTileY: number, viewportTilesX: number, viewportTilesY: number) {
-    const ctx = this.ctx;
-    ctx.clearRect(0, 0, 300, 300);
-
+  render(camTopLeftTileX: number, camTopLeftTileY: number, viewportTilesX: number, viewportTilesY: number, tileSize: number) {
     const viewportCenterTileX = camTopLeftTileX + viewportTilesX / 2;
     const viewportCenterTileY = camTopLeftTileY + viewportTilesY / 2;
 
-    const startTileX = Math.floor(viewportCenterTileX - this.mapRadius);
-    const startTileY = Math.floor(viewportCenterTileY - this.mapRadius);
+    // Nur neu zeichnen wenn Camera sich bewegt hat oder Zoom geändert
+    const camChanged =
+        Math.floor(viewportCenterTileX)!== Math.floor(this.lastCamX) ||
+        Math.floor(viewportCenterTileY)!== Math.floor(this.lastCamY) ||
+        tileSize!== this.lastTileSize;
 
-    for (let y = 0; y < this.mapRadius * 2; y++) {
-      for (let x = 0; x < this.mapRadius * 2; x++) {
-        const worldX = startTileX + x;
-        const worldY = startTileY + y;
-        const tile = this.chunkManager.getTile(worldX, worldY);
-        ctx.fillStyle = this.getTileColorSimple(tile);
-        ctx.fillRect(x, y, 1, 1);
+    if (camChanged) {
+      this.lastCamX = viewportCenterTileX;
+      this.lastCamY = viewportCenterTileY;
+      this.lastTileSize = tileSize;
+
+      const startTileX = Math.floor(viewportCenterTileX - this.mapRadius);
+      const startTileY = Math.floor(viewportCenterTileY - this.mapRadius);
+
+      // Terrain auf Offscreen Canvas - mit ImageData = 10x schneller
+      const imageData = this.offscreenCtx.createImageData(300, 300);
+      const data = imageData.data;
+
+      for (let y = 0; y < 300; y++) {
+        for (let x = 0; x < 300; x++) {
+          const worldX = startTileX + x;
+          const worldY = startTileY + y;
+          const tile = this.chunkManager.getTile(worldX, worldY);
+
+          const color = this.getTileColorSimple(tile);
+          const r = parseInt(color.slice(1, 3), 16);
+          const g = parseInt(color.slice(3, 5), 16);
+          const b = parseInt(color.slice(5, 7), 16);
+
+          const idx = (y * 300 + x) * 4;
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
+        }
       }
+      this.offscreenCtx.putImageData(imageData, 0, 0);
     }
 
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1;
+    // Offscreen auf sichtbares Canvas blitten - super schnell
+    this.ctx.clearRect(0, 0, 300, 300);
+    this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+
+    // Viewport Rechteck - wird jeden Frame gezeichnet, ist billig
+    this.ctx.strokeStyle = '#FFFFFF';
+    this.ctx.lineWidth = 1;
     const rectX = this.mapRadius - viewportTilesX / 2;
     const rectY = this.mapRadius - viewportTilesY / 2;
-    ctx.strokeRect(
+    this.ctx.strokeRect(
         Math.floor(rectX) + 0.5,
         Math.floor(rectY) + 0.5,
         Math.floor(viewportTilesX),
@@ -279,7 +318,7 @@ export class MiniMap {
     );
 
     // Kamera-Mittelpunkt
-    ctx.fillStyle = '#FFFF00';
-    ctx.fillRect(149, 149, 2, 2);
+    this.ctx.fillStyle = '#FFFF00';
+    this.ctx.fillRect(149, 149, 2, 2);
   }
 }

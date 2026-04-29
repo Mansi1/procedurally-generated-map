@@ -8,6 +8,7 @@ const chunksEl = document.getElementById('chunks')!;
 const hoverCoordsEl = document.getElementById('hover-coords')!;
 const camCoordsEl = document.getElementById('cam-coords')!;
 const cursorCoordsEl = document.getElementById('cursor-coords')!;
+const fpsEl = document.getElementById('fps')!;
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -16,7 +17,6 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// URL Parser: /seed/x-y oder?seed=...&x=...&y=...
 function parseURL(): { seed: string; x: number; y: number } {
   const path = window.location.pathname.split('/').filter(Boolean);
   const params = new URLSearchParams(window.location.search);
@@ -25,7 +25,6 @@ function parseURL(): { seed: string; x: number; y: number } {
   let x = 0;
   let y = 0;
 
-  // Format: /seed/x-y
   if (path.length >= 2) {
     seed = path[0];
     const coords = path[1].split('-').map(Number);
@@ -35,7 +34,6 @@ function parseURL(): { seed: string; x: number; y: number } {
     }
   }
 
-  // Fallback:?seed=...&x=...&y=...
   if (params.has('seed')) seed = params.get('seed')!;
   if (params.has('x')) x = Number(params.get('x'));
   if (params.has('y')) y = Number(params.get('y'));
@@ -54,11 +52,10 @@ const { seed, x: startX, y: startY } = parseURL();
 const mapGen = new MapGenerator(seed);
 const chunkManager = new ChunkManager(mapGen, 32, seed);
 
-let tileSize = 4;
+let tileSize = 8;
 const renderer = new MapRenderer(canvas, chunkManager, tileSize);
 const minimap = new MiniMap(minimapCanvas, chunkManager);
 
-// Startposition aus URL in Pixel umrechnen
 let camX = (startX - (canvas.width / tileSize) / 2) * tileSize;
 let camY = (startY - (canvas.height / tileSize) / 2) * tileSize;
 
@@ -152,12 +149,25 @@ canvas.addEventListener('mouseleave', () => {
   cursorCoordsEl.textContent = '-, -';
 });
 
+// FPS Counter
 let lastTime = performance.now();
+let lastFpsUpdate = performance.now();
+let frames = 0;
+let fps = 0;
 let lastUrlUpdate = 0;
 
 function loop(now: number) {
   const dt = (now - lastTime) / 1000;
   lastTime = now;
+
+  // FPS berechnen
+  frames++;
+  if (now - lastFpsUpdate >= 500) {
+    fps = Math.round((frames * 1000) / (now - lastFpsUpdate));
+    fpsEl.textContent = fps.toString();
+    frames = 0;
+    lastFpsUpdate = now;
+  }
 
   const speed = 400 * dt * (tileSize / 4);
   if (keys['w']) camY -= speed;
@@ -172,7 +182,7 @@ function loop(now: number) {
   const viewTilesX = canvas.width / tileSize;
   const viewTilesY = canvas.height / tileSize;
 
-  minimap.render(camTopLeftTileX, camTopLeftTileY, viewTilesX, viewTilesY);
+  minimap.render(camTopLeftTileX, camTopLeftTileY, viewTilesX, viewTilesY, tileSize);
 
   const camCenterTileX = Math.round(camTopLeftTileX + viewTilesX / 2);
   const camCenterTileY = Math.round(camTopLeftTileY + viewTilesY / 2);
@@ -180,7 +190,6 @@ function loop(now: number) {
   camCoordsEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
   chunksEl.textContent = chunkManager['chunks'].size.toString();
 
-  // URL nur alle 500ms updaten damit es nicht spammt
   if (now - lastUrlUpdate > 500) {
     updateURL(seed, camCenterTileX, camCenterTileY);
     lastUrlUpdate = now;
@@ -196,6 +205,4 @@ setInterval(() => {
 }, 5000);
 
 requestAnimationFrame(loop);
-
-// Seed in UI anzeigen
 document.title = `Map - ${seed}`;
