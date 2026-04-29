@@ -16,7 +16,41 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-const seed = 'AoE2Factorio1337';
+// URL Parser: /seed/x-y oder?seed=...&x=...&y=...
+function parseURL(): { seed: string; x: number; y: number } {
+  const path = window.location.pathname.split('/').filter(Boolean);
+  const params = new URLSearchParams(window.location.search);
+
+  let seed = 'AoE2Factorio1337';
+  let x = 0;
+  let y = 0;
+
+  // Format: /seed/x-y
+  if (path.length >= 2) {
+    seed = path[0];
+    const coords = path[1].split('-').map(Number);
+    if (coords.length === 2 &&!isNaN(coords[0]) &&!isNaN(coords[1])) {
+      x = coords[0];
+      y = coords[1];
+    }
+  }
+
+  // Fallback:?seed=...&x=...&y=...
+  if (params.has('seed')) seed = params.get('seed')!;
+  if (params.has('x')) x = Number(params.get('x'));
+  if (params.has('y')) y = Number(params.get('y'));
+
+  return { seed, x, y };
+}
+
+function updateURL(seed: string, tileX: number, tileY: number) {
+  const newPath = `/${seed}/${tileX}-${tileY}`;
+  if (window.location.pathname!== newPath) {
+    window.history.replaceState(null, '', newPath);
+  }
+}
+
+const { seed, x: startX, y: startY } = parseURL();
 const mapGen = new MapGenerator(seed);
 const chunkManager = new ChunkManager(mapGen, 32, seed);
 
@@ -24,9 +58,10 @@ let tileSize = 4;
 const renderer = new MapRenderer(canvas, chunkManager, tileSize);
 const minimap = new MiniMap(minimapCanvas, chunkManager);
 
-// camX/camY = Top-Left Pixel der Kamera
-let camX = 0;
-let camY = 0;
+// Startposition aus URL in Pixel umrechnen
+let camX = (startX - (canvas.width / tileSize) / 2) * tileSize;
+let camY = (startY - (canvas.height / tileSize) / 2) * tileSize;
+
 let mouseTileX: number | undefined;
 let mouseTileY: number | undefined;
 
@@ -36,11 +71,11 @@ window.addEventListener('keydown', (e) => {
   keys[e.key.toLowerCase()] = true;
   if (e.key === 'e') {
     tileSize = Math.min(tileSize + 1, 16);
-    renderer['tileSize'] = tileSize;
+    renderer.tileSize = tileSize;
   }
   if (e.key === 'q') {
     tileSize = Math.max(tileSize - 1, 2);
-    renderer['tileSize'] = tileSize;
+    renderer.tileSize = tileSize;
   }
 });
 
@@ -48,35 +83,29 @@ window.addEventListener('keyup', (e) => {
   keys[e.key.toLowerCase()] = false;
 });
 
-// MiniMap Click - setzt Viewport-Mitte auf Klickposition
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  const clickX = e.clientX - rect.left; // 0-299
-  const clickY = e.clientY - rect.top;  // 0-299
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
 
   const camTopLeftTileX = camX / tileSize;
   const camTopLeftTileY = camY / tileSize;
   const viewportTilesX = canvas.width / tileSize;
   const viewportTilesY = canvas.height / tileSize;
 
-  // Aktuelle Viewport-Mitte in Tiles
   const camCenterTileX = camTopLeftTileX + viewportTilesX / 2;
   const camCenterTileY = camTopLeftTileY + viewportTilesY / 2;
 
-  // Delta von MiniMap-Mitte
   const deltaX = clickX - 150;
   const deltaY = clickY - 150;
 
-  // Neues Ziel-Tile für die Mitte
   const targetTileX = camCenterTileX + deltaX;
   const targetTileY = camCenterTileY + deltaY;
 
-  // Kamera Top-Left so setzen dass Target in der Mitte landet
   camX = (targetTileX - viewportTilesX / 2) * tileSize;
   camY = (targetTileY - viewportTilesY / 2) * tileSize;
 });
 
-// MiniMap Hover - zeigt World-Tile unter Maus
 minimapCanvas.addEventListener('mousemove', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
   const x = Math.floor(e.clientX - rect.left);
@@ -103,7 +132,6 @@ minimapCanvas.addEventListener('mouseleave', () => {
   hoverCoordsEl.textContent = '-, -';
 });
 
-// Main Canvas Hover - zeigt Tile unter Cursor
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const mouseX = e.clientX - rect.left;
@@ -125,21 +153,20 @@ canvas.addEventListener('mouseleave', () => {
 });
 
 let lastTime = performance.now();
+let lastUrlUpdate = 0;
+
 function loop(now: number) {
   const dt = (now - lastTime) / 1000;
   lastTime = now;
 
-  // Movement - speed skaliert mit tileSize damit es sich gleich anfühlt
   const speed = 400 * dt * (tileSize / 4);
   if (keys['w']) camY -= speed;
   if (keys['s']) camY += speed;
   if (keys['a']) camX -= speed;
   if (keys['d']) camX += speed;
 
-  // Render Main Map
   renderer.render(camX, camY, mouseTileX, mouseTileY);
 
-  // MiniMap Update
   const camTopLeftTileX = camX / tileSize;
   const camTopLeftTileY = camY / tileSize;
   const viewTilesX = canvas.width / tileSize;
@@ -147,17 +174,21 @@ function loop(now: number) {
 
   minimap.render(camTopLeftTileX, camTopLeftTileY, viewTilesX, viewTilesY);
 
-  // UI Update - zeigt Viewport-Mitte an
   const camCenterTileX = Math.round(camTopLeftTileX + viewTilesX / 2);
   const camCenterTileY = Math.round(camTopLeftTileY + viewTilesY / 2);
   posEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
   camCoordsEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
   chunksEl.textContent = chunkManager['chunks'].size.toString();
 
+  // URL nur alle 500ms updaten damit es nicht spammt
+  if (now - lastUrlUpdate > 500) {
+    updateURL(seed, camCenterTileX, camCenterTileY);
+    lastUrlUpdate = now;
+  }
+
   requestAnimationFrame(loop);
 }
 
-// Chunks in Distanz aufräumen
 setInterval(() => {
   const camCenterTileX = (camX + canvas.width / 2) / tileSize;
   const camCenterTileY = (camY + canvas.height / 2) / tileSize;
@@ -165,3 +196,6 @@ setInterval(() => {
 }, 5000);
 
 requestAnimationFrame(loop);
+
+// Seed in UI anzeigen
+document.title = `Map - ${seed}`;
