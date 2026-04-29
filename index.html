@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Map Preview</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #111;
+        overflow: hidden;
+        font-family: monospace;
+        color: #0f0;
+      }
+      #game {
+        display: block;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 8px 12px;
+        border: 1px solid #0f0;
+        font-size: 14px;
+      }
+      #ui kbd {
+        background: #222;
+        padding: 2px 6px;
+        border: 1px solid #0f0;
+      }
+      #minimap {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
+        border: 2px solid #0f0;
+        background: #000;
+        image-rendering: pixelated;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="ui">
+      Pos: <span id="pos">0, 0</span> | Chunks: <span id="chunks">0</span> |
+      <kbd>WASD</kbd> bewegen | <kbd>Q/E</kbd> zoom
+    </div>
+    <canvas id="minimap"></canvas>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
