@@ -59,6 +59,26 @@ export class SimplexNoise {
     }
   }
 
+  /** Die 256 Werte der Permutation - der Shader lädt genau diese Tabelle. */
+  get table(): Uint8Array {
+    return this.perm.subarray(0, 256);
+  }
+
+  /**
+   * Die fertigen Gradienten-Indizes für alle 256x256 Gitterzellen, zeilenweise
+   * nach jj. Im Shader spart das je Ecke einen Texturzugriff: statt zweimal in
+   * die Permutation zu greifen, steht das Ergebnis direkt da.
+   */
+  gradientTable(): Uint8Array {
+    const table = new Uint8Array(256 * 256);
+    for (let jj = 0; jj < 256; jj++) {
+      for (let ii = 0; ii < 256; ii++) {
+        table[jj * 256 + ii] = this.permMod12[ii + this.perm[jj]];
+      }
+    }
+    return table;
+  }
+
   noise2D(xin: number, yin: number): number {
     let n0 = 0,
       n1 = 0,
@@ -269,6 +289,54 @@ const RIDGE_STRENGTH = 0.32;
 /** Verstärkung der Hangneigung vor dem Weichbegrenzen. */
 const SHADE_GAIN = 26;
 
+/**
+ * Sämtliche Regler der Geländeerzeugung an einer Stelle. Der WebGL-Shader lädt
+ * sie als Uniforms, statt sie ein zweites Mal in GLSL zu hinterlegen - so kann
+ * hier geschraubt werden, ohne dass die beiden Implementierungen auseinander
+ * laufen.
+ */
+export const TERRAIN_PARAMS = {
+  mapScale: MAP_SCALE,
+  warpStrength: WARP_STRENGTH,
+  detailFrequency: DETAIL_FREQUENCY,
+  detailStrength: DETAIL_STRENGTH,
+  microFrequency: MICRO_FREQUENCY,
+  microStrength: MICRO_STRENGTH,
+  microOctaves: MICRO_OCTAVES,
+  microMinSamples: MICRO_MIN_SAMPLES,
+  microPersistence: MICRO_PERSISTENCE,
+  fringeFrequency: CLIMATE_FRINGE_FREQUENCY,
+  fringeStrength: CLIMATE_FRINGE_STRENGTH,
+  ridgeStart: RIDGE_START,
+  ridgeStrength: RIDGE_STRENGTH,
+  shadeGain: SHADE_GAIN,
+  lapseRate: LAPSE_RATE,
+  deepWaterLevel: DEEP_WATER_LEVEL,
+  seaLevel: SEA_LEVEL,
+  shoreLevel: SHORE_LEVEL,
+  hillLevel: HILL_LEVEL,
+  peakLevel: PEAK_LEVEL,
+  snowTemperature: SNOW_TEMPERATURE,
+  tundraTemperature: TUNDRA_TEMPERATURE,
+} as const;
+
+/**
+ * Reihenfolge der Rausch-Ebenen in der Permutations-Textur. Shader und
+ * Uploader müssen sich hier einig sein.
+ */
+export const NOISE_LAYERS = [
+  "_height",
+  "_relief",
+  "_micro",
+  "_fringe",
+  "_moist",
+  "_temp",
+  "_warp",
+  "_ridge",
+  "_detail",
+  "_resources",
+] as const;
+
 /** Höhen-Bänder, damit der Renderer innerhalb eines Bioms interpolieren kann. */
 export const TERRAIN_LEVELS = {
   deepWater: DEEP_WATER_LEVEL,
@@ -440,56 +508,4 @@ export class MapGenerator {
     };
   }
 
-  /**
-   * Chunk für Factorio-Style Endlos-Map.
-   *
-   * `step` ist die Schrittweite in Welt-Tiles: 1 ist die volle Auflösung, 4
-   * tastet nur jedes vierte Tile ab. Damit liefert dieselbe Funktion auch die
-   * grobe Übersicht für die Minimap, ohne dafür Tausende Detail-Chunks zu
-   * erzeugen. Ein Chunk deckt `chunkSize * step` Welt-Tiles je Achse ab.
-   */
-  generateChunk(
-    chunkX: number,
-    chunkY: number,
-    chunkSize: number = 32,
-    step: number = 1,
-    scale: number = MAP_SCALE,
-  ): MapTile[][] {
-    const originX = chunkX * chunkSize * step;
-    const originY = chunkY * chunkSize * step;
-
-    // Höhengitter mit einer Zeile/Spalte Überhang: so kostet die Hangneigung
-    // nur ~1 statt 3 Höhen-Auswertungen pro Tile.
-    const heights: number[][] = [];
-    for (let y = 0; y <= chunkSize; y++) {
-      const row = new Array<number>(chunkSize + 1);
-      for (let x = 0; x <= chunkSize; x++) {
-        row[x] = this.elevation((originX + x * step) * scale, (originY + y * step) * scale, step);
-      }
-      heights[y] = row;
-    }
-
-    const chunk: MapTile[][] = [];
-    for (let y = 0; y < chunkSize; y++) {
-      chunk[y] = [];
-      for (let x = 0; x < chunkSize; x++) {
-        const worldX = originX + x * step;
-        const worldY = originY + y * step;
-        const height = heights[y][x];
-        const { moisture, temperature } = this.climate(worldX * scale, worldY * scale, height);
-
-        chunk[y][x] = {
-          x: worldX,
-          y: worldY,
-          height,
-          moisture,
-          temperature,
-          shade: this.shadeFrom(height, heights[y][x + 1], heights[y + 1][x], step),
-          variation: this.variationAt(worldX, worldY, step),
-          tileType: this.classify(height, moisture, temperature),
-        };
-      }
-    }
-    return chunk;
-  }
 }

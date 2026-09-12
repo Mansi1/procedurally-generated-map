@@ -1,18 +1,18 @@
 import { MapGenerator } from './noise';
 import {
-  ChunkManager,
   MapRenderer,
   MiniMap,
   RESOURCE_TYPE_LABEL,
   TILE_TYPE_COLOR,
   TILE_TYPE_LABEL,
+  TileProbe,
 } from './map';
 import type { TileType } from './noise';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
 const posEl = document.getElementById('pos')!;
-const chunksEl = document.getElementById('chunks')!;
+const sampleEl = document.getElementById('sampling')!;
 const hoverCoordsEl = document.getElementById('hover-coords')!;
 const camCoordsEl = document.getElementById('cam-coords')!;
 const cursorCoordsEl = document.getElementById('cursor-coords')!;
@@ -105,11 +105,9 @@ function updateURL(seed: string, tileX: number, tileY: number, zoom: number) {
   }
 }
 
-const MAP_CHUNK_SIZE = 32;
-
 const { seed, x: startX, y: startY, zoom: startZoom } = parseURL();
 const mapGen = new MapGenerator(seed);
-const chunkManager = new ChunkManager(mapGen, MAP_CHUNK_SIZE, seed);
+const probe = new TileProbe(mapGen, seed);
 
 /**
  * Zoomstufen in CSS-Pixeln je Welt-Tile. Verdopplung je Stufe: die Schrittweite
@@ -130,8 +128,8 @@ function nearestZoomIndex(pixelsPerTile: number): number {
 
 let zoomIndex = nearestZoomIndex(startZoom || 8);
 let tileSize = ZOOM_LEVELS[zoomIndex];
-const renderer = new MapRenderer(canvas, chunkManager, tileSize, pixelRatio);
-const minimap = new MiniMap(minimapCanvas, chunkManager, pixelRatio);
+const renderer = new MapRenderer(canvas, seed, tileSize, pixelRatio);
+const minimap = new MiniMap(minimapCanvas, seed, pixelRatio);
 
 let camX = (startX - (viewWidth / tileSize) / 2) * tileSize;
 let camY = (startY - (viewHeight / tileSize) / 2) * tileSize;
@@ -240,7 +238,7 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
 
   cursorCoordsEl.textContent = `${mouseTileX}, ${mouseTileY}`;
 
-  const tile = chunkManager.getTile(mouseTileX, mouseTileY);
+  const tile = probe.getTile(mouseTileX, mouseTileY);
   const resource =
     tile.resource === 'none'
       ? ''
@@ -292,9 +290,6 @@ function loop(now: number) {
   if (keys['a']) camX -= speed;
   if (keys['d']) camX += speed;
 
-  // Zeitbudget fürs Nachladen: die Hauptansicht zuerst, die Minimap bekommt
-  // einen eigenen Rest, damit sie beim Dauerscrollen nicht verhungert.
-  chunkManager.beginBudget(5);
   renderer.render(camX, camY, mouseTileX, mouseTileY);
 
   const camTopLeftTileX = camX / tileSize;
@@ -302,14 +297,13 @@ function loop(now: number) {
   const viewTilesX = viewWidth / tileSize;
   const viewTilesY = viewHeight / tileSize;
 
-  chunkManager.beginBudget(2);
   minimap.render(camTopLeftTileX, camTopLeftTileY, viewTilesX, viewTilesY);
 
   const camCenterTileX = Math.round(camTopLeftTileX + viewTilesX / 2);
   const camCenterTileY = Math.round(camTopLeftTileY + viewTilesY / 2);
   posEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
+  sampleEl.textContent = (1 / (tileSize * pixelRatio)).toFixed(4);
   camCoordsEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
-  chunksEl.textContent = chunkManager.loadedChunks.toString();
 
   if (now - lastUrlUpdate > 500) {
     updateURL(seed, camCenterTileX, camCenterTileY, tileSize);
@@ -318,21 +312,6 @@ function loop(now: number) {
 
   requestAnimationFrame(loop);
 }
-
-setInterval(() => {
-  const camCenterTileX = (camX + viewWidth / 2) / tileSize;
-  const camCenterTileY = (camY + viewHeight / 2) / tileSize;
-
-  // Der Radius muss mitwachsen: beim Herauszoomen deckt sowohl der Viewport
-  // als auch die Minimap ein Vielfaches an Welt-Tiles ab. Mit einem festen Wert
-  // würden ständig Chunks verworfen, die gerade zu sehen sind.
-  // Eine Bildschirmbreite in Welt-Tiles als Puffer für die feinen Stufen,
-  // die halbe Minimap-Abdeckung für die groben.
-  const detail = Math.max(viewWidth, viewHeight) / tileSize;
-  const overview = minimap.coverage(viewWidth / tileSize) / 2;
-
-  chunkManager.unloadDistantChunks(camCenterTileX, camCenterTileY, detail, overview);
-}, 5000);
 
 zoomEl.textContent = `${tileSize}px`;
 requestAnimationFrame(loop);
