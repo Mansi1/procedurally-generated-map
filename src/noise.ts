@@ -245,6 +245,12 @@ const DETAIL_STRENGTH = 0.16;
  */
 const MICRO_FREQUENCY = DETAIL_FREQUENCY * 16;
 const MICRO_STRENGTH = 0.009;
+/** Obergrenze für die Zahl der Feinoktaven. */
+const MICRO_OCTAVES = 6;
+/** So viele Abtastzellen muss ein Merkmal breit sein, damit seine Oktave zählt. */
+const MICRO_MIN_SAMPLES = 3;
+/** Unter 0.5 gewichtet, damit die Schattierung bei vielen Oktaven nicht körnig wird. */
+const MICRO_PERSISTENCE = 0.45;
 
 /**
  * Feuchte und Temperatur sind sehr großflächig. Eine Biom-Schwelle darauf
@@ -275,7 +281,7 @@ export const TERRAIN_LEVELS = {
 export class MapGenerator {
   private heightNoise: FractalNoise;
   private reliefNoise: FractalNoise;
-  private microNoise: FractalNoise;
+  private microNoise: SimplexNoise;
   private fringeNoise: FractalNoise;
   private moistureNoise: FractalNoise;
   private tempNoise: FractalNoise;
@@ -286,7 +292,7 @@ export class MapGenerator {
   constructor(seed: string) {
     this.heightNoise = new FractalNoise(new SimplexNoise(seed + "_height"), 4, 0.5, 2);
     this.reliefNoise = new FractalNoise(new SimplexNoise(seed + "_relief"), 4, 0.5, 2);
-    this.microNoise = new FractalNoise(new SimplexNoise(seed + "_micro"), 2, 0.45, 2);
+    this.microNoise = new SimplexNoise(seed + "_micro");
     this.fringeNoise = new FractalNoise(new SimplexNoise(seed + "_fringe"), 2, 0.5, 2);
     this.moistureNoise = new FractalNoise(new SimplexNoise(seed + "_moist"), 4, 0.55, 2);
     this.tempNoise = new FractalNoise(new SimplexNoise(seed + "_temp"), 3, 0.5, 2);
@@ -318,12 +324,7 @@ export class MapGenerator {
 
     let fine = this.reliefNoise.raw(nx * DETAIL_FREQUENCY, ny * DETAIL_FREQUENCY) * DETAIL_STRENGTH;
 
-    // Je feiner abgetastet wird, desto mehr der nächsten Oktaven werden
-    // sichtbar. Bei step >= 1 liegen sie unter der Abtastrate und bleiben aus.
-    if (step < 1) {
-      const micro = this.microNoise.raw(nx * MICRO_FREQUENCY, ny * MICRO_FREQUENCY);
-      fine += micro * MICRO_STRENGTH * (1 - step);
-    }
+    fine += this.microDetail(nx, ny, step);
 
     const land = Math.tanh((base + fine * weight) * 0.85);
     if (land <= RIDGE_START) return land;
@@ -332,6 +333,32 @@ export class MapGenerator {
     const t = (land - RIDGE_START) / (1 - RIDGE_START);
     const ridge = this.ridgeNoise.noise2D(x * 2.2, y * 2.2);
     return Math.min(1, land + t * t * (ridge - 0.35) * RIDGE_STRENGTH);
+  }
+
+  /**
+   * Setzt die Oktavenkaskade unterhalb der Basisauflösung fort. Jede Oktave
+   * wird erst eingeblendet, wenn ihre Merkmale über genug Abtastzellen laufen -
+   * so wächst der Detailgrad mit der Zoomstufe mit, statt dass beim starken
+   * Vergrößern nur noch glatt interpoliert wird. Das weiche Einblenden
+   * verhindert, dass beim Zoomen sichtbar Struktur aufpoppt.
+   */
+  private microDetail(nx: number, ny: number, step: number): number {
+    let total = 0;
+    let frequency = MICRO_FREQUENCY;
+    let amplitude = MICRO_STRENGTH;
+
+    for (let i = 0; i < MICRO_OCTAVES; i++) {
+      // Merkmalsbreite dieser Oktave, gemessen in Abtastzellen
+      const samples = 1 / (frequency * MAP_SCALE * step);
+      if (samples < MICRO_MIN_SAMPLES) break;
+
+      const fade = Math.min(1, (samples - MICRO_MIN_SAMPLES) / MICRO_MIN_SAMPLES);
+      total += this.microNoise.noise2D(nx * frequency, ny * frequency) * amplitude * fade;
+
+      frequency *= 2;
+      amplitude *= MICRO_PERSISTENCE;
+    }
+    return total;
   }
 
   private classify(height: number, moisture: number, temperature: number): TileType {

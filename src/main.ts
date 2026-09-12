@@ -111,9 +111,25 @@ const { seed, x: startX, y: startY, zoom: startZoom } = parseURL();
 const mapGen = new MapGenerator(seed);
 const chunkManager = new ChunkManager(mapGen, MAP_CHUNK_SIZE, seed);
 
-const MIN_TILE_SIZE = 2;
-const MAX_TILE_SIZE = 16;
-let tileSize = Math.max(MIN_TILE_SIZE, Math.min(MAX_TILE_SIZE, Math.round(startZoom) || 8));
+/**
+ * Zoomstufen in CSS-Pixeln je Welt-Tile. Verdopplung je Stufe: die Schrittweite
+ * der Abtastung ist damit immer eine Zweierpotenz, und von einem Ende zum
+ * anderen sind es fünf Rasten statt Dutzender Ein-Pixel-Schritte.
+ */
+const ZOOM_LEVELS = [2, 4, 8, 16, 32, 64];
+
+function nearestZoomIndex(pixelsPerTile: number): number {
+  let best = 0;
+  for (let i = 1; i < ZOOM_LEVELS.length; i++) {
+    if (Math.abs(ZOOM_LEVELS[i] - pixelsPerTile) < Math.abs(ZOOM_LEVELS[best] - pixelsPerTile)) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+let zoomIndex = nearestZoomIndex(startZoom || 8);
+let tileSize = ZOOM_LEVELS[zoomIndex];
 const renderer = new MapRenderer(canvas, chunkManager, tileSize, pixelRatio);
 const minimap = new MiniMap(minimapCanvas, chunkManager, pixelRatio);
 
@@ -134,9 +150,9 @@ const keys: Record<string, boolean> = {};
  * Zoomt so, dass das Welt-Tile unter dem Ankerpunkt dort stehen bleibt.
  * Anker ist der Mauszeiger, solange er über der Karte ist, sonst die Bildmitte.
  */
-function setTileSize(next: number, anchorX?: number, anchorY?: number) {
-  const clamped = Math.max(MIN_TILE_SIZE, Math.min(MAX_TILE_SIZE, next));
-  if (clamped === tileSize) return;
+function setZoom(index: number, anchorX?: number, anchorY?: number) {
+  const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index));
+  if (clamped === zoomIndex) return;
 
   const ax = anchorX ?? mousePixelX ?? viewWidth / 2;
   const ay = anchorY ?? mousePixelY ?? viewHeight / 2;
@@ -145,7 +161,8 @@ function setTileSize(next: number, anchorX?: number, anchorY?: number) {
   const tileX = (camX + ax) / tileSize;
   const tileY = (camY + ay) / tileSize;
 
-  tileSize = clamped;
+  zoomIndex = clamped;
+  tileSize = ZOOM_LEVELS[zoomIndex];
   renderer.tileSize = tileSize;
 
   // ... und danach wieder genau unter den Anker legen
@@ -160,15 +177,15 @@ function setTileSize(next: number, anchorX?: number, anchorY?: number) {
 
 window.addEventListener('keydown', (e) => {
   keys[e.key.toLowerCase()] = true;
-  if (e.key === 'e') setTileSize(tileSize + 1);
-  if (e.key === 'q') setTileSize(tileSize - 1);
+  if (e.key === 'e') setZoom(zoomIndex + 1);
+  if (e.key === 'q') setZoom(zoomIndex - 1);
 });
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   const rect = canvas.getBoundingClientRect();
-  setTileSize(
-      tileSize + (e.deltaY < 0 ? 1 : -1),
+  setZoom(
+      zoomIndex + (e.deltaY < 0 ? 1 : -1),
       e.clientX - rect.left,
       e.clientY - rect.top,
   );
