@@ -5,23 +5,14 @@
 // (TERRAIN_PARAMS) und dieselben Permutationstabellen, damit sie dieselbe Welt
 // beschreiben.
 
-export const VERTEX_SOURCE = `#version 300 es
-in vec2 aPosition;
-void main() {
-  gl_Position = vec4(aPosition, 0.0, 1.0);
-}
-`;
+import { PROJECT_GLSL } from './iso';
 
-export const FRAGMENT_SOURCE = `#version 300 es
-precision highp float;
-precision highp int;
-precision highp usampler2DArray;
-
-out vec4 fragColor;
-
-uniform vec2  uResolution;
-uniform vec2  uOrigin;         // Welt-Tile am linken oberen Pixel
-uniform float uTilesPerPixel;  // Abtastschritt in Welt-Tiles je Geraetepixel
+/**
+ * Rauschen und Höhenfunktion. Steht im Vertex-Shader (Relief) und im
+ * Fragment-Shader (Farbe) - dieselben Uniforms, dasselbe Gelände.
+ * Auch der EntityRenderer bindet es ein, um Gebäude aufs Gelände zu setzen.
+ */
+export const TERRAIN_COMMON = `
 // Fertige Gradienten-Indizes je Gitterzelle, eine Ebene je Rauschquelle.
 uniform highp usampler2DArray uGrad;
 
@@ -47,30 +38,10 @@ uniform float uHillLevel;
 uniform float uPeakLevel;
 uniform float uSnowTemperature;
 uniform float uTundraTemperature;
-uniform float uResourceScale;
-/**
- * Bezugsgröße für Feindetail und Farbtextur, in Geräte-Pixeln. Abgetastet wird
- * je Pixel, aber Mikro-Oktaven und Farbrauschen richten sich bewusst nach einer
- * etwas gröberen Marke - sonst werden sie mit steigender Pixeldichte immer
- * feiner und die Biom-Ränder fangen an zu grieseln.
- */
-uniform float uDetailPixels;
-// Nur für den Abgleich mit der CPU-Fassung: 1 = Höhe, 2 = Hangneigung,
-// jeweils als 16-Bit-Wert über R und G gepackt.
-uniform int uDebug;
-
-// Overlays. Beides in Welt-Tiles, damit sie unabhaengig vom Zoom sitzen.
-uniform vec2  uHoverTile;      // markiertes Tile, uHoverActive < 0.5 blendet aus
-uniform float uHoverActive;
-uniform vec4  uViewRect;       // Ausschnitt der Hauptansicht (x, y, Breite, Hoehe)
-uniform float uViewRectActive;
-uniform float uCenterDot;      // Mittelpunktmarke der Minimap
-
-uniform vec3 uBiomeLo[8];
-uniform vec3 uBiomeHi[8];
-uniform vec3 uWaterRamp[4];
-uniform vec3 uSurf;
-uniform vec3 uResourceColor[5];
+uniform float uReliefHeight;
+uniform float uReliefExponent;
+uniform float uLowlandRelief;
+uniform float uMountainFoot;
 
 // Ebenen in der Permutations-Textur (Reihenfolge = NOISE_LAYERS)
 const int L_HEIGHT = 0;
@@ -84,15 +55,6 @@ const int L_RIDGE = 7;
 const int L_DETAIL = 8;
 const int L_RESOURCE = 9;
 
-// Biome (Reihenfolge = TILE_TYPE_GRADIENT)
-const int B_DEEP_WATER = 0;
-const int B_WATER = 1;
-const int B_BEACH = 2;
-const int B_DESERT = 3;
-const int B_GRASS = 4;
-const int B_FOREST = 5;
-const int B_MOUNTAIN = 6;
-const int B_SNOW = 7;
 
 const float F2 = 0.3660254037844386;
 const float G2 = 0.21132486540518713;
@@ -215,6 +177,131 @@ float elevation(vec2 n, float step) {
   return min(1.0, land + t * t * (ridge - 0.35) * uRidgeStrength);
 }
 
+// Hoehe ueber dem Meer in Tiles - Gegenstueck zu reliefZ() in noise.ts.
+// Wasser ist flach.
+float reliefZ(float h) {
+  if (h <= uSeaLevel) return 0.0;
+  float low = min(1.0, (h - uSeaLevel) / (uMountainFoot - uSeaLevel));
+  float high = max(0.0, (h - uMountainFoot) / (1.0 - uMountainFoot));
+  return uLowlandRelief * low + (uReliefHeight - uLowlandRelief) * pow(high, uReliefExponent);
+}
+`;
+
+/**
+ * Lage des Farb-Caches. Er liegt in Boden-Koordinaten (u, v), ein Texel je
+ * Geraete-Pixel, und ist ein Ringpuffer: das Fenster wandert mit der Kamera,
+ * Texel werden reihum wiederverwendet.
+ */
+const CACHE_GLSL = `
+uniform vec2 uWindowStart;  // (u, v) der Fenster-Ecke
+uniform vec2 uWindowMod;    // wo diese Ecke in der Textur liegt, in Texeln
+uniform vec2 uCacheSize;    // Texturgroesse in Texeln
+`;
+
+/**
+ * Das Gelände ist ein Gitter, das auf dem Bildschirm gleichmäßig liegt (in
+ * Boden-Koordinaten u/v, siehe iso.ts). Jeder Eckpunkt wird ins Weltsystem
+ * zurückgerechnet und um seine Höhe angehoben. Die Eckpunkte hängen am
+ * Weltraster, nicht am Bildschirm - sonst würde das Relief beim Verschieben
+ * der Kamera schwimmen.
+ */
+export const VERTEX_SOURCE = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2DArray;
+
+${TERRAIN_COMMON}
+${PROJECT_GLSL}
+
+uniform vec2  uGridOrigin;  // (u, v) des ersten Eckpunkts
+uniform float uGridCell;    // Zellgroesse in u/v-Einheiten
+uniform int   uGridColumns;
+${CACHE_GLSL}
+
+out vec2 vWorld;
+out vec2 vCache;            // normierte Koordinate im Farb-Cache
+
+void main() {
+  int col = gl_VertexID % uGridColumns;
+  int row = gl_VertexID / uGridColumns;
+  vec2 g = uGridOrigin + vec2(float(col), float(row)) * uGridCell;
+  vec2 world = vec2(g.y + g.x * 0.5, g.y - g.x * 0.5);
+
+  float z = 0.0;
+  if (uReliefScale > 0.0) {
+    // Mit der Zellgroesse als Abtastschritt: Feinoktaven, die das Gitter
+    // nicht aufloesen kann, bleiben aus dem Relief heraus.
+    z = reliefZ(elevation(world * uMapScale, uGridCell)) * uReliefScale;
+  }
+  vWorld = world;
+  // Ringpuffer: Texturkoordinaten laufen ueber den Rand hinaus, REPEAT
+  // faltet sie zurueck.
+  vCache = ((g - uWindowStart) * uPixelsPerTile + uWindowMod) / uCacheSize;
+  gl_Position = project(world, z);
+}
+`;
+
+/** Vollbild-Dreieck für das Befüllen des Caches - begrenzt wird per Scissor. */
+export const FILL_VERTEX_SOURCE = `#version 300 es
+in vec2 aPosition;
+void main() {
+  gl_Position = vec4(aPosition, 0.0, 1.0);
+}
+`;
+
+/**
+ * Die eigentliche Geländeerzeugung. Läuft nicht mehr je Bild, sondern nur für
+ * Texel, die neu ins Fenster kommen - beim Verschieben ein schmaler Streifen,
+ * beim Zoomen einmal das ganze Fenster.
+ */
+export const FILL_FRAGMENT_SOURCE = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2DArray;
+
+out vec4 fragColor;
+
+${TERRAIN_COMMON}
+${PROJECT_GLSL}
+${CACHE_GLSL}
+
+uniform float uResourceScale;
+// Ressourcen-Regeln aus RESOURCE_RULES (map.ts). Als Uniforms statt fest im
+// Code, damit die Schwellen nur an einer Stelle stehen.
+uniform int   uResourceRuleCount;
+uniform int   uResourceRuleBiome[8];
+uniform int   uResourceRuleType[8];
+uniform float uResourceRuleThreshold[8];
+uniform float uResourceRuleYield[8];
+/**
+ * Bezugsgröße für Feindetail und Farbtextur, in Geräte-Pixeln. Abgetastet wird
+ * je Pixel, aber Mikro-Oktaven und Farbrauschen richten sich bewusst nach einer
+ * etwas gröberen Marke - sonst werden sie mit steigender Pixeldichte immer
+ * feiner und die Biom-Ränder fangen an zu grieseln.
+ */
+uniform float uDetailPixels;
+// Nur für den Abgleich mit der CPU-Fassung: 1 = Höhe, 2 = Hangneigung,
+// jeweils als 16-Bit-Wert über R und G gepackt.
+uniform int uDebug;
+
+uniform vec3 uBiomeLo[8];
+uniform vec3 uBiomeHi[8];
+uniform vec3 uWaterRamp[4];
+uniform vec3 uSurf;
+uniform vec3 uResourceColor[5];
+
+
+// Biome (Reihenfolge = TILE_TYPE_GRADIENT)
+const int B_DEEP_WATER = 0;
+const int B_WATER = 1;
+const int B_BEACH = 2;
+const int B_DESERT = 3;
+const int B_GRASS = 4;
+const int B_FOREST = 5;
+const int B_MOUNTAIN = 6;
+const int B_SNOW = 7;
+
+
 void climate(vec2 n, float height, out float moisture, out float temperature) {
   float fringeX = fbmRaw(L_FRINGE, n * uFringeFrequency, 2, 0.5);
   float fringeY = fbmRaw(L_FRINGE, n * uFringeFrequency + vec2(31.7, -12.4), 2, 0.5);
@@ -246,27 +333,30 @@ vec2 heightBand(int biome) {
   return vec2(uShoreLevel, uHillLevel);
 }
 
-// Ressourcen - Gegenstück zu generateResources() in map.ts.
-// x = Typ (0 keine, 1 Holz, 2 Gold, 3 Stein, 4 Beeren), y = Menge 0..100
+// Ressourcen - Gegenstück zu resourceFromNoise() in map.ts. Erste passende
+// Regel gewinnt, genau wie dort.
+// x = Typ als Index in uResourceColor (0 = keine), y = Menge 0..100
 vec2 resourceAt(vec2 tile, int biome) {
   float r = fbm(L_RESOURCE, tile * uResourceScale, 2, 0.5);
-  if (biome == B_FOREST && r > 0.15) return vec2(1.0, floor((r + 1.0) * 50.0));
-  if (biome == B_MOUNTAIN && r > 0.25) {
-    return vec2(r > 0.86 ? 2.0 : 3.0, floor((r + 1.0) * 40.0));
+  for (int i = 0; i < 8; i++) {
+    if (i >= uResourceRuleCount) break;
+    if (uResourceRuleBiome[i] == biome && r > uResourceRuleThreshold[i]) {
+      return vec2(float(uResourceRuleType[i]), floor((r + 1.0) * uResourceRuleYield[i]));
+    }
   }
-  if (biome == B_GRASS && r > 0.62) return vec2(4.0, floor((r + 1.0) * 30.0));
   return vec2(0.0, 0.0);
 }
 
 void main() {
-  float step = uTilesPerPixel;
+  // Welt-Tiles je Geraete-Pixel, waagerecht gemessen. Auf Haengen ist es
+  // mehr, fuer Detailstufe und Schattierung reicht die Naeherung.
+  float step = 1.0 / uPixelsPerTile;
 
-  // Bildschirm -> Welt. gl_FragCoord zeigt auf die Pixelmitte (0.5, 1.5, ...),
-  // deshalb das halbe Pixel abziehen - sonst liegt die ganze Karte um einen
-  // halben Abtastschritt daneben. gl_FragCoord.y zaehlt von unten, die Welt
-  // nach unten, also wird y zusaetzlich gespiegelt.
-  vec2 pixel = vec2(gl_FragCoord.x - 0.5, uResolution.y - 0.5 - gl_FragCoord.y);
-  vec2 tile = uOrigin + pixel * step;
+  // Texel -> Boden -> Welt. Das Texel mit Index t steht fuer die absolute
+  // Position, die im aktuellen Fenster auf t faellt.
+  vec2 rel = mod(floor(gl_FragCoord.xy) - uWindowMod, uCacheSize);
+  vec2 g = uWindowStart + (rel + 0.5) * step;
+  vec2 tile = vec2(g.y + g.x * 0.5, g.y - g.x * 0.5);
   vec2 n = tile * uMapScale;
 
   float detailStep = step * uDetailPixels;
@@ -308,39 +398,25 @@ void main() {
   float shade = tanh(((height - hRight) + (height - hDown)) * uShadeGain / step);
   color *= 1.0 + shade * (isWater ? 0.08 : 0.42);
 
+  // Licht auf das Relief. Die Hangneigung oben ist nur ein Schattierungs-
+  // effekt der Hoehenwerte; hier zaehlt die Neigung der tatsaechlich
+  // angehobenen Flaeche, damit Sonnen- und Schattenseiten der Berge zur
+  // Geometrie passen. Licht von links oben im Bild, wie in AoE2.
+  if (uReliefScale > 0.0 && !isWater) {
+    float z = reliefZ(height);
+    vec3 normal = normalize(vec3(
+        (z - reliefZ(hRight)) / step,
+        (z - reliefZ(hDown)) / step,
+        1.0 / uReliefScale));
+    const vec3 SUN = vec3(-0.45, 0.35, 0.82);
+    float lambert = dot(normal, normalize(SUN)) / normalize(SUN).z;
+    color *= clamp(mix(1.0, lambert, 0.85), 0.45, 1.3);
+  }
+
   vec2 res = resourceAt(tile, biome);
   if (res.x > 0.0) {
     float alpha = min(res.y / 100.0, 1.0) * 0.3;
     color = mix(color, uResourceColor[int(res.x)], alpha);
-  }
-
-  // Markiertes Tile: heller Rahmen mit dunklem Saum nach innen
-  if (uHoverActive > 0.5) {
-    vec2 d = tile - uHoverTile;
-    if (d.x >= 0.0 && d.x < 1.0 && d.y >= 0.0 && d.y < 1.0) {
-      float edge = min(min(d.x, 1.0 - d.x), min(d.y, 1.0 - d.y));
-      if (edge < step) color = mix(color, vec3(1.0), 0.85);
-      else if (edge < 3.0 * step) color = mix(color, vec3(0.0), 0.35);
-    }
-  }
-
-  // Viewport-Rechteck der Minimap
-  if (uViewRectActive > 0.5) {
-    vec2 d = tile - uViewRect.xy;
-    vec2 size = uViewRect.zw;
-    bool inside = d.x >= 0.0 && d.y >= 0.0 && d.x < size.x && d.y < size.y;
-    if (inside) {
-      float edge = min(min(d.x, size.x - d.x), min(d.y, size.y - d.y));
-      if (edge < step) color = mix(color, vec3(1.0), 0.9);
-      else if (edge < 3.0 * step) color = mix(color, vec3(0.0), 0.35);
-    }
-  }
-
-  if (uCenterDot > 0.5) {
-    vec2 mid = uViewRect.xy + uViewRect.zw * 0.5;
-    if (all(lessThan(abs(tile - mid), vec2(1.5 * step)))) {
-      color = vec3(1.0, 0.867, 0.2);
-    }
   }
 
   if (uDebug != 0) {
@@ -358,5 +434,60 @@ void main() {
   }
 
   fragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}
+`;
+
+/** Bild aus dem Cache plus die Overlays, die sich je Bild ändern. */
+export const DISPLAY_FRAGMENT_SOURCE = `#version 300 es
+precision highp float;
+
+in vec2 vWorld;
+in vec2 vCache;
+out vec4 fragColor;
+
+uniform sampler2D uCache;
+uniform vec2  uResolution;
+uniform float uPixelsPerTile;
+
+// Overlays. Das Tile in Welt-Tiles, das Rechteck in Geraete-Pixeln.
+uniform vec2  uHoverTile;      // markiertes Tile, uHoverActive < 0.5 blendet aus
+uniform float uHoverActive;
+uniform vec4  uViewRect;       // Ausschnitt der Hauptansicht (x, y, Breite, Hoehe), Pixel ab links oben
+uniform float uViewRectActive;
+uniform float uCenterDot;      // Mittelpunktmarke der Minimap
+
+void main() {
+  float step = 1.0 / uPixelsPerTile;
+  vec2 tile = vWorld;
+  vec3 color = texture(uCache, vCache).rgb;
+
+  // Markiertes Tile: heller Rahmen mit dunklem Saum nach innen
+  if (uHoverActive > 0.5) {
+    vec2 d = tile - uHoverTile;
+    if (d.x >= 0.0 && d.x < 1.0 && d.y >= 0.0 && d.y < 1.0) {
+      float edge = min(min(d.x, 1.0 - d.x), min(d.y, 1.0 - d.y));
+      if (edge < step) color = mix(color, vec3(1.0), 0.85);
+      else if (edge < 3.0 * step) color = mix(color, vec3(0.0), 0.35);
+    }
+  }
+
+  // Viewport-Rechteck und Mittelpunkt der Minimap, in Geraete-Pixeln
+  vec2 pixel = vec2(gl_FragCoord.x, uResolution.y - gl_FragCoord.y);
+  if (uViewRectActive > 0.5) {
+    vec2 d = pixel - uViewRect.xy;
+    vec2 size = uViewRect.zw;
+    bool inside = d.x >= 0.0 && d.y >= 0.0 && d.x < size.x && d.y < size.y;
+    if (inside) {
+      float edge = min(min(d.x, size.x - d.x), min(d.y, size.y - d.y));
+      if (edge < 1.0) color = mix(color, vec3(1.0), 0.9);
+      else if (edge < 3.0) color = mix(color, vec3(0.0), 0.35);
+    }
+  }
+
+  if (uCenterDot > 0.5 && all(lessThan(abs(pixel - uResolution * 0.5), vec2(2.0)))) {
+    color = vec3(1.0, 0.867, 0.2);
+  }
+
+  fragColor = vec4(color, 1.0);
 }
 `;

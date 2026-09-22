@@ -50,7 +50,8 @@
       #ui {
         top: 12px;
         left: 12px;
-        max-width: calc(100vw - 24px);
+        /* Rechts daneben liegt das Vorrats-Panel - so weit reicht #ui nicht. */
+        max-width: calc(100vw - 480px);
       }
       #ui kbd {
         background: rgba(110, 231, 160, 0.12);
@@ -85,6 +86,132 @@
         left: 12px;
         max-width: calc(100vw - 340px);
       }
+      #stock {
+        top: 12px;
+        right: 12px;
+        display: flex;
+        gap: 14px;
+        white-space: nowrap;
+      }
+      #stock .res {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      #stock .res i {
+        width: 11px;
+        height: 11px;
+        border-radius: 2px;
+        border: 1px solid rgba(0, 0, 0, 0.45);
+      }
+      #build {
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 8px;
+        padding: 8px;
+      }
+      .build-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        min-width: 104px;
+        padding: 6px 8px;
+        font: inherit;
+        font-size: 12px;
+        color: var(--text);
+        text-align: left;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(120, 220, 150, 0.22);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .build-btn:hover {
+        background: rgba(110, 231, 160, 0.1);
+      }
+      .build-btn[aria-pressed='true'] {
+        border-color: var(--accent);
+        background: rgba(110, 231, 160, 0.18);
+      }
+      /* Nicht bezahlbar: sichtbar, aber erkennbar aus dem Spiel genommen. */
+      .build-btn[disabled] {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .build-btn .name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+        color: var(--accent);
+      }
+      .build-btn .name i {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+      }
+      .build-btn .cost {
+        color: rgba(207, 233, 214, 0.65);
+        font-size: 11px;
+      }
+      #hint {
+        position: absolute;
+        bottom: 96px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 5px 12px;
+        border-radius: 6px;
+        background: rgba(120, 30, 40, 0.85);
+        border: 1px solid rgba(255, 140, 150, 0.5);
+        font-size: 12px;
+        color: #ffd9dd;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.18s;
+      }
+      #hint.show {
+        opacity: 1;
+      }
+      #selection {
+        bottom: 96px;
+        left: 12px;
+        width: 300px;
+      }
+      #selection .title {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      #selection .muted {
+        color: rgba(207, 233, 214, 0.6);
+        font-size: 12px;
+      }
+      #selection .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      #selection .bar {
+        height: 5px;
+        margin: 4px 0;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      #selection .bar i {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+      }
+      /* Auswahlrechteck beim Ziehen */
+      #select-box {
+        position: absolute;
+        border: 1px solid var(--accent);
+        background: rgba(110, 231, 160, 0.12);
+        pointer-events: none;
+      }
       #minimap {
         position: absolute;
         bottom: 12px;
@@ -106,7 +233,10 @@
         Pos <b id="pos">0, 0</b><span class="sep">|</span>
         Tiles/Px <b id="sampling">-</b><span class="sep">|</span>
         Zoom <b id="zoom">8px</b><span class="sep">|</span>
-        <kbd>WASD</kbd> bewegen <kbd>Q</kbd>/<kbd>E</kbd> oder Mausrad zoomen
+        <kbd>WASD</kbd> bewegen <kbd>Q</kbd>/<kbd>E</kbd> zoomen<span class="sep">|</span>
+        <kbd>1</kbd>-<kbd>5</kbd> bauen <kbd>Esc</kbd> abbrechen<span class="sep">|</span>
+        <kbd>Klick</kbd>/<kbd>Ziehen</kbd> auswählen <kbd>Rechtsklick</kbd> Befehl
+        <kbd>V</kbd> Dorfbewohner <kbd>Entf</kbd> abreißen
       </div>
       <div id="legend"></div>
     </div>
@@ -120,6 +250,14 @@
         FPS <b id="fps">0</b>
       </div>
     </div>
+
+    <div id="stock" class="panel"></div>
+
+    <div id="selection" class="panel"></div>
+    <div id="select-box" hidden></div>
+
+    <div id="hint"></div>
+    <div id="build" class="panel"></div>
 
     <canvas id="minimap"></canvas>
     <script type="module" src="/src/main.ts"></script>

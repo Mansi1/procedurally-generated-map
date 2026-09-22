@@ -290,6 +290,21 @@ const RIDGE_STRENGTH = 0.32;
 const SHADE_GAIN = 26;
 
 /**
+ * Relief der 3D-Ansicht, in zwei Stücken wie in AoE2: Flachland ist fast eben
+ * - dort wird gebaut -, erst ab dem Gebirgsfuß steigt das Gelände steil an.
+ * Eine einzige Kurve über alle Höhen hebt sonst schon das Feindetail der
+ * Wiesen zu mehrere Tiles hohen Buckeln an.
+ */
+/** So viele Tiles steigt das gesamte Flachland von der Küste bis zum Gebirgsfuß. */
+const LOWLAND_RELIEF = 2;
+/** Ab dieser Höhe beginnt der Anstieg - etwas unter HILL_LEVEL, damit das Gebirge einen Fuß hat. */
+const MOUNTAIN_FOOT = 0.55;
+/** Höchster Gipfel über dem Meer, in Tiles. */
+const RELIEF_HEIGHT = 20;
+/** Krümmung des Anstiegs: > 1 macht den Fuß flach und die Gipfel steil. */
+const RELIEF_EXPONENT = 1.5;
+
+/**
  * Sämtliche Regler der Geländeerzeugung an einer Stelle. Der WebGL-Shader lädt
  * sie als Uniforms, statt sie ein zweites Mal in GLSL zu hinterlegen - so kann
  * hier geschraubt werden, ohne dass die beiden Implementierungen auseinander
@@ -310,6 +325,10 @@ export const TERRAIN_PARAMS = {
   ridgeStart: RIDGE_START,
   ridgeStrength: RIDGE_STRENGTH,
   shadeGain: SHADE_GAIN,
+  reliefHeight: RELIEF_HEIGHT,
+  reliefExponent: RELIEF_EXPONENT,
+  lowlandRelief: LOWLAND_RELIEF,
+  mountainFoot: MOUNTAIN_FOOT,
   lapseRate: LAPSE_RATE,
   deepWaterLevel: DEEP_WATER_LEVEL,
   seaLevel: SEA_LEVEL,
@@ -345,6 +364,17 @@ export const TERRAIN_LEVELS = {
   hill: HILL_LEVEL,
   peak: PEAK_LEVEL,
 } as const;
+
+/**
+ * Höhe über dem Meeresspiegel in Tiles, aus der Geländehöhe -1..1. Wasser ist
+ * flach. Gegenstück zu reliefZ() im Shader.
+ */
+export function reliefZ(height: number): number {
+  if (height <= SEA_LEVEL) return 0;
+  const low = Math.min(1, (height - SEA_LEVEL) / (MOUNTAIN_FOOT - SEA_LEVEL));
+  const high = Math.max(0, (height - MOUNTAIN_FOOT) / (1 - MOUNTAIN_FOOT));
+  return LOWLAND_RELIEF * low + (RELIEF_HEIGHT - LOWLAND_RELIEF) * Math.pow(high, RELIEF_EXPONENT);
+}
 
 export class MapGenerator {
   private heightNoise: FractalNoise;
@@ -481,6 +511,11 @@ export class MapGenerator {
    */
   private variationAt(x: number, y: number, step: number): number {
     return (this.detailNoise.noise2D((x * 0.35) / step, (y * 0.35) / step) + 1) * 0.5;
+  }
+
+  /** Höhe -1..1 an einer beliebigen Welt-Position (in Tiles, nicht gerundet). */
+  heightAt(x: number, y: number, step: number = 1): number {
+    return this.elevation(x * MAP_SCALE, y * MAP_SCALE, step);
   }
 
   getTile(x: number, y: number, scale: number = MAP_SCALE): MapTile {
