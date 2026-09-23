@@ -16,9 +16,15 @@ export interface Settings {
   showHelp: boolean;
   /** Legende und Tile-, Kamera- und FPS-Anzeige oben links. */
   showDebug: boolean;
+  /** Himmelsrichtung, die oben im Bild liegt (Kompass) - bleibt beim Neuladen. */
+  facing: string;
+  /** Angehalten (F3) - bleibt beim Neuladen. */
+  paused: boolean;
 }
 
-const DEFAULTS: Settings = { volume: 1, speed: 1, scroll: 1, showHelp: true, showDebug: true };
+const DEFAULTS: Settings = {
+  volume: 1, speed: 1, scroll: 1, showHelp: true, showDebug: true, facing: '', paused: false,
+};
 const STORAGE_KEY = 'pgm.settings';
 
 export function loadSettings(): Settings {
@@ -31,7 +37,7 @@ export function loadSettings(): Settings {
   return { ...DEFAULTS };
 }
 
-function saveSettings(s: Settings) {
+export function saveSettings(s: Settings) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
   } catch {

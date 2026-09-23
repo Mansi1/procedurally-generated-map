@@ -247,13 +247,9 @@ function pine() {
 function oak() {
   const m = model(), rnd = rng(13);
   roots(m, rnd, 0.35, 6, 0.45, 'Bark');
-  trunk(m, [[0, 0, 0], [0.05, 1.4, 0], [0, 2.5, 0.05]], 0.36, 0.26, 'Bark', 8);
-  m.box('Trunk.Knot', 'Soot', [0.28, 0.34], [1.1, 1.28], [-0.07, 0.07], { r: 0.3 });
-  m.box('Moss', 'Moss', [-0.37, -0.2], [STUMP + 0.05, 1.1], [-0.2, 0.2], { n: 5 });
-  for (let i = 0; i < 7; i++) {
-    const y = STUMP + 0.05 + i * 0.3, a = i * 2.1;
-    m.box('Bark.Ridge', 'BarkDark', [Math.cos(a) * 0.3 - 0.05, Math.cos(a) * 0.3 + 0.05], [y, y + 0.28], [Math.sin(a) * 0.3 - 0.05, Math.sin(a) * 0.3 + 0.05]);
-  }
+  const oakTrunk = [[0, 0, 0], [0.05, 1.4, 0], [0, 2.5, 0.05]];
+  trunk(m, oakTrunk, 0.36, 0.26, 'Bark', 8);
+  m.box('Knot', 'Soot', [0.28, 0.34], [1.1, 1.28], [-0.07, 0.07], { r: 0.3 });
   const branchTo = [[-1.1, 3.9, 0.4], [1.2, 4.0, -0.3], [0.2, 4.4, -1.0], [0.1, 4.2, 1.1]];
   for (const b of branchTo) m.beam('Branch', 'Bark', [0, 2.4, 0], b, 0.28, { w1: 0.12, n: 6 });
   const masses = [mass(m, rnd, [0, 4.5, 0], 1.45, 2.6, 'Paint', 8)];
@@ -316,7 +312,8 @@ function poplar() {
 function maple() {
   const m = model(), rnd = rng(41);
   roots(m, rnd, 0.28, 5, 0.35);
-  trunk(m, [[0, 0, 0], [-0.05, 1.6, 0.05], [0.05, 2.6, 0]], 0.28, 0.2, 'BarkDark', 7);
+  const mapleTrunk = [[0, 0, 0], [-0.05, 1.6, 0.05], [0.05, 2.6, 0]];
+  trunk(m, mapleTrunk, 0.28, 0.2, 'BarkDark', 7);
   for (const b of [[-1.0, 3.6, 0.3], [1.0, 3.8, -0.2], [0.1, 4.2, 0.9], [0, 4.0, -0.9]]) m.beam('Branch', 'BarkDark', [0, 2.5, 0], b, 0.22, { w1: 0.1, n: 6 });
   const masses = [mass(m, rnd, [0, 4.3, 0], 1.35, 2.5, 'Paint', 8)];
   m.box('Crown.Under', 'LeafDark', [-1.2, 1.2], [3.2, 3.9], [-1.1, 1.1], { n: 8, x: [-1.4, 1.4], z: [-1.3, 1.3] });
@@ -345,17 +342,12 @@ function oldOak() {
   roots(m, rnd, 0.9, 7, 1.3, 'Bark');
   const top = [0.1, 4.6, 0.05];
   trunk(m, [[0, 0, 0], [0.25, 2.4, 0.1], top], 1.0, 0.72, 'Bark', 9);
-  for (let i = 0; i < 9; i++) {
-    const y = STUMP + 0.05 + i * 0.45, a = i * 2.3;
-    m.box('Bark.Ridge', 'BarkDark', [Math.cos(a) * 0.85 - 0.12, Math.cos(a) * 0.85 + 0.12], [y, y + 0.42], [Math.sin(a) * 0.85 - 0.12, Math.sin(a) * 0.85 + 0.12]);
-  }
   for (const [a, y] of [[0.8, 1.6], [2.9, 2.8], [4.6, 1.1]]) {
     const r = 0.95;
     m.box('Burl', 'Bark', [Math.cos(a) * r - 0.3, Math.cos(a) * r + 0.3], [y - 0.3, y + 0.3], [Math.sin(a) * r - 0.3, Math.sin(a) * r + 0.3], { n: 7, r: 0.3 });
   }
   m.box('Hollow', 'Soot', [-0.35, 0.35], [0.9, 2.0], [0.88, 1.02], { n: 8, x: [-0.22, 0.22] });
   m.box('Hollow.Rim', 'BarkDark', [-0.45, 0.45], [0.8, 2.1], [0.84, 0.94], { n: 8, x: [-0.3, 0.3] });
-  m.box('Moss', 'Moss', [-1.05, -0.6], [STUMP + 0.05, 1.8], [-0.5, 0.3], { n: 5 });
   // Five main branches, each bent in two, reaching out wide.
   const ends = [];
   for (let i = 0; i < 5; i++) {

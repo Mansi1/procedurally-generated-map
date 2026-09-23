@@ -14,13 +14,6 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl BarkDark
-Kd 0.240 0.160 0.100
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
 newmtl Grass
 Kd 0.340 0.560 0.220
 Ka 0 0 0

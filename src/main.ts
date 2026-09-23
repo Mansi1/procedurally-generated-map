@@ -30,7 +30,7 @@ import {
 } from './world/buildings';
 import { World, type Villager } from './world/world';
 import { ResourceBar } from './resourceBar';
-import { loadSettings, SettingsMenu } from './settings';
+import { loadSettings, saveSettings, SettingsMenu } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
@@ -247,6 +247,9 @@ function applySettings() {
 function togglePause() {
   paused = !paused;
   pausedEl.hidden = !paused;
+  // Beim Neuladen wieder angehalten, wenn es jetzt angehalten ist.
+  settings.paused = paused;
+  saveSettings(settings);
   // Auch Mühlenflügel und Fahnen halten an.
   setAnimationsPaused(paused);
   menu.refresh();
@@ -420,6 +423,9 @@ function faceDirection(dir: string) {
   camX = center.x;
   camY = center.y;
   updateCompass();
+  // Die Blickrichtung bleibt beim Neuladen.
+  settings.facing = dir;
+  saveSettings(settings);
   // Unter dem Zeiger liegt jetzt eine andere Stelle.
   mouseTileX = undefined;
   mouseTileY = undefined;
@@ -1137,8 +1143,8 @@ function collectOverlay(blend: number) {
     if (!selectedVillagers.has(v.id)) continue;
     const p = world.villagerPosition(v, blend);
     overlay.push({
-      x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 1.5,
-      color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.5,
+      x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 2,
+      color: [110, 231, 160], shape: SHAPE.ring, alpha: 1,
     });
   }
   const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
@@ -1281,6 +1287,17 @@ function loop(now: number) {
 }
 
 zoomEl.textContent = `${tileSize}px`;
+// Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
+// Feld aus der Adresse - gedreht wird nur die Ansicht.
+if (settings.facing in COMPASS) {
+  const [dx, dy] = COMPASS[settings.facing];
+  for (let k = 0; k < 4; k++) {
+    setViewRotation(k);
+    const g = worldToGround(dx, dy);
+    if (g.v < 0 && Math.abs(g.u) < 1e-9) break;
+  }
+}
+if (settings.paused && !paused) togglePause();
 updateCompass();
 updateResourceUI();
 requestAnimationFrame(loop);

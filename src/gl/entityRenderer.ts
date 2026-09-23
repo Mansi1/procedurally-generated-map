@@ -134,6 +134,8 @@ export const SHAPE = {
   goldRock2: 31,
   /** Hoher Erzfels mit Goldadern (models/gold_3.obj). */
   goldRock3: 32,
+  /** Auswahlring unter einer Figur: flach aufs Gelände gelegt wie `flat`. */
+  ring: 33,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -163,6 +165,8 @@ export function millMotion(x: number, y: number): [number, number, number, numbe
   const r = ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   return [BUILDING_HEADING, r * Math.PI * 2, 0.8 + 0.4 * ((r * 7.13) % 1), 0];
 }
+
+const SHAPE_RING = SHAPE.ring;
 
 /** Figuren: verdeckt zeigen sie ihren Umriss. */
 const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale];
@@ -309,6 +313,12 @@ out vec3 vWorld;
 out vec3 vColor;
 flat out vec3 vParams;
 flat out vec3 vTeam;     // Instanzfarbe (Spielerfarbe) - für den Umriss verdeckter Figuren
+// Bäume: welche Textur (0 keine, 3 Rinde, 4 Birkenrinde, 5 Schnittfläche)
+// und die Lage im Modell in Metern - die Textur haftet am Stamm, auch wenn
+// er umfällt.
+flat out int vTex;
+out vec3 vLocal;
+uniform float uMeters;       // Breite des Modells in Metern (Modell-Einheit)
 flat out float vRoof;   // Gebäude: 1 = Dachfläche. Figuren: Körperteil.
 
 // Körperteile der Figur - aCorner.w im Menschen-Mesh.
@@ -338,6 +348,7 @@ const int P_CROWN = 15;
 const int P_STUMP = 16;
 const int P_STUMP_TOP = 17;
 const int P_LOG_END = 18;
+const int P_TRUNK = 19;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -378,7 +389,7 @@ void main() {
     return;
   }
 
-  if (shape >= 5 && shape != 17) {  // 10 (Lebensbalken) ist oben schon abgefangen
+  if (shape >= 5 && shape != 17 && shape != ${SHAPE_RING}) {  // 10 (Lebensbalken) ist oben schon abgefangen
     // Modell aus einer OBJ-Datei. Eckpunkte in Modell-Einheiten: x nach vorn,
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
@@ -543,9 +554,13 @@ void main() {
         // Laub, Äste, Zapfen: weg, sobald der Schnitt unter ihrem Ansatz liegt.
         float from = (aCorner.w - 15.0) / 0.45 * uModelTop;
         if (from > cut) p = vec3(0.0);
+      } else if (part == P_TRUNK && (aCorner.w - 19.0) / 0.45 * uModelTop > cut) {
+        // Stammstück ganz über dem Schnitt: weg. Flach gedrückt ergäbe ein
+        // schräger Stamm eine lange Platte auf dem Stumpf.
+        p = vec3(0.0);
       } else if (p.z > cut) {
-        // Stamm: auf die Schnitthöhe gedrückt - die Schnittfläche, hell wie
-        // frisch gesägtes Holz.
+        // Das Stück, durch das gerade gesägt wird: auf die Schnitthöhe
+        // gedrückt - die Schnittfläche, hell wie frisch gesägtes Holz.
         p.z = cut;
         gSawn = 1.0;
       }
@@ -651,12 +666,14 @@ void main() {
     vParams = aParams;
     vRoof = 0.0;
     return;
-  } else if (shape == 4) {
+  } else if (shape == 4 || shape == ${SHAPE_RING}) {
     // Overlays behalten ihre Tile-Größe - sie sollen genau ihr Feld abdecken.
     // Jede Ecke sitzt auf ihrer eigenen Geländehöhe, leicht angehoben, damit
     // sie nicht im Boden verschwindet.
     vec2 p = center + (aCorner.xy - 0.5) * aParams.z;
-    world = vec3(p, groundZ(p) + 0.15);
+    // Der Auswahlring liegt fast am Boden - angehoben rutschte er in der
+    // Schrägansicht nach oben und säße hinter der Figur statt unter ihr.
+    world = vec3(p, groundZ(p) + (shape == ${SHAPE_RING} ? 0.012 : 0.15));
   } else {
     float size = max(aParams.z, uMinSizeTiles);
     // x = Anteil der Grundfläche, y = Wandhöhe, z = Dachhöhe (je Kantenlänge)
@@ -676,14 +693,21 @@ void main() {
   }
 
   vWorld = world;
+  // Auswahlring: der Fragment-Shader braucht die Lage im Quadrat (0..1).
+  if (shape == ${SHAPE_RING}) vWorld = vec3(aCorner.xy, world.z);
   vColor = aColor;
   vTeam = aColor;
-  if (shape >= 5) {
+  vTex = 0;
+  vLocal = vec3(0.0);
+  if (shape >= 5 && shape != ${SHAPE_RING}) {
     // Modelle färben nach Material: Kittel bzw. Anstrich in der Instanzfarbe,
     // die Last in der Farbe der Ressource, alles andere wie in der MTL-Datei.
     int role = int(aMaterial.w + 0.5);
     vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
+    bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
+    vTex = !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
+    vLocal = aCorner.xyz * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
     if (shape != 5 && shape != 18 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
@@ -700,6 +724,60 @@ precision highp float;
 in vec3 vWorld;
 in vec3 vColor;
 flat in vec3 vTeam;
+flat in int vTex;
+in vec3 vLocal;
+
+float texHash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float texNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(texHash(i), texHash(i + vec2(1, 0)), u.x),
+             mix(texHash(i + vec2(0, 1)), texHash(i + vec2(1, 1)), u.x), u.y);
+}
+// Abstand zur nächsten Zellgrenze (Voronoi) - die Furchen zwischen Borkenplatten.
+float texCells(vec2 p, out float id) {
+  vec2 cell = floor(p);
+  float d1 = 9.0, d2 = 9.0;
+  id = 0.0;
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 c = cell + vec2(x, y);
+    vec2 o = vec2(texHash(c), texHash(c + 7.1));
+    float d = length(p - c - o);
+    if (d < d1) { d2 = d1; d1 = d; id = texHash(c + 3.3); } else if (d < d2) d2 = d;
+  }
+  return d2 - d1;
+}
+
+// Rinde als Textur: Stamm abgewickelt (Umfang, Höhe) in Metern.
+vec3 treeTexture(vec3 base) {
+  float r = max(length(vLocal.xy), 0.05);
+  vec2 uv = vec2(atan(vLocal.y, vLocal.x) * r, vLocal.z);
+  if (vTex == 3) {
+    // Borke: längliche Platten, dazwischen tiefe dunkle Furchen, feine
+    // Längsmaserung auf den Platten, jede Platte etwas anders getönt.
+    float id;
+    float e = texCells(uv * vec2(7.0, 1.6), id);
+    float furrow = 1.0 - smoothstep(0.03, 0.16, e);
+    float grain = texNoise(uv * vec2(38.0, 3.0)) * 0.5 + texNoise(uv * vec2(90.0, 8.0)) * 0.5;
+    vec3 c = base * (0.82 + 0.36 * id) * (0.85 + 0.3 * grain);
+    return mix(c, base * 0.32, furrow);
+  }
+  if (vTex == 4) {
+    // Birke: weiß mit waagerechten dunklen Strichen (Lentizellen) und
+    // vereinzelten schwarzen Rissen.
+    float dash = smoothstep(0.72, 0.8, texNoise(uv * vec2(4.0, 26.0)));
+    float crack = smoothstep(0.86, 0.9, texNoise(uv * vec2(9.0, 2.2)));
+    vec3 c = base * (0.9 + 0.1 * texNoise(uv * vec2(30.0, 10.0)));
+    return mix(c, vec3(0.12, 0.11, 0.1), max(dash * 0.85, crack));
+  }
+  // Schnittfläche: helles Holz mit Jahresringen, zum Rand dunkler.
+  float rings = 0.5 + 0.5 * sin(r * 70.0 + texNoise(vLocal.xy * 6.0) * 3.0);
+  return base * (0.86 + 0.14 * rings);
+}
 // 1: Umriss-Durchgang - nur die verdeckten Teile einer Figur, in Spielerfarbe.
 uniform int uSilhouette;
 flat in vec3 vParams;
@@ -717,6 +795,21 @@ void main() {
 
   if (shape == 4) {
     fragColor = vec4(vColor, alpha);
+    return;
+  }
+
+  if (shape == ${SHAPE_RING}) {
+    // Auswahlring: kräftiger Rand in der Auswahlfarbe, außen eine dünne
+    // dunkle Kontur (hebt ihn vom Gelände ab), innen ganz leicht gefüllt.
+    float r = length(vWorld.xy - 0.5) * 2.0;
+    float edge = fwidth(r) * 1.5;
+    float band = smoothstep(0.66 - edge, 0.66, r) * (1.0 - smoothstep(0.86, 0.86 + edge, r));
+    float outline = smoothstep(0.86, 0.86 + edge, r) * (1.0 - smoothstep(0.96, 0.96 + edge, r));
+    float fill = 1.0 - smoothstep(0.66 - edge, 0.66, r);
+    vec3 color = mix(vColor, vec3(0.05), outline);
+    float a = band * 0.95 + outline * 0.6 + fill * 0.12;
+    if (a <= 0.01) discard;
+    fragColor = vec4(color, a * alpha);
     return;
   }
 
@@ -762,6 +855,7 @@ void main() {
   }
 
   vec3 base = vColor;
+  if (vTex != 0) base = treeTexture(base);
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
     // auseinanderhält. Flachdächer bleiben in der Gebäudefarbe.
@@ -844,6 +938,11 @@ const MATERIAL_ROLE: Record<string, number> = {
   Tunic: 1, // Instanzfarbe (Dorfbewohner)
   Paint: 1, // Instanzfarbe (Gebäude)
   Load: 2, // Farbe der getragenen Ressource
+  // Bäume: Rinde als Textur im Fragment-Shader (treeTexture)
+  Bark: 3,
+  BarkDark: 3,
+  PineBark: 3,
+  Birch: 4,
 };
 
 interface Model {
@@ -985,6 +1084,8 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
         // Stumpf (16), sein Deckel (17), der Boden des Stamms (18).
         : sawable && t.object.startsWith('Trunk.Stump') ? (onCut(t) ? 17 : 16)
         : sawable && onCut(t) ? 18
+        // Stammstück (19 + Ansatzhöhe): über dem Schnitt verschwindet es ganz.
+        : sawable ? 19 + (bottom.get(t.index) ?? 0) * 0.45
         : part;
       v.push(x, y, z, partValue, color[0], color[1], color[2], role);
       if (lod) {
@@ -1225,7 +1326,7 @@ export class EntityRenderer {
     puffs.length = 0;
     for (const m of this.models) m.list.length = 0;
     for (const e of instances) {
-      if (e.shape === SHAPE.flat) flats.push(e);
+      if (e.shape === SHAPE.flat || e.shape === SHAPE.ring) flats.push(e);
       else if (e.shape === SHAPE.dust) puffs.push(e);
       else (this.models.find((m) => m.shape === e.shape)?.list ?? solids).push(e);
     }
@@ -1306,6 +1407,7 @@ export class EntityRenderer {
       gl.uniform1f(this.location('uElbow'), m.model.elbow);
       gl.uniform1f(this.location('uStride'), m.stride ?? 1);
       gl.uniform1f(this.location('uModelTop'), m.model.top);
+      gl.uniform1f(this.location('uMeters'), m.model.meters);
       gl.uniform1f(this.location('uStump'), m.model.stump);
       gl.uniform1f(this.location('uStumpRadius'), m.model.stumpRadius);
       gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
