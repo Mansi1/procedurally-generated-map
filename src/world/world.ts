@@ -862,7 +862,8 @@ export class World {
         y: y - 0.5,
         size: VILLAGER.size,
         color: VILLAGER.color.toRGB(),
-        shape: SHAPE.villager,
+        // Jede zweite Figur ist eine Frau - fest je Dorfbewohner.
+        shape: v.id % 2 ? SHAPE.villagerFemale : SHAPE.villager,
         alpha: 1,
         motion: [v.heading, phase, v.pose, load],
         health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,

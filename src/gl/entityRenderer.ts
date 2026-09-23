@@ -13,7 +13,8 @@ import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from
 import { uploadTerrainParams } from './terrainRenderer';
 import { TERRAIN_COMMON } from './terrainShader';
 import { parseMtl, parseObj } from './obj';
-import villagerObj from '../models/villager.obj?raw';
+import villagerMaleObj from '../models/villager_male.obj?raw';
+import villagerFemaleObj from '../models/villager_female.obj?raw';
 import villagerMtl from '../models/villager.mtl?raw';
 import millObj from '../models/mill.obj?raw';
 import millMtl from '../models/mill.mtl?raw';
@@ -44,7 +45,7 @@ export const SHAPE = {
   diamond: 3,
   /** Flächig, ohne Rand - für Overlays wie erschöpfte Vorkommen. */
   flat: 4,
-  /** Mensch mit Armen und Beinen, läuft und arbeitet - Dorfbewohner (models/villager.obj). */
+  /** Mensch mit Armen und Beinen, läuft und arbeitet - Dorfbewohner (models/villager_male.obj). */
   villager: 5,
   /** Windmühle mit drehenden Flügeln (models/mill.obj). */
   mill: 6,
@@ -75,6 +76,8 @@ export const SHAPE = {
    * der Welt (motion[0] = Höhe über Grund), Größe in Tiles.
    */
   dust: 17,
+  /** Wie `villager`, als Frau (models/villager_female.obj). */
+  villagerFemale: 18,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -184,6 +187,9 @@ uniform float uMinSizeTiles;
 // Blender umgebautes Modell weiter richtig laeuft.
 uniform float uHip;
 uniform float uShoulder;
+uniform float uKnee;
+uniform float uElbow;
+uniform float uStride;   // Schrittweite: 1 = voller Schritt, kleiner im langen Rock
 uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 // Modelle: Groesse je Tile der Instanzgroesse, Nabe der Fluegel (links, oben)
 // und die Zeit fuer alles, was sich von selbst bewegt.
@@ -206,6 +212,10 @@ const int P_HEAD = 5;
 const int P_LOAD = 6;
 const int P_SAILS = 7;
 const int P_CLOTH = 8;
+const int P_SHIN_L = 9;
+const int P_SHIN_R = 10;
+const int P_FOREARM_L = 11;
+const int P_FOREARM_R = 12;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -250,7 +260,7 @@ void main() {
     // Modell aus einer OBJ-Datei. Eckpunkte in Modell-Einheiten: x nach vorn,
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
-    bool figure = shape == 5;
+    bool figure = shape == 5 || shape == 18;
     bool natural = shape >= ${FIRST_NATURAL} && shape <= ${LAST_NATURAL};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
     // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
@@ -263,23 +273,67 @@ void main() {
     if (figure) {
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
-      float swing = 0.0;
-      float bob = 0.0;
+      bool legL = part == P_LEG_L || part == P_SHIN_L;
+      bool legR = part == P_LEG_R || part == P_SHIN_R;
+      bool armL = part == P_ARM_L || part == P_FOREARM_L;
+      bool armR = part == P_ARM_R || part == P_FOREARM_R;
+      // Oberkörper: alles über der Hüfte, was kein Bein ist - er neigt und
+      // dreht sich über der Hüfte, Arme und Kopf gehen mit.
+      bool upper = !legL && !legR && (part != P_TORSO || p.z > uHip);
+      // Winkel je Gelenk: positiv schwingt nach vorn. Knie beugen nach
+      // hinten (negativ), Ellbogen nach vorn (positiv).
+      float hipL = 0.0, hipR = 0.0, kneeL = -0.05, kneeR = -0.05;
+      float shL = -0.05, shR = -0.05, elL = 0.15, elR = 0.15;
+      float lean = 0.0, twist = 0.0, sway = 0.0, bob = 0.0;
+
       if (pose == 1) {
-        // Gehen: Beine gegengleich, Arme gegen die Beine, leichtes Wippen
-        // bei jedem Schritt.
-        swing = sin(phase) * 0.6;
-        bob = abs(cos(phase)) * 0.03;
-      }
-      if (pose == 0) {
+        // Gehen: Beine gegengleich, das Knie des nach vorn schwingenden Beins
+        // hebt den Fuß an, Arme pendeln gegen die Beine mit lockerem Ellbogen,
+        // Schultern drehen gegen die Hüfte, der Körper wippt und neigt sich
+        // leicht in die Laufrichtung.
+        float s = sin(phase);
+        float c = cos(phase);
+        hipL = s * 0.55 * uStride;
+        hipR = -s * 0.55 * uStride;
+        kneeL = -0.1 - 0.95 * max(c, 0.0);
+        kneeR = -0.1 - 0.95 * max(-c, 0.0);
+        shL = -s * 0.5;
+        shR = s * 0.5;
+        elL = 0.3 + 0.45 * max(shL, 0.0);
+        elR = 0.3 + 0.45 * max(shR, 0.0);
+        twist = s * 0.12;
+        lean = 0.07;
+        sway = s * 0.012;
+        bob = abs(c) * 0.03;
+      } else if (pose == 2) {
+        // Arbeiten: breiter Stand mit gebeugten Knien, der rechte Arm holt
+        // mit angewinkeltem Ellbogen aus und schlägt mit gestrecktem Arm zu,
+        // der Oberkörper beugt sich beim Schlag vor. Axt, Spitzhacke oder
+        // Pflücken sehen auf diese Größe gleich aus.
+        float up = 0.5 + 0.5 * sin(phase);
+        hipL = 0.25;
+        hipR = -0.15;
+        kneeL = -0.35;
+        kneeR = -0.3;
+        shR = 0.6 + 1.9 * up;
+        elR = 0.15 + 0.9 * up;
+        shL = 0.7 + 0.2 * up;
+        elL = 0.6;
+        lean = 0.12 + 0.18 * (1.0 - up);
+        twist = -0.15 + 0.3 * up;
+        bob = -0.03;
+      } else {
         // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
         // eine Gruppe nicht im Gleichtakt atmet.
         float t = phase;
         // Atmen: Oberkörper hebt und senkt sich.
         if (p.z > uHip) p.z += sin(t * 1.7) * 0.008 * (p.z - uHip) / (1.0 - uHip);
-        // Arme pendeln locker, leicht gegeneinander.
-        if (part == P_ARM_L) p = swingAround(p, uShoulder, sin(t * 0.9) * 0.08 - 0.05);
-        if (part == P_ARM_R) p = swingAround(p, uShoulder, sin(t * 0.9 + 1.3) * 0.08 - 0.05);
+        // Arme hängen locker und pendeln leicht gegeneinander, die Ellbogen
+        // federn mit.
+        shL = sin(t * 0.9) * 0.08 - 0.05;
+        shR = sin(t * 0.9 + 1.3) * 0.08 - 0.05;
+        elL = 0.18 + sin(t * 0.9) * 0.06;
+        elR = 0.18 + sin(t * 0.9 + 1.3) * 0.06;
         // Umschauen: der Kopf dreht sich ab und zu nach links oder rechts,
         // bleibt dort kurz und kommt zurück.
         if (part == P_HEAD) {
@@ -288,20 +342,38 @@ void main() {
           float s = sin(yaw);
           p.xy = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
         }
-        // Gewicht verlagern: der ganze Körper neigt sich leicht zur Seite.
-        p.y += sin(t * 0.55) * 0.02 * p.z;
+        // Gewicht verlagern: der ganze Körper neigt sich leicht zur Seite,
+        // das entlastete Knie knickt ein wenig ein.
+        float shift = sin(t * 0.55);
+        p.y += shift * 0.02 * p.z;
+        kneeL = -0.05 - 0.12 * max(shift, 0.0);
+        kneeR = -0.05 - 0.12 * max(-shift, 0.0);
+        twist = sin(t * 0.3) * 0.04;
       }
-      if (part == P_LEG_L) p = swingAround(p, uHip, swing);
-      if (part == P_LEG_R) p = swingAround(p, uHip, -swing);
-      if (part == P_ARM_L && pose != 0) p = swingAround(p, uShoulder, pose == 2 ? 0.9 : -swing * 0.8);
-      if (part == P_ARM_R && pose != 0) {
-        // Arbeiten: der rechte Arm holt nach oben aus und schlaegt nach vorn -
-        // Axt, Spitzhacke oder Pfluecken sehen auf diese Groesse gleich aus.
-        float chop = 0.6 + 1.9 * (0.5 + 0.5 * sin(phase));
-        p = swingAround(p, uShoulder, pose == 2 ? chop : swing * 0.8);
-      }
+
+      // Erst das untere Glied am Knie bzw. Ellbogen, dann das ganze Glied an
+      // Hüfte bzw. Schulter.
+      if (part == P_SHIN_L) p = swingAround(p, uKnee, kneeL);
+      if (part == P_SHIN_R) p = swingAround(p, uKnee, kneeR);
+      if (part == P_FOREARM_L) p = swingAround(p, uElbow, elL);
+      if (part == P_FOREARM_R) p = swingAround(p, uElbow, elR);
+      if (legL) p = swingAround(p, uHip, hipL);
+      if (legR) p = swingAround(p, uHip, hipR);
+      if (armL) p = swingAround(p, uShoulder, shL);
+      if (armR) p = swingAround(p, uShoulder, shR);
       // Die Last waechst mit der Ladung aus dem Ruecken heraus.
       if (part == P_LOAD) p = uLoadAnchor + (p - uLoadAnchor) * aMotion.w;
+      if (upper) {
+        // Schultern gegen die Hüfte drehen, dann über der Hüfte vorneigen.
+        float c = cos(twist);
+        float s = sin(twist);
+        p.xy = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+        p = swingAround(p, uHip, -lean);
+      } else if (part == P_TORSO) {
+        // Rock und Hosenboden schwingen beim Gehen etwas mit.
+        p.y += twist * 0.25 * (uHip - p.z);
+      }
+      p.y += sway;
       p.z += bob;
     }
 
@@ -412,7 +484,7 @@ void main() {
     vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
-    if (shape != 5 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
+    if (shape != 5 && shape != 18 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
   }
   vParams = aParams;
   vRoof = aCorner.w;
@@ -535,6 +607,12 @@ function flatMesh(): Float32Array {
  * Shader (P_*). Alles andere steht still.
  */
 const PARTS: [prefix: string, part: number][] = [
+  // Unterschenkel und Unterarme vor den ganzen Gliedern - der erste passende
+  // Anfang zählt.
+  ['Leg.L.Lower', 9],
+  ['Leg.R.Lower', 10],
+  ['Arm.L.Lower', 11],
+  ['Arm.R.Lower', 12],
   ['Leg.L', 1],
   ['Leg.R', 2],
   ['Arm.L', 3],
@@ -557,6 +635,8 @@ interface Model {
   vertices: Float32Array;
   hip: number;
   shoulder: number;
+  knee: number;
+  elbow: number;
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
@@ -608,6 +688,8 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
   const v: number[] = [];
   let hip = 0;
   let shoulder = 0;
+  let knee = 0;
+  let elbow = 0;
   const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
@@ -621,6 +703,9 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
       if (part === 1 || part === 2) hip = Math.max(hip, z);
       if (part === 3 || part === 4) shoulder = Math.max(shoulder, z);
+      // Knie und Ellbogen an der Oberkante von Unterschenkel und Unterarm.
+      if (part === 9 || part === 10) knee = Math.max(knee, z);
+      if (part === 11 || part === 12) elbow = Math.max(elbow, z);
       if (part === 6) {
         // Die Last hängt mit ihrer Vorderseite am Rücken.
         load.back = Math.max(load.back, x);
@@ -638,6 +723,8 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
     vertices: new Float32Array(v),
     hip,
     shoulder,
+    knee,
+    elbow,
     loadAnchor: Number.isFinite(load.back)
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
@@ -650,8 +737,10 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
  * Formen, die aus Modell-Dateien kommen. `scale`: Tiles je Einheit der
  * Instanzgröße - eine Figur der Größe 0.55 ist 0.55 * 1.7 Tiles hoch.
  */
-const MODELS: { shape: number; model: Model; scale: number }[] = [
-  { shape: SHAPE.villager, model: loadModel(villagerObj, villagerMtl, 'height'), scale: 1.7 },
+const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] = [
+  { shape: SHAPE.villager, model: loadModel(villagerMaleObj, villagerMtl, 'height'), scale: 1.7 },
+  // Kürzere Schritte, sonst treten die Beine hinten aus dem langen Rock.
+  { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleObj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
   { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
   { shape: SHAPE.lumberCamp, model: loadModel(lumberCampObj, lumberCampMtl, 'width'), scale: 1 },
   { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
@@ -675,7 +764,7 @@ export class EntityRenderer {
   private program: WebGLProgram;
   private building: Mesh;
   private flat: Mesh;
-  private models: { shape: number; model: Model; scale: number; mesh: Mesh; list: EntityInstance[] }[];
+  private models: { shape: number; model: Model; scale: number; stride?: number; mesh: Mesh; list: EntityInstance[] }[];
   private instanceBuffer: WebGLBuffer;
   private uniforms = new Map<string, WebGLUniformLocation | null>();
   /** Wird nur vergrößert, nie neu belegt - eine Allokation je Frame wäre Müll. */
@@ -857,6 +946,9 @@ export class EntityRenderer {
         gl.uniform1f(this.location('uModelScale'), m.scale);
         gl.uniform1f(this.location('uHip'), m.model.hip);
         gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
+        gl.uniform1f(this.location('uKnee'), m.model.knee);
+        gl.uniform1f(this.location('uElbow'), m.model.elbow);
+        gl.uniform1f(this.location('uStride'), m.stride ?? 1);
         gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
         gl.uniform2fv(this.location('uHub'), m.model.hub);
         this.draw(m.mesh, first, m.list.length);
@@ -891,7 +983,7 @@ export class EntityRenderer {
       pixelsPerTile: number, minSizeTiles: number, pixelRatio: number,
   ) {
     const model = this.models.find((m) => m.shape === e.shape);
-    const figure = e.shape === SHAPE.villager;
+    const figure = e.shape === SHAPE.villager || e.shape === SHAPE.villagerFemale;
     // Dieselbe Mindestgröße wie im Vertex-Shader, sonst schwebt der Balken
     // herausgezoomt im Gebäude statt darüber.
     const size = Math.max(e.size, figure ? minSizeTiles * 0.5 : minSizeTiles);
