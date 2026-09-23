@@ -745,9 +745,10 @@ window.addEventListener('beforeunload', () => world.save());
 /**
  * Zoomstufen in CSS-Pixeln je Welt-Tile. Verdopplung je Stufe: die Schrittweite
  * der Abtastung ist damit immer eine Zweierpotenz, und von einem Ende zum
- * anderen sind es fünf Rasten statt Dutzender Ein-Pixel-Schritte.
+ * anderen sind es sieben Rasten statt Dutzender Ein-Pixel-Schritte. Erst die
+ * letzte Stufe (128) zeigt die Dorfbewohner groß genug für ihre Details.
  */
-const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32, 64];
+const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128];
 
 function nearestZoomIndex(pixelsPerTile: number): number {
   let best = 0;

@@ -7,8 +7,92 @@ Ks 0 0 0
 d 1
 illum 1
 
+newmtl Flame
+Kd 1.000 0.780 0.300
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Glass
+Kd 0.220 0.280 0.340
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Gold
+Kd 0.930 0.740 0.220
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Iron
+Kd 0.400 0.420 0.450
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
 newmtl Plaster
 Kd 0.900 0.860 0.760
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl RoofDark
+Kd 0.380 0.200 0.150
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Sack
+Kd 0.800 0.720 0.560
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Shutter
+Kd 0.300 0.450 0.320
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Soot
+Kd 0.100 0.090 0.090
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Stone
+Kd 0.600 0.585 0.560
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl StoneDark
+Kd 0.450 0.440 0.425
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl StoneLight
+Kd 0.720 0.700 0.660
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Tiles
+Kd 0.620 0.270 0.200
 Ka 0 0 0
 Ks 0 0 0
 d 1
@@ -28,22 +112,15 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl Stone
-Kd 0.600 0.580 0.550
+newmtl WoodDark
+Kd 0.300 0.200 0.120
 Ka 0 0 0
 Ks 0 0 0
 d 1
 illum 1
 
-newmtl Tiles
-Kd 0.620 0.270 0.200
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
-newmtl Glass
-Kd 0.200 0.250 0.300
+newmtl WoodLight
+Kd 0.600 0.450 0.280
 Ka 0 0 0
 Ks 0 0 0
 d 1

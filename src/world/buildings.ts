@@ -168,8 +168,12 @@ export const VILLAGER = {
   /** So viel trägt er, bevor er zum Lager geht. */
   capacity: 10,
   color: Color.rgb(70, 110, 190),
-  /** Figurgröße in Tiles - nur fürs Bild; die Figur ist 1.7-mal so hoch. */
-  size: 0.3,
+  /**
+   * Figurgröße in Tiles - nur fürs Bild; die Figur ist 1.7-mal so hoch. Die
+   * Modelle rechnen mit 1 Tile = 5 m: 0.2 * 1.7 * 5 m = 1.7 m, so passt ein
+   * Dorfbewohner durch die 2.1 m hohen Türen der Gebäude.
+   */
+  size: 0.2,
   /** Sammeltempo je Sekunde, solange er am Vorkommen steht. */
   gatherRate: { wood: 0.8, stone: 0.6, gold: 0.5, berries: 0.9 } as Record<GatherType, number>,
   /** Wie weit er nach einem leeren Feld nach dem nächsten derselben Art sucht. */
