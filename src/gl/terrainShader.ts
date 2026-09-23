@@ -406,6 +406,11 @@ float speckle(vec2 tile, float density, float chance, float radius, out float pi
 // meist derselben Art; in manchen Wiesen mehr. Arten: Gänseblümchen (weiß,
 // gelbe Mitte), Butterblume (gelb), Mohn (rot, schwarze Mitte), Kornblume
 // (blau), Klee (rosa Köpfchen). Liefert Farbe und Deckung.
+// Wie stark an diesem Pixel eine Blume, ein Stein oder eine Muschel liegt
+// (0..1). Die Texturen tragen es ein, das Feinrelief spart diese Stellen aus
+// - sonst liegt das Körnungsrauschen von Gras und Sand auch auf ihnen.
+float gPropMask = 0.0;
+
 // Richtung zur Sonne in der Bodenebene - wie SUN beim Relief (links oben).
 const vec2 SUN_XY = vec2(-0.45, 0.35);
 
@@ -417,7 +422,7 @@ vec4 flower(vec2 tile, float ds, float bloom, out float shadow) {
   float group = smoothstep(0.15, 0.65, snoise(L_DETAIL, tile * 0.9 + vec2(5.0, -17.0)));
   vec2 cell = floor(tile * 4.0);
   vec2 rnd = hash22(cell);
-  float chance = (0.02 + meadow * 0.1 + group * (0.25 + meadow * 0.35)) * bloom;
+  float chance = (0.01 + meadow * 0.05 + group * (0.12 + meadow * 0.16)) * bloom;
   if (rnd.x >= chance) return vec4(0.0);
 
   vec2 center = (cell + 0.25 + 0.5 * hash22(cell + 3.1)) / 4.0;
@@ -493,8 +498,92 @@ vec3 grassTexture(vec3 c, vec2 tile, float ds, float moisture, float bloom) {
     vec4 f = flower(tile, ds, bloom, shadow);
     c *= 1.0 - shadow * 0.35;
     c = mix(c, f.rgb, f.a);
+    gPropMask = max(gPropMask, f.a);
   }
   return c;
+}
+
+// Feine Körnungen (etwa -1..1), scharf wie die Grashalme.
+// Waldboden: Nadeln als kurze Striche in zwei Richtungen, Laub als Krümel.
+float forestGrain(vec2 p, float ds, float conifer) {
+  mat2 r1 = mat2(0.76, 0.64, -0.64, 0.76);
+  mat2 r2 = mat2(0.62, -0.78, 0.78, 0.62);
+  float needles = max(snoise(L_DETAIL, (r1 * p) * vec2(38.0, 8.0) + vec2(3.0, 1.0)),
+                      snoise(L_MICRO, (r2 * p) * vec2(34.0, 7.0) + vec2(-9.0, 4.0)));
+  float crumbs = snoise(L_DETAIL, p * 32.0 + vec2(13.0, 61.0)) * 0.7
+      + snoise(L_MICRO, p * 14.0 + vec2(2.0, 8.0)) * 0.3;
+  return mix(crumbs, needles, conifer) * detailFade(0.035, ds);
+}
+// Fels: feiner Grus.
+float rockGrit(vec2 p, float ds) {
+  return (snoise(L_DETAIL, p * 40.0 + vec2(17.0, -3.0)) * 0.55
+      + snoise(L_MICRO, p * 17.0 + vec2(-8.0, 5.0)) * 0.45) * detailFade(0.03, ds);
+}
+// Schnee: sehr feine Körnung.
+float snowGrain(vec2 p, float ds) {
+  return (snoise(L_DETAIL, p * 30.0 + vec2(-2.0, 12.0)) * 0.7
+      + snoise(L_MICRO, p * 12.0 + vec2(4.0, -6.0)) * 0.3) * detailFade(0.03, ds);
+}
+
+// Ein zufälliges Objekt je Zelle (Kantenlänge 1/density Tiles), wenn
+// hash < chance. Liefert Mitte, Radius (aus rMin..rMax) und Zufallszahlen.
+bool propCell(vec2 tile, float density, float chance, float rMin, float rMax,
+              out vec2 q, out float r, out vec2 cellId) {
+  cellId = floor(tile * density);
+  vec2 rnd = hash22(cellId);
+  if (rnd.x >= chance) return false;
+  vec2 center = (cellId + 0.2 + 0.6 * hash22(cellId + 3.1)) / density;
+  r = rMin + (rMax - rMin) * rnd.y;
+  q = (tile - center) / r;
+  return length(q) < 1.8;
+}
+
+// Waldboden: Laubblätter mit Mittelrippe, Zapfen mit Schuppen, Zweige, selten
+// ein Fliegenpilz.
+vec4 forestProp(vec2 tile, float ds, float conifer, out float shadow) {
+  shadow = 0.0;
+  float fade = detailFade(0.06, ds);
+  vec2 q; float r; vec2 id;
+  if (fade <= 0.0 || !propCell(tile, 3.0, 0.1, 0.035, 0.06, q, r, id)) return vec4(0.0);
+  vec2 toSun = normalize(SUN_XY);
+  float sharp = detailFade(r * 0.5, ds);
+  float kind = hash21(id + 5.3);
+  float rot = hash21(id + 6.1) * 6.2832;
+  vec2 p = mat2(cos(rot), sin(rot), -sin(rot), cos(rot)) * q;
+  float lit = 0.85 + 0.25 * dot(q, toSun) * 0.6;
+  vec3 col; float mask;
+  float mushroom = kind < 0.06 ? 1.0 : 0.0;
+  bool cone = conifer > 0.4 ? kind < 0.55 : false;
+  bool twig = conifer > 0.4 ? kind > 0.82 : kind > 0.78;
+  if (mushroom > 0.0) {
+    float d = length(q) * 1.6;
+    mask = smoothstep(1.0, 0.85, d);
+    col = vec3(0.85, 0.12, 0.1) * clamp(0.6 + 0.6 * dot(q * 1.6, toSun) * 0.8 + 0.3 * (1.0 - d), 0.4, 1.3);
+    float dots = speckle(q * 1.6 + id, 3.0, 0.5, 0.12, rot);
+    col = mix(col, vec3(0.97), dots * sharp);
+    shadow = smoothstep(1.0, 0.5, length(q * 1.6 + toSun * 0.4)) * sharp * fade;
+  } else if (twig) {
+    mask = smoothstep(0.1, 0.05, abs(p.y + 0.08 * sin(p.x * 2.0))) * smoothstep(1.6, 1.4, abs(p.x));
+    col = vec3(0.36, 0.26, 0.16) * (0.8 + 0.4 * step(0.0, p.y));
+    shadow = smoothstep(0.14, 0.04, abs(p.y + 0.12 + 0.08 * sin(p.x * 2.0))) * smoothstep(1.6, 1.3, abs(p.x)) * sharp * fade;
+  } else if (cone) {
+    float d = length(vec2(p.x * 0.7, p.y * 1.25));
+    mask = smoothstep(1.0, 0.88, d);
+    float scales = 0.78 + 0.22 * step(0.45, fract(p.x * 2.5 + abs(p.y) * 1.8));
+    col = vec3(0.48, 0.31, 0.17) * scales * clamp(0.6 + 0.5 * dot(q, toSun) * 0.8 + 0.3 * (1.0 - d), 0.4, 1.3);
+    shadow = smoothstep(1.0, 0.5, length(vec2(p.x * 0.7, p.y * 1.25) + toSun * 0.35)) * sharp * fade;
+  } else {
+    // Blatt: spitz zulaufend, Mittelrippe, eine Hälfte etwas heller (gewölbt).
+    float d = length(vec2(p.x, p.y * 2.1)) + abs(p.x) * 0.15;
+    mask = smoothstep(1.0, 0.9, d);
+    float pick = hash21(id + 8.8);
+    vec3 base = pick < 0.3 ? vec3(0.78, 0.42, 0.12) : pick < 0.55 ? vec3(0.55, 0.36, 0.18)
+        : pick < 0.8 ? vec3(0.82, 0.65, 0.22) : vec3(0.62, 0.22, 0.12);
+    col = base * lit * (p.y > 0.0 ? 1.08 : 0.9);
+    col *= 1.0 - smoothstep(0.07, 0.0, abs(p.y)) * 0.3 * sharp;
+    shadow = smoothstep(1.0, 0.6, length(vec2(p.x, p.y * 2.1) + toSun * 0.25)) * sharp * fade * 0.7;
+  }
+  return vec4(col, mask * fade);
 }
 
 // Waldboden: dunkel und erdig, Laubstreu oder Nadeln (dort, wo Nadelbäume
@@ -507,32 +596,159 @@ vec3 forestTexture(vec3 c, vec2 tile, float ds, float height) {
   c = mix(c, mix(vec3(0.42, 0.31, 0.17), vec3(0.38, 0.25, 0.16), conifer), litter * 0.55);
   float mossy = smoothstep(0.2, 0.7, snoise(L_MICRO, tile * 0.35 + vec2(-77.0, 33.0)));
   c = mix(c, vec3(0.30, 0.45, 0.18), mossy * 0.45 * (1.0 - conifer * 0.5));
-  c *= 1.0 + snoise(L_DETAIL, tile * 4.0 + vec2(13.0, 61.0)) * 0.16 * detailFade(0.25, ds);
-  c *= 1.0 - max(snoise(L_MICRO, tile * 1.3 + vec2(9.0, -44.0)), 0.0) * 0.18 * detailFade(0.8, ds);
-  float pick;
-  float fleck = speckle(tile, 4.0, 0.35, 0.035, pick) * detailFade(0.08, ds);
-  if (fleck > 0.0) {
-    vec3 col = pick < 0.4 ? vec3(0.62, 0.42, 0.18) : pick < 0.7 ? vec3(0.25, 0.18, 0.1) : vec3(0.55, 0.5, 0.25);
-    c = mix(c, col, fleck * 0.8);
-  }
+  c *= 1.0 + forestGrain(tile, ds, conifer) * 0.14;
+  float shadow;
+  vec4 prop = forestProp(tile, ds, conifer, shadow);
+  c *= 1.0 - shadow * 0.3;
+  c = mix(c, prop.rgb, prop.a);
+  gPropMask = max(gPropMask, prop.a);
   return c;
+}
+
+// Kleine Dinge auf dem Boden (Steine, Büsche, Muscheln): plastisch
+// schattiert und mit Schatten, wie die Blumen.
+
+// Unregelmäßiger, kantiger Stein wie die Steinmodelle: welliger Umriss,
+// helle flache Oberseite, Seitenfacetten je nach Lage zur Sonne hell oder
+// dunkel, feine Körnung. q in Steinradien, seed 0..1.
+vec4 stoneShape(vec2 q, float seed, vec3 base, vec2 toSun, float sharp) {
+  float a = atan(q.y, q.x);
+  float R = 0.8 + 0.13 * sin(a * 3.0 + seed * 6.3) + 0.08 * sin(a * 5.0 + seed * 17.0);
+  R = mix(0.9, R, sharp);
+  float d = length(q);
+  float mask = smoothstep(R, R - 0.08, d);
+  float k = 6.0 + floor(seed * 3.0);
+  float off = seed * 3.0;
+  float fa = (floor((a + off) / 6.2832 * k) + 0.5) / k * 6.2832 - off;
+  float side = 0.6 + 0.42 * dot(vec2(cos(fa), sin(fa)), toSun);
+  float top = smoothstep(R * 0.52, R * 0.42, d) * sharp;
+  vec3 col = base * mix(mix(0.9, side, sharp), 1.12, top);
+  col *= 0.92 + 0.16 * hash21(floor(q * 5.0) + seed * 31.0);
+  // Glanz an der Kante der Oberseite zur Sonne.
+  float edge = smoothstep(0.1, 0.0, abs(d - R * 0.47)) * max(dot(q / max(d, 1e-3), toSun), 0.0) * sharp;
+  return vec4(mix(col, vec3(1.0), edge * 0.25), mask);
+}
+
+// Feine Sandkörnung (etwa -1..1): viele kleine Körner, scharf wie die
+// Grashalme. Für Farbe und Feinrelief.
+float sandGrain(vec2 p, float ds) {
+  return (snoise(L_DETAIL, p * 46.0 + vec2(-5.0, 23.0)) * 0.6
+      + snoise(L_MICRO, p * 21.0 + vec2(11.0, -4.0)) * 0.4) * detailFade(0.03, ds);
+}
+
+// Sand: sanfte warme Farbverläufe, feine Körnung, glitzernde Körner.
+vec3 sandSurface(vec3 c, vec2 tile, float ds) {
+  c *= 1.0 + snoise(L_MICRO, tile * 0.3 + vec2(8.0, 1.0)) * 0.04;
+  c = mix(c, c * vec3(1.05, 1.0, 0.9), smoothstep(-0.2, 0.6, snoise(L_DETAIL, tile * 0.12 + vec2(3.0, 3.0))) * 0.5);
+  c *= 1.0 + sandGrain(tile, ds) * 0.07;
+  float pick;
+  float grain = speckle(tile, 10.0, 0.12, 0.015, pick) * detailFade(0.02, ds);
+  c = mix(c, pick < 0.7 ? vec3(1.0, 0.97, 0.9) : c * 0.75, grain * 0.6);
+  return c;
+}
+
+// Wüste: Dornbüsche aus Zweigen, Steine, gelbe Grasbüschel.
+vec4 desertProp(vec2 tile, float ds, out float shadow) {
+  shadow = 0.0;
+  float fade = detailFade(0.08, ds);
+  if (fade <= 0.0) return vec4(0.0);
+  vec2 cell = floor(tile * 1.5);
+  vec2 rnd = hash22(cell);
+  if (rnd.x >= 0.1) return vec4(0.0);
+  float kind = hash21(cell + 5.3);
+  float r = kind < 0.45 ? 0.1 + 0.07 * rnd.y : kind < 0.75 ? 0.08 + 0.08 * rnd.y : 0.07 + 0.04 * rnd.y;
+  vec2 center = (cell + 0.2 + 0.6 * hash22(cell + 3.1)) / 1.5;
+  vec2 q = (tile - center) / r;
+  float d = length(q);
+  if (d > 1.8) return vec4(0.0);
+  vec2 toSun = normalize(SUN_XY);
+  float a = atan(q.y, q.x) + rnd.y * 6.2832;
+  float sharp = detailFade(r * 0.5, ds);
+  float facing = dot(q, toSun) / max(d, 1e-3);
+  vec3 col;
+  float mask;
+  if (kind < 0.75 && kind >= 0.45) {
+    // Stein: Sandstein oder grau, gewölbt.
+    shadow = smoothstep(1.0, 0.5, length(q + toSun * 0.4)) * sharp * fade;
+    vec3 base = hash21(cell + 2.2) < 0.5 ? vec3(0.66, 0.52, 0.38) : vec3(0.58, 0.56, 0.52);
+    vec4 st = stoneShape(q, hash21(cell + 4.4), base, toSun, sharp);
+    col = st.rgb;
+    mask = st.a;
+  } else {
+    // Zweige als dünne Strahlen: Dornbusch dunkel-olivgrün, Grasbüschel gelb.
+    // Zwei Lagen Zweige (lang und kurz, gegeneinander verdreht) um einen
+    // dichten Kern - buschig statt dünn und spinnenartig.
+    bool shrub = kind < 0.45;
+    float n1 = shrub ? 6.0 : 8.0;
+    float n2 = shrub ? 9.0 : 11.0;
+    float ray1 = pow(abs(cos(a * n1 * 0.5)), shrub ? 3.0 : 6.0);
+    float ray2 = pow(abs(cos(a * n2 * 0.5 + 1.3)), shrub ? 4.0 : 8.0);
+    float len1 = 0.7 + 0.3 * hash21(vec2(floor(a * n1 / 6.2832), cell.x));
+    float rim = max(ray1 * len1, ray2 * 0.72);
+    rim = mix(0.8, (shrub ? 0.45 : 0.2) + (shrub ? 0.55 : 0.8) * rim, sharp);
+    float core = smoothstep(shrub ? 0.55 : 0.3, shrub ? 0.42 : 0.2, d);
+    mask = max(smoothstep(rim, rim - 0.1, d), core);
+    shadow = smoothstep(1.0, 0.45, length(q + toSun * 0.5)) * sharp * fade * (shrub ? 0.85 : 0.45);
+    float tip = clamp(d / max(rim, 0.3), 0.0, 1.0);
+    col = shrub ? mix(vec3(0.36, 0.36, 0.2), vec3(0.62, 0.6, 0.36), tip)
+                : mix(vec3(0.7, 0.62, 0.34), vec3(0.9, 0.82, 0.52), tip);
+    col *= 0.85 + 0.3 * facing * min(d, 1.0);
+  }
+  return vec4(col, mask * fade);
+}
+
+// Strand: gewölbte Kiesel und gerippte Muscheln.
+vec4 beachProp(vec2 tile, float ds, out float shadow) {
+  shadow = 0.0;
+  float fade = detailFade(0.06, ds);
+  if (fade <= 0.0) return vec4(0.0);
+  vec2 cell = floor(tile * 3.0);
+  vec2 rnd = hash22(cell);
+  if (rnd.x >= 0.05) return vec4(0.0);
+  bool shell = hash21(cell + 5.3) < 0.35;
+  float r = shell ? 0.04 + 0.025 * rnd.y : 0.045 + 0.05 * rnd.y;
+  vec2 center = (cell + 0.2 + 0.6 * hash22(cell + 3.1)) / 3.0;
+  vec2 q = (tile - center) / r;
+  float d = length(q);
+  if (d > 1.7) return vec4(0.0);
+  vec2 toSun = normalize(SUN_XY);
+  float sharp = detailFade(r * 0.5, ds);
+  shadow = smoothstep(1.0, 0.5, length(q + toSun * 0.35)) * sharp * fade;
+  vec3 col;
+  float mask;
+  if (shell) {
+    // Muschel: Fächer mit Rippen, weiß, rosa oder beige.
+    float rot = rnd.y * 6.2832;
+    vec2 p = mat2(cos(rot), sin(rot), -sin(rot), cos(rot)) * q;
+    float a = atan(p.x, p.y + 0.6);
+    float fan = step(abs(a), 1.1) * smoothstep(1.3, 1.15, length(p + vec2(0.0, 0.6)));
+    mask = mix(smoothstep(1.0, 0.8, d), fan, sharp);
+    float pick = hash21(cell + 8.8);
+    vec3 base = pick < 0.4 ? vec3(0.97, 0.95, 0.9) : pick < 0.7 ? vec3(0.95, 0.72, 0.68) : vec3(0.9, 0.8, 0.62);
+    float ribs = 0.8 + 0.2 * abs(cos(a * 7.0));
+    col = base * ribs * (0.85 + 0.25 * dot(q, toSun) * 0.5);
+  } else {
+    float pick = hash21(cell + 2.2);
+    vec3 base = pick < 0.45 ? vec3(0.55, 0.53, 0.5) : pick < 0.75 ? vec3(0.8, 0.77, 0.72) : vec3(0.62, 0.5, 0.42);
+    vec4 st = stoneShape(q, hash21(cell + 4.4), base, toSun, sharp);
+    col = st.rgb;
+    mask = st.a;
+  }
+  return vec4(col, mask * fade);
 }
 
 // Strand: feine Körnung, Rippel, nasser dunkler Saum zum Wasser, Kiesel
 // und Muscheln, angespültes Treibgut.
 vec3 beachTexture(vec3 c, vec2 tile, float ds, float height) {
-  c *= 1.0 + snoise(L_DETAIL, tile * 3.0 + vec2(-5.0, 23.0)) * 0.05 * detailFade(0.3, ds);
-  c *= 1.0 + snoise(L_MICRO, tile * 0.3 + vec2(8.0, 1.0)) * 0.05;
-  float ripple = sin(dot(tile, vec2(2.3, 1.1)) * 3.0 + snoise(L_MICRO, tile * 0.4) * 4.0);
-  c *= 1.0 + ripple * 0.035 * detailFade(0.4, ds);
+  c = sandSurface(c, tile, ds);
   float wet = 1.0 - smoothstep(uSeaLevel, uSeaLevel + (uShoreLevel - uSeaLevel) * 0.45, height);
   c = mix(c, c * vec3(0.72, 0.7, 0.66), wet * 0.8);
   float pick;
-  float pebble = speckle(tile, 3.0, 0.2, 0.05, pick) * detailFade(0.1, ds);
-  if (pebble > 0.0) {
-    vec3 col = pick < 0.5 ? vec3(0.55, 0.52, 0.48) : pick < 0.8 ? vec3(0.95, 0.92, 0.86) : vec3(0.85, 0.6, 0.55);
-    c = mix(c, col, pebble * 0.85);
-  }
+  float shadow;
+  vec4 prop = beachProp(tile, ds, shadow);
+  c *= 1.0 - shadow * 0.3;
+  c = mix(c, prop.rgb, prop.a);
+  gPropMask = max(gPropMask, prop.a);
   float drift = speckle(tile + 40.0, 0.6, 0.12, 0.18, pick) * detailFade(0.3, ds) * (1.0 - wet);
   c = mix(c, vec3(0.45, 0.36, 0.25), drift * 0.6);
   return c;
@@ -543,8 +759,7 @@ vec3 beachTexture(vec3 c, vec2 tile, float ds, float height) {
 vec3 desertTexture(vec3 c, vec2 tile, float ds) {
   float dune = snoise(L_MICRO, tile * 0.09 + vec2(-13.0, 77.0));
   c *= 1.0 + dune * 0.1;
-  float ripple = sin(tile.x * 4.0 + tile.y * 1.5 + snoise(L_DETAIL, tile * 0.25) * 5.0);
-  c *= 1.0 + ripple * 0.05 * detailFade(0.35, ds);
+  c = sandSurface(c, tile, ds);
   float clay = smoothstep(0.35, 0.6, snoise(L_DETAIL, tile * 0.06 + vec2(31.0, -8.0)));
   if (clay > 0.0) {
     vec3 cl = c * vec3(0.9, 0.78, 0.66);
@@ -554,30 +769,81 @@ vec3 desertTexture(vec3 c, vec2 tile, float ds) {
     c = mix(c, cl, clay);
   }
   float pick;
-  float bush = speckle(tile, 0.8, 0.12, 0.09, pick) * detailFade(0.15, ds);
-  c = mix(c, mix(vec3(0.45, 0.42, 0.25), vec3(0.36, 0.3, 0.2), pick), bush * 0.85);
+  float shadow;
+  vec4 prop = desertProp(tile, ds, shadow);
+  c *= 1.0 - shadow * 0.3;
+  c = mix(c, prop.rgb, prop.a);
+  gPropMask = max(gPropMask, prop.a);
   return c;
+}
+
+// Gebirge: Geröllbrocken, kantig.
+vec4 rockProp(vec2 tile, float ds, out float shadow) {
+  shadow = 0.0;
+  float fade = detailFade(0.07, ds);
+  vec2 q; float r; vec2 id;
+  if (fade <= 0.0 || !propCell(tile, 2.5, 0.1, 0.06, 0.14, q, r, id)) return vec4(0.0);
+  vec2 toSun = normalize(SUN_XY);
+  float sharp = detailFade(r * 0.5, ds);
+  shadow = smoothstep(1.0, 0.5, length(q + toSun * 0.4)) * sharp * fade;
+  vec3 base = vec3(0.55, 0.53, 0.5) * (0.85 + 0.3 * hash21(id + 2.2));
+  vec4 st = stoneShape(q, hash21(id + 4.4), base, toSun, sharp);
+  return vec4(st.rgb, st.a * fade);
+}
+
+// Schnee: Felsbrocken, die mit einer Schneehaube herausschauen.
+vec4 snowProp(vec2 tile, float ds, out float shadow) {
+  shadow = 0.0;
+  float fade = detailFade(0.07, ds);
+  vec2 q; float r; vec2 id;
+  if (fade <= 0.0 || !propCell(tile, 2.0, 0.05, 0.06, 0.13, q, r, id)) return vec4(0.0);
+  vec2 toSun = normalize(SUN_XY);
+  float sharp = detailFade(r * 0.5, ds);
+  shadow = smoothstep(1.0, 0.5, length(q + toSun * 0.4)) * sharp * fade;
+  vec4 st = stoneShape(q, hash21(id + 4.4), vec3(0.42, 0.41, 0.42), toSun, sharp);
+  float cap = smoothstep(0.1, 0.5, dot(q, toSun) + 0.3) * smoothstep(0.85, 0.55, length(q));
+  vec3 col = mix(st.rgb, vec3(0.95, 0.97, 1.0), cap * sharp);
+  return vec4(col, st.a * fade);
 }
 
 // Fels: Schichtbänder, Risse, Flechten und Geröll.
 vec3 rockTexture(vec3 c, vec2 tile, float ds, float height) {
   float strata = sin(height * 140.0 + snoise(L_MICRO, tile * 0.15) * 3.0);
   c *= 1.0 + strata * 0.06;
-  c *= 1.0 + snoise(L_DETAIL, tile * 2.5 + vec2(17.0, -3.0)) * 0.08 * detailFade(0.3, ds);
+  c *= 1.0 + rockGrit(tile, ds) * 0.1;
   float crack = abs(snoise(L_DETAIL, tile * 0.9 + vec2(-60.0, 12.0)));
-  c *= 1.0 - (1.0 - smoothstep(0.0, 0.05, crack)) * 0.3 * detailFade(0.4, ds);
+  c *= 1.0 - (1.0 - smoothstep(0.0, 0.04, crack)) * 0.3 * detailFade(0.4, ds);
   float lichen = smoothstep(0.45, 0.75, snoise(L_MICRO, tile * 0.6 + vec2(5.0, 50.0)));
   c = mix(c, vec3(0.55, 0.57, 0.38), lichen * 0.3);
+  float shadow;
+  vec4 prop = rockProp(tile, ds, shadow);
+  c *= 1.0 - shadow * 0.3;
+  c = mix(c, prop.rgb, prop.a);
+  gPropMask = max(gPropMask, prop.a);
+  return c;
+}
+
+// Schnee: weiche, weite Verwehungen, feine glitzernde Körnung, bläuliche
+// Mulden, vereinzelt Felsbrocken mit Schneehaube.
+vec3 snowTexture(vec3 c, vec2 tile, float ds) {
+  float drift = snoise(L_MICRO, tile * 0.25 + vec2(-3.0, 17.0));
+  c = mix(c, c * vec3(0.86, 0.92, 1.02), smoothstep(0.0, -0.6, drift) * 0.5);
+  c *= 1.0 + snowGrain(tile, ds) * 0.04;
   float pick;
-  float stone = speckle(tile, 2.0, 0.3, 0.08, pick) * detailFade(0.12, ds);
-  c = mix(c, c * (0.75 + pick * 0.5), stone);
+  float glitter = speckle(tile, 14.0, 0.1, 0.012, pick) * detailFade(0.02, ds);
+  c = mix(c, vec3(1.0), glitter * 0.8);
+  float shadow;
+  vec4 prop = snowProp(tile, ds, shadow);
+  c *= 1.0 - shadow * 0.2;
+  c = mix(c, prop.rgb, prop.a);
+  gPropMask = max(gPropMask, prop.a);
   return c;
 }
 
 // Feinrelief des Bodens (in Tiles, ohne Einheit): Grasbüschel, Laubhaufen,
 // Sandrippel, Felsblöcke - je nach Anteil. Nur für die Beleuchtung, das
 // Gelände selbst wird dadurch nicht höher.
-float groundBump(vec2 p, float ds, float wood, float sand, float rock) {
+float groundBump(vec2 p, float ds, float wood, float sand, float rock, float snow, float height) {
   // Gras: feine, längliche Halme, je Gegend etwas anders geneigt, dazu ganz
   // flache Wellen. Grob darf es hier nicht werden, sonst sieht es fleckig aus.
   float lean = snoise(L_MICRO, p * 0.3 + vec2(40.0, 2.0)) * 0.8;
@@ -586,14 +852,15 @@ float groundBump(vec2 p, float ds, float wood, float sand, float rock) {
   float grass = (snoise(L_DETAIL, bp * vec2(34.0, 10.0) + vec2(-21.0, 7.0)) * 0.45
       + snoise(L_MICRO, bp * vec2(20.0, 7.0) + vec2(5.0, 9.0)) * 0.25) * detailFade(0.04, ds)
       + snoise(L_MICRO, p * 1.6 + vec2(3.7, -9.1)) * 0.06;
-  float litter = snoise(L_MICRO, p * 2.2 + vec2(9.0, -44.0)) * 0.8
-      + snoise(L_DETAIL, p * 6.0 + vec2(13.0, 61.0)) * 0.4 * detailFade(0.15, ds);
-  float ripple = sin(dot(p, vec2(2.3, 1.1)) * 3.0 + snoise(L_MICRO, p * 0.4) * 4.0) * 0.35
-      * detailFade(0.4, ds);
-  float blocks = (1.0 - abs(snoise(L_DETAIL, p * 0.9 + vec2(-60.0, 12.0)))) * 1.2;
+  float conifer = clamp((height + 0.1) / 0.45, 0.0, 1.0);
+  float litter = forestGrain(p, ds, conifer) * 0.5 + snoise(L_MICRO, p * 2.2 + vec2(9.0, -44.0)) * 0.12;
+  float sandH = sandGrain(p, ds) * 0.5 + snoise(L_MICRO, p * 0.8 + vec2(6.0, 6.0)) * 0.08;
+  float blocks = rockGrit(p, ds) * 0.45 + (1.0 - abs(snoise(L_DETAIL, p * 0.9 + vec2(-60.0, 12.0)))) * 0.5;
+  float snowH = snowGrain(p, ds) * 0.4 + snoise(L_MICRO, p * 0.25 + vec2(-3.0, 17.0)) * 0.15;
   float h = mix(grass, litter, wood);
-  h = mix(h, ripple, sand);
-  return mix(h, blocks, rock);
+  h = mix(h, sandH, sand);
+  h = mix(h, blocks, rock);
+  return mix(h, snowH, snow);
 }
 
 // Grundfarbe eines Land-Bioms ohne Textur: Verlauf nach Höhe im Biom.
@@ -628,6 +895,9 @@ void main() {
 
   bool isWater = biome == B_DEEP_WATER || biome == B_WATER;
   vec3 color;
+  // Anteil Sand (Strand, Wüste) - dort wird die Hangschattierung sanfter,
+  // sonst zieht das Höhenrauschen dunkle Schlieren durch den Sand.
+  float sandy = 0.0;
 
   if (isWater) {
     float depth = clamp(
@@ -654,10 +924,15 @@ void main() {
     float beach = 1.0 - smoothstep(uShoreLevel - shoreBand, uShoreLevel + shoreBand,
                                    height + jitter * shoreBand * 0.8);
     float rock = smoothstep(uHillLevel - 0.05, uHillLevel + 0.05, height + jitter * 0.025);
+    sandy = max(beach, desert) * (1.0 - rock);
 
+    float snow = biome == B_SNOW ? 1.0 : 0.0;
     if (biome == B_SNOW) {
-      color = biomeBase(biome, height, variation);
-      color *= 1.0 + snoise(L_DETAIL, tile * 1.5) * 0.03 * detailFade(0.4, detailStep);
+      color = snowTexture(biomeBase(biome, height, variation), tile, detailStep);
+      wood = 0.0;
+      rock = 0.0;
+      beach = 0.0;
+      desert = 0.0;
     } else {
       // Pflanzendecke: Wiese, Wald, Wüste.
       vec3 cover = vec3(0.0);
@@ -676,19 +951,24 @@ void main() {
       if (rock > 0.0) {
         color = mix(color, rockTexture(biomeBase(B_MOUNTAIN, height, variation), tile, detailStep, height), rock);
       }
+    }
 
+    {
       // Feinrelief beleuchten: Normale aus dem Anstieg des Bump-Musters,
       // Licht wie beim Gelände von links oben. So wirkt der Boden körnig und
       // plastisch statt glatt bemalt. Weit draußen blendet es aus.
-      float bumpFade = detailFade(0.12, detailStep);
+      float bumpFade = detailFade(0.12, detailStep) * (1.0 - gPropMask);
       if (bumpFade > 0.0) {
         float sandShare = max(beach, desert);
         float e = max(detailStep * 0.75, 0.004);
-        float b0 = groundBump(tile, detailStep, wood, sandShare, rock);
-        float bx = groundBump(tile + vec2(e, 0.0), detailStep, wood, sandShare, rock);
-        float by = groundBump(tile + vec2(0.0, e), detailStep, wood, sandShare, rock);
-        // Gras nur zart, Laub, Sand und Fels kräftiger.
-        float k = mix(0.018, 0.05, max(max(wood, sandShare), rock));
+        float b0 = groundBump(tile, detailStep, wood, sandShare, rock, snow, height);
+        float bx = groundBump(tile + vec2(e, 0.0), detailStep, wood, sandShare, rock, snow, height);
+        float by = groundBump(tile + vec2(0.0, e), detailStep, wood, sandShare, rock, snow, height);
+        // Gras und Schnee zart, Sand etwas mehr, Laub und Fels kräftiger.
+        float k = mix(0.018, 0.04, wood);
+        k = mix(k, 0.05, rock);
+        k = mix(k, 0.02, sandShare * (1.0 - rock));
+        k = mix(k, 0.022, snow);
         vec3 bn = normalize(vec3(-(bx - b0) / e * k, -(by - b0) / e * k, 1.0));
         vec3 sun = normalize(vec3(SUN_XY, 0.82));
         float light = dot(bn, sun) / sun.z;
@@ -706,7 +986,7 @@ void main() {
   float hRight = elevation((tile + vec2(step, 0.0)) * uMapScale, detailStep);
   float hDown = elevation((tile + vec2(0.0, step)) * uMapScale, detailStep);
   float shade = tanh(((height - hRight) + (height - hDown)) * uShadeGain / step);
-  color *= 1.0 + shade * (isWater ? 0.08 : 0.42);
+  color *= 1.0 + shade * (isWater ? 0.08 : mix(0.42, 0.18, sandy));
 
   // Licht auf das Relief. Die Hangneigung oben ist nur ein Schattierungs-
   // effekt der Hoehenwerte; hier zaehlt die Neigung der tatsaechlich
