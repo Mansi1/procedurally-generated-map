@@ -24,6 +24,8 @@ export interface Building {
   queue: number;
   /** Sekunden, die der vorderste in der Warteschlange schon ausgebildet wird. */
   progress: number;
+  /** Verbleibende Trefferpunkte - höchstens BUILDINGS[type].hp. */
+  hp: number;
 }
 
 /**
@@ -51,6 +53,8 @@ export interface Villager {
   task: Task;
   /** Warum er untätig ist, falls es einen Grund gibt - für die Anzeige. */
   problem: string | null;
+  /** Verbleibende Trefferpunkte - höchstens VILLAGER.hp. */
+  hp: number;
   /** Blickrichtung in Radiant (Weltkoordinaten). */
   heading: number;
   /** Was er im letzten Tick getan hat - steuert die Animation (POSE). */
@@ -88,6 +92,7 @@ function newVillager(id: number, x: number, y: number): Villager {
     carryType: null,
     task: { kind: 'idle' },
     problem: null,
+    hp: VILLAGER.hp,
     // Zur Kamera gewandt: die schaut entlang -(1, 1).
     heading: Math.PI * 0.25,
     pose: POSE.stand,
@@ -106,8 +111,8 @@ const DELIVER_REACH = 0.6;
 interface SaveData {
   version: 2;
   stock: Stock;
-  buildings: { t: BuildingType; x: number; y: number; q?: number }[];
-  villagers: { x: number; y: number; c: number; ct: GatherType | null; task: Task }[];
+  buildings: { t: BuildingType; x: number; y: number; q?: number; hp?: number }[];
+  villagers: { x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number }[];
   /** "x,y" -> bereits entnommene Menge. */
   harvested: Record<string, number>;
 }
@@ -251,7 +256,7 @@ export class World {
     if (reason) return reason;
 
     this.pay(BUILDINGS[type].cost);
-    this.buildings.set(key(x, y), { type, x, y, queue: 0, progress: 0 });
+    this.buildings.set(key(x, y), { type, x, y, queue: 0, progress: 0, hp: BUILDINGS[type].hp });
     for (const [tx, ty] of this.footprintTiles(x, y, type)) {
       this.occupied.set(key(tx, ty), key(x, y));
     }
@@ -534,8 +539,14 @@ export class World {
    * damit große Gebäude am Bildrand nicht abgeschnitten aufpoppen.
    * @param blend 0..1 - wie weit der nächste Tick schon fortgeschritten ist,
    *   damit Dorfbewohner flüssig laufen statt zehnmal je Sekunde zu springen.
+   * @param selection was ausgewählt ist - nur das bekommt einen Lebensbalken
    */
-  instances(view: ViewRect, out: EntityInstance[] = [], blend = 1): EntityInstance[] {
+  instances(
+      view: ViewRect,
+      out: EntityInstance[] = [],
+      blend = 1,
+      selection?: { villagers: ReadonlySet<number>; building: string | null },
+  ): EntityInstance[] {
     const margin = 4;
     const x0 = view.x - margin;
     const y0 = view.y - margin;
@@ -562,6 +573,7 @@ export class World {
         color: def.color.toRGB(),
         shape: def.shape,
         alpha: 1,
+        health: selection?.building === key(building.x, building.y) ? building.hp / def.hp : undefined,
       });
     }
 
@@ -585,6 +597,7 @@ export class World {
         shape: SHAPE.villager,
         alpha: 1,
         motion: [v.heading, phase, v.pose, load],
+        health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,
         accent: v.carryType ? RESOURCE_TYPE_COLORS[v.carryType].toRGB() : undefined,
       });
     }
@@ -604,9 +617,9 @@ export class World {
     const data: SaveData = {
       version: 2,
       stock: this.stock,
-      buildings: [...this.buildings.values()].map((b) => ({ t: b.type, x: b.x, y: b.y, q: b.queue })),
+      buildings: [...this.buildings.values()].map((b) => ({ t: b.type, x: b.x, y: b.y, q: b.queue, hp: b.hp })),
       villagers: this.villagers.map((v) => ({
-        x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task,
+        x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp,
       })),
       harvested: Object.fromEntries(this.harvested),
     };
@@ -650,7 +663,9 @@ export class World {
 
     for (const b of data.buildings ?? []) {
       if (!BUILDINGS[b.t]) continue;
-      this.buildings.set(key(b.x, b.y), { type: b.t, x: b.x, y: b.y, queue: b.q ?? 0, progress: 0 });
+      // Ältere Speicherstände kennen keine Trefferpunkte - dann unbeschädigt.
+      const hp = Math.min(b.hp ?? BUILDINGS[b.t].hp, BUILDINGS[b.t].hp);
+      this.buildings.set(key(b.x, b.y), { type: b.t, x: b.x, y: b.y, queue: b.q ?? 0, progress: 0, hp });
       for (const [tx, ty] of this.footprintTiles(b.x, b.y, b.t)) {
         this.occupied.set(key(tx, ty), key(b.x, b.y));
       }
@@ -662,6 +677,7 @@ export class World {
         v.carrying = s.c;
         v.carryType = s.ct && GATHER_TYPES.includes(s.ct) ? s.ct : null;
         v.task = s.task ?? { kind: 'idle' };
+        v.hp = Math.min(s.hp ?? VILLAGER.hp, VILLAGER.hp);
         this.villagers.push(v);
       }
     }

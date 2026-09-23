@@ -1,0 +1,43 @@
+# house.mtl
+
+newmtl Paint
+Kd 0.840 0.620 0.380
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Plaster
+Kd 0.900 0.860 0.760
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Timber
+Kd 0.270 0.180 0.110
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Wood
+Kd 0.420 0.290 0.170
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Stone
+Kd 0.550 0.540 0.520
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Glass
+Kd 0.200 0.250 0.300
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

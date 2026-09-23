@@ -1,0 +1,29 @@
+# mill.mtl
+
+newmtl Plaster
+Kd 0.860 0.820 0.720
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Paint
+Kd 0.780 0.290 0.330
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Wood
+Kd 0.360 0.250 0.150
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Canvas
+Kd 0.930 0.900 0.820
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

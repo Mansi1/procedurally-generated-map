@@ -382,7 +382,8 @@ function updateSelectionUI() {
   let html: string;
   if (building) {
     const def = BUILDINGS[building.type];
-    html = `<div class="title">${def.label}</div>`;
+    html = `<div class="title">${def.label}</div>` +
+      `<div>Trefferpunkte <b>${Math.ceil(building.hp)}/${def.hp}</b></div>`;
     if (def.accepts.length > 0) {
       html += `<div class="muted">Lager für ${def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join(', ')}</div>`;
     }
@@ -415,7 +416,9 @@ function updateSelectionUI() {
       const text = world.describe(v).replace(/ \(\d+\)$/, '');
       counts.set(text, (counts.get(text) ?? 0) + 1);
     }
+    const hp = chosen.reduce((sum, v) => sum + v.hp, 0);
     html = `<div class="title">${chosen.length} ${VILLAGER.label}</div>` +
+      `<div>Trefferpunkte <b>${Math.ceil(hp)}/${chosen.length * VILLAGER.hp}</b></div>` +
       [...counts].map(([text, n]) => `<div>${n}× ${text}</div>`).join('') +
       `<div class="muted">Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · ` +
       `auf ein Lager: abliefern · sonst: hingehen</div>`;
@@ -650,7 +653,8 @@ function invalidatePlacementCheck() {
 /** Gebäude, erschöpfte Felder und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
-  world.instances(visibleWorldRect(view()), overlay, blend);
+  world.instances(visibleWorldRect(view()), overlay, blend,
+      { villagers: selectedVillagers, building: selectedBuilding });
 
   // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.
   for (const v of world.villagers) {

@@ -328,7 +328,7 @@ export class MapRenderer {
     this.terrain.render(camera);
     // Mindestens acht Geräte-Pixel: kleiner wird ein Gebäude auf der
     // herausgezoomten Karte zum Einzelpunkt und ist nicht mehr zu erkennen.
-    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile);
+    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true);
   }
 }
 

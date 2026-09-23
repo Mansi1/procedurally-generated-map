@@ -39,6 +39,8 @@ export interface BuildingDef {
   accepts: readonly GatherType[];
   /** Bildet Dorfbewohner aus. */
   trains: boolean;
+  /** Trefferpunkte, wenn es unbeschädigt ist - Werte wie in AoE2. */
+  hp: number;
 }
 
 /** Was ein Dorfbewohner sammeln kann. */
@@ -52,8 +54,10 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   town_center: {
     label: 'Hauptgebäude',
     key: '1',
-    color: Color.rgb(226, 232, 240),
-    shape: SHAPE.square,
+    // Spielerfarbe - wie der Kittel der Dorfbewohner. Sie steht auf Fahne und
+    // Bannern des Modells (Material Paint).
+    color: Color.rgb(70, 110, 190),
+    shape: SHAPE.townCenter,
     size: 3,
     footprint: 3,
     terrain: BUILDABLE,
@@ -61,39 +65,42 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     provides: 10,
     // Das Hauptgebäude nimmt alles an - wie in AoE2 reicht es am Anfang allein.
     accepts: GATHER_TYPES,
+    hp: 2400,
     trains: true,
   },
   house: {
     label: 'Haus',
     key: '2',
     color: Color.rgb(214, 158, 96),
-    shape: SHAPE.square,
+    shape: SHAPE.house,
     size: 1.6,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 30 },
     provides: 5,
     accepts: [],
+    hp: 550,
     trains: false,
   },
   lumberjack: {
     label: 'Holzlager',
     key: '3',
     color: Color.rgb(126, 92, 48),
-    shape: SHAPE.triangle,
+    shape: SHAPE.lumberCamp,
     size: 2,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 50 },
     provides: 0,
     accepts: ['wood'],
+    hp: 600,
     trains: false,
   },
   mine: {
     label: 'Minenlager',
     key: '4',
     color: Color.rgb(150, 152, 162),
-    shape: SHAPE.diamond,
+    shape: SHAPE.miningCamp,
     size: 2,
     footprint: 1,
     // Minenlager stehen am Fuß des Gebirges, nicht darauf - auf Fels selbst
@@ -102,19 +109,21 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     cost: { wood: 60, stone: 20 },
     provides: 0,
     accepts: ['stone', 'gold'],
+    hp: 600,
     trains: false,
   },
   forager: {
     label: 'Mühle',
     key: '5',
     color: Color.rgb(198, 74, 84),
-    shape: SHAPE.circle,
-    size: 1.6,
+    shape: SHAPE.mill,
+    size: 1.7,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 40 },
     provides: 0,
     accepts: ['berries'],
+    hp: 600,
     trains: false,
   },
 };
@@ -143,6 +152,8 @@ export const VILLAGER = {
   cost: { berries: 50 } as Partial<Stock>,
   /** Ausbildungszeit in Sekunden. */
   trainTime: 6,
+  /** Trefferpunkte, wenn er unverletzt ist - wie in AoE2. */
+  hp: 25,
   /** Tiles je Sekunde. */
   speed: 1.6,
   /** So viel trägt er, bevor er zum Lager geht. */

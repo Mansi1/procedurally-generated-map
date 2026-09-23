@@ -1,0 +1,29 @@
+# villager.mtl
+
+newmtl Tunic
+Kd 0.275 0.431 0.745
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Trousers
+Kd 0.320 0.240 0.170
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Skin
+Kd 0.930 0.760 0.600
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Load
+Kd 0.470 0.340 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

@@ -1,0 +1,36 @@
+# lumber_camp.mtl
+
+newmtl Paint
+Kd 0.490 0.360 0.190
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Wood
+Kd 0.400 0.280 0.160
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Bark
+Kd 0.330 0.220 0.120
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl LogEnd
+Kd 0.850 0.700 0.470
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Iron
+Kd 0.550 0.570 0.600
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

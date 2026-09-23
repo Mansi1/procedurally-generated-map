@@ -12,6 +12,19 @@ import type { RGB } from '../functions/Color';
 import { PROJECT_GLSL, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
 import { TERRAIN_COMMON } from './terrainShader';
+import { parseMtl, parseObj } from './obj';
+import villagerObj from '../models/villager.obj?raw';
+import villagerMtl from '../models/villager.mtl?raw';
+import millObj from '../models/mill.obj?raw';
+import millMtl from '../models/mill.mtl?raw';
+import lumberCampObj from '../models/lumber_camp.obj?raw';
+import lumberCampMtl from '../models/lumber_camp.mtl?raw';
+import houseObj from '../models/house.obj?raw';
+import houseMtl from '../models/house.mtl?raw';
+import townCenterObj from '../models/town_center.obj?raw';
+import townCenterMtl from '../models/town_center.mtl?raw';
+import miningCampObj from '../models/mining_camp.obj?raw';
+import miningCampMtl from '../models/mining_camp.mtl?raw';
 
 /** Formen für aParams.x - die Zahlen stehen so auch im Shader. */
 export const SHAPE = {
@@ -21,8 +34,20 @@ export const SHAPE = {
   diamond: 3,
   /** Flächig, ohne Rand - für Overlays wie erschöpfte Vorkommen. */
   flat: 4,
-  /** Mensch mit Armen und Beinen, läuft und arbeitet - Dorfbewohner. */
+  /** Mensch mit Armen und Beinen, läuft und arbeitet - Dorfbewohner (models/villager.obj). */
   villager: 5,
+  /** Windmühle mit drehenden Flügeln (models/mill.obj). */
+  mill: 6,
+  /** Offener Holzschuppen mit Stammstapel (models/lumber_camp.obj). */
+  lumberCamp: 7,
+  /** Fachwerkhaus mit Satteldach (models/house.obj). */
+  house: 8,
+  /** Halle mit Turm, Vorhalle und Fahne (models/town_center.obj). */
+  townCenter: 9,
+  /** Nur intern: Lebensbalken über einer Instanz mit `health`. */
+  healthBar: 10,
+  /** Schuppen mit Steinen, Gold und Erzwagen (models/mining_camp.obj). */
+  miningCamp: 11,
 } as const;
 
 /** Was eine Figur gerade tut - steuert die Animation. */
@@ -48,7 +73,15 @@ export interface EntityInstance {
   motion?: [number, number, number, number];
   /** Nur für Figuren: Farbe der Last auf dem Rücken. */
   accent?: RGB;
+  /**
+   * Trefferpunkte 0..1 - gesetzt, wird darüber ein Lebensbalken gezeichnet.
+   * Die Welt setzt es nur für Ausgewähltes, wie in AoE2.
+   */
+  health?: number;
 }
+
+/** Oberkante der Klotz-Formen in Kantenlängen (Wand + Dach, wie `dims` im Shader). */
+const BOX_TOP: Record<number, number> = { 0: 0.55, 1: 1.6, 2: 0.9, 3: 0.42 };
 
 /** Float-Werte je Instanz: aTile(2) + aColor(3) + aParams(3) + aMotion(4) + aAccent(3). */
 const STRIDE = 15;
@@ -73,9 +106,20 @@ layout(location = 2) in vec3 aColor;
 layout(location = 3) in vec3 aParams;   // x = Form, y = Alpha, z = Größe in Tiles
 layout(location = 4) in vec4 aMotion;   // Figuren: Blickrichtung, Phase, Pose, Ladung
 layout(location = 5) in vec3 aAccent;   // Figuren: Farbe der Last
+layout(location = 6) in vec4 aMaterial; // Modelle: Materialfarbe, w = Rolle (MATERIAL_ROLE)
 
 /** Untergrenze für die Größe, damit Gebäude beim Herauszoomen sichtbar bleiben. */
 uniform float uMinSizeTiles;
+// Gelenke der Figur in Koerperhoehen - aus dem Modell abgelesen, damit ein in
+// Blender umgebautes Modell weiter richtig laeuft.
+uniform float uHip;
+uniform float uShoulder;
+uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
+// Modelle: Groesse je Tile der Instanzgroesse, Nabe der Fluegel (links, oben)
+// und die Zeit fuer alles, was sich von selbst bewegt.
+uniform float uModelScale;
+uniform vec2  uHub;
+uniform float uTime;
 
 out vec3 vWorld;
 out vec3 vColor;
@@ -90,9 +134,12 @@ const int P_ARM_L = 3;
 const int P_ARM_R = 4;
 const int P_HEAD = 5;
 const int P_LOAD = 6;
+const int P_SAILS = 7;
 
-const float HIP = 0.46;
-const float SHOULDER = 0.78;
+// Gebaeude-Modelle schauen schraeg zur Kamera (die steht bei +x +y): man
+// sieht die Vorderseite und eine Flanke, und die Fluegel wirken raeumlich.
+const float BUILDING_HEADING = 0.5;
+
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
 // so schwingen Arme und Beine nach vorn und hinten.
@@ -114,41 +161,76 @@ void main() {
   vec2 center = aTile + 0.5;
   vec3 world;
 
-  if (shape == 5) {
-    // Mensch. Das Mesh ist in Koerperhoehen modelliert: x nach vorn, y nach
-    // links, z nach oben, Fuesse bei 0, Scheitel bei 1.
-    float size = max(aParams.z, uMinSizeTiles * 0.5);
-    float height = size * 1.7;
+  if (shape == 10) {
+    // Lebensbalken: ein Rechteck fester Pixelgroesse ueber dem Kopf der
+    // Instanz. Verankert wird er in der Welt, die Ausdehnung kommt in
+    // Bildschirmpixeln dazu - so bleibt er auf jeder Zoomstufe lesbar.
+    // aMotion: x = Anteil 0..1, y = Hoehe des Ankers ueber Grund (Tiles),
+    //          z = Balkenhoehe (px), w = Abstand zum Anker (px).
+    vec4 clip = project(center, groundZ(center) + aMotion.y);
+    vec2 px = vec2((aCorner.x - 0.5) * aParams.z, aCorner.y * aMotion.z + aMotion.w);
+    clip.xy += px * 2.0 / uResolution;
+    clip.z = -1.0;  // vor allem anderen
+    gl_Position = clip;
+    vWorld = vec3(aCorner.xy, aMotion.z);
+    vColor = aColor;
+    vParams = aParams;
+    vRoof = aMotion.x;
+    return;
+  }
+
+  if (shape >= 5) {  // 10 (Lebensbalken) ist oben schon abgefangen
+    // Modell aus einer OBJ-Datei. Eckpunkte in Modell-Einheiten: x nach vorn,
+    // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
+    // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
+    bool figure = shape == 5;
+    float size = figure ? max(aParams.z, uMinSizeTiles * 0.5) : max(aParams.z, uMinSizeTiles);
+    float scale = size * uModelScale;
     int part = int(aCorner.w + 0.5);
     vec3 p = aCorner.xyz;
-    float phase = aMotion.y;
-    int pose = int(aMotion.z + 0.5);
 
-    float swing = 0.0;
-    float bob = 0.0;
-    if (pose == 1) {
-      // Gehen: Beine gegengleich, Arme gegen die Beine, leichtes Wippen
-      // bei jedem Schritt.
-      swing = sin(phase) * 0.6;
-      bob = abs(cos(phase)) * 0.03;
+    if (figure) {
+      float phase = aMotion.y;
+      int pose = int(aMotion.z + 0.5);
+      float swing = 0.0;
+      float bob = 0.0;
+      if (pose == 1) {
+        // Gehen: Beine gegengleich, Arme gegen die Beine, leichtes Wippen
+        // bei jedem Schritt.
+        swing = sin(phase) * 0.6;
+        bob = abs(cos(phase)) * 0.03;
+      }
+      if (part == P_LEG_L) p = swingAround(p, uHip, swing);
+      if (part == P_LEG_R) p = swingAround(p, uHip, -swing);
+      if (part == P_ARM_L) p = swingAround(p, uShoulder, pose == 2 ? 0.9 : -swing * 0.8);
+      if (part == P_ARM_R) {
+        // Arbeiten: der rechte Arm holt nach oben aus und schlaegt nach vorn -
+        // Axt, Spitzhacke oder Pfluecken sehen auf diese Groesse gleich aus.
+        float chop = 0.6 + 1.9 * (0.5 + 0.5 * sin(phase));
+        p = swingAround(p, uShoulder, pose == 2 ? chop : swing * 0.8);
+      }
+      // Die Last waechst mit der Ladung aus dem Ruecken heraus.
+      if (part == P_LOAD) p = uLoadAnchor + (p - uLoadAnchor) * aMotion.w;
+      p.z += bob;
     }
-    if (part == P_LEG_L) p = swingAround(p, HIP, swing);
-    if (part == P_LEG_R) p = swingAround(p, HIP, -swing);
-    if (part == P_ARM_L) p = swingAround(p, SHOULDER, pose == 2 ? 0.9 : -swing * 0.8);
-    if (part == P_ARM_R) {
-      // Arbeiten: der rechte Arm holt nach oben aus und schlaegt nach vorn -
-      // Axt, Spitzhacke oder Pfluecken sehen auf diese Groesse gleich aus.
-      float chop = 0.6 + 1.9 * (0.5 + 0.5 * sin(phase));
-      p = swingAround(p, SHOULDER, pose == 2 ? chop : swing * 0.8);
-    }
-    // Die Last waechst mit der Ladung aus dem Ruecken heraus.
-    if (part == P_LOAD) p = vec3(-0.09, 0.0, 0.64) + (p - vec3(-0.09, 0.0, 0.64)) * aMotion.w;
-    p.z += bob;
 
-    vec2 forward = vec2(cos(aMotion.x), sin(aMotion.x));
+    if (part == P_SAILS) {
+      // Muehlenfluegel drehen sich um die Nabe, die Achse zeigt nach vorn.
+      float a = -uTime * 0.8;
+      vec2 q = p.yz - uHub;
+      p.yz = uHub + vec2(q.x * cos(a) - q.y * sin(a), q.x * sin(a) + q.y * cos(a));
+    }
+
+    float heading = figure ? aMotion.x : BUILDING_HEADING;
+    vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
-    vec2 xy = center + (forward * p.x + left * p.y) * height;
-    world = vec3(xy, groundZ(center) + p.z * height);
+    vec2 xy = center + (forward * p.x + left * p.y) * scale;
+    float base = groundZ(center);
+    float z = base + p.z * scale;
+    // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
+    // Hang keine Luecke darunter aufgeht.
+    if (!figure && p.z < 0.001) z = base - 1.0;
+    world = vec3(xy, z);
   } else if (shape == 4) {
     // Overlays behalten ihre Tile-Größe - sie sollen genau ihr Feld abdecken.
     // Jede Ecke sitzt auf ihrer eigenen Geländehöhe, leicht angehoben, damit
@@ -174,8 +256,16 @@ void main() {
   }
 
   vWorld = world;
-  // Die Last einer Figur bekommt ihre eigene Farbe.
-  vColor = shape == 5 && int(aCorner.w + 0.5) == P_LOAD ? aAccent : aColor;
+  vColor = aColor;
+  if (shape >= 5) {
+    // Modelle färben nach Material: Kittel bzw. Anstrich in der Instanzfarbe,
+    // die Last in der Farbe der Ressource, alles andere wie in der MTL-Datei.
+    int role = int(aMaterial.w + 0.5);
+    vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
+    // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
+    // der Platz nicht geht.
+    if (shape != 5 && aParams.y < 0.99) vColor = aColor;
+  }
   vParams = aParams;
   vRoof = aCorner.w;
   gl_Position = project(world.xy, world.z);
@@ -205,18 +295,30 @@ void main() {
     return;
   }
 
+  if (shape == 10) {
+    // Lebensbalken: dunkler Rahmen, gefuellt bis zum Anteil der Trefferpunkte,
+    // Farbe von Gruen ueber Gelb nach Rot. vRoof traegt hier den Anteil,
+    // vWorld die Lage im Balken (xy) und seine Hoehe in Pixeln (z).
+    float health = vRoof;
+    vec2 size = vec2(vParams.z, vWorld.z);
+    vec2 px = vWorld.xy * size;
+    float edge = min(min(px.x, size.x - px.x), min(px.y, size.y - px.y));
+    float border = max(1.0, size.y * 0.2);
+    vec3 fill = health > 0.5
+        ? mix(vec3(0.95, 0.85, 0.2), vec3(0.3, 0.85, 0.35), (health - 0.5) * 2.0)
+        : mix(vec3(0.9, 0.2, 0.15), vec3(0.95, 0.85, 0.2), health * 2.0);
+    vec3 color = edge < border ? vec3(0.05) : vWorld.x <= health ? fill : vec3(0.12);
+    fragColor = vec4(color, edge < border ? 0.9 : 1.0);
+    return;
+  }
+
   // Flächennormale aus den Bildschirm-Ableitungen - die Klötze sind eckig,
   // eine Normale je Fläche ist genau richtig und spart ein Attribut.
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
   if (dot(normal, TO_CAMERA) < 0.0) normal = -normal;
 
   vec3 base = vColor;
-  if (shape == 5) {
-    // Figur: Kittel in der Instanzfarbe, dunkle Hose, Haut am Kopf.
-    int part = int(vRoof + 0.5);
-    if (part == 1 || part == 2) base = vec3(0.32, 0.24, 0.17);
-    else if (part == 5) base = vec3(0.93, 0.76, 0.6);
-  } else if (vRoof > 0.5 && shape != 0) {
+  if (vRoof > 0.5 && shape != 0 && shape < 5) {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
     // auseinanderhält. Flachdächer bleiben in der Gebäudefarbe.
     base = mix(vColor, vec3(0.42, 0.2, 0.14), 0.55);
@@ -270,30 +372,132 @@ function flatMesh(): Float32Array {
 }
 
 /**
- * Mensch aus Quadern, in Körperhöhen (Füße 0, Scheitel 1), x nach vorn,
- * y nach links. w ist das Körperteil - der Shader bewegt danach Arme und Beine.
+ * Bewegliche Teile nach Objektname im Modell - die Nummern stehen so im
+ * Shader (P_*). Alles andere steht still.
  */
-function humanMesh(): Float32Array {
-  const v: number[] = [];
-  const box = (part: number, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => {
-    const c = [
-      [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
-      [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
-    ];
-    const faces = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
-    for (const [a, b, cc, d] of faces) {
-      for (const i of [a, b, cc, a, cc, d]) v.push(c[i][0], c[i][1], c[i][2], part);
-    }
-  };
-  box(1, -0.06, 0.06, 0.02, 0.11, 0, 0.47);        // linkes Bein
-  box(2, -0.06, 0.06, -0.11, -0.02, 0, 0.47);      // rechtes Bein
-  box(0, -0.08, 0.08, -0.14, 0.14, 0.44, 0.8);     // Rumpf
-  box(3, -0.045, 0.045, 0.14, 0.21, 0.46, 0.8);    // linker Arm
-  box(4, -0.045, 0.045, -0.21, -0.14, 0.46, 0.8);  // rechter Arm
-  box(5, -0.075, 0.075, -0.075, 0.075, 0.82, 1);   // Kopf
-  box(6, -0.22, -0.09, -0.11, 0.11, 0.5, 0.78);    // Last auf dem Rücken
-  return new Float32Array(v);
+const PARTS: [prefix: string, part: number][] = [
+  ['Leg.L', 1],
+  ['Leg.R', 2],
+  ['Arm.L', 3],
+  ['Arm.R', 4],
+  ['Head', 5],
+  ['Load', 6],
+  ['Sails', 7],
+];
+
+/** Materialien, die zur Laufzeit gefärbt werden - aMaterial.w im Shader. */
+const MATERIAL_ROLE: Record<string, number> = {
+  Tunic: 1, // Instanzfarbe (Dorfbewohner)
+  Paint: 1, // Instanzfarbe (Gebäude)
+  Load: 2, // Farbe der getragenen Ressource
+};
+
+interface Model {
+  /** Je Eckpunkt: x vorn, y links, z oben (Modell-Einheiten), Teil, r, g, b, Rolle. */
+  vertices: Float32Array;
+  hip: number;
+  shoulder: number;
+  loadAnchor: [number, number, number];
+  /** Mitte der Flügel (links, oben). */
+  hub: [number, number];
+  /** Höchster Punkt in Modell-Einheiten - dort sitzt der Lebensbalken. */
+  top: number;
 }
+
+/**
+ * Baut ein Mesh aus einem OBJ, wie Blender es exportiert: Meter, Y oben,
+ * Vorderseite nach +Z, links auf +X. Die Größe in der Datei spielt keine
+ * Rolle: Figuren werden auf Körperhöhe 1 gebracht, Gebäude auf Breite 1 -
+ * gemessen an den feststehenden Teilen, damit ausladende Flügel nicht
+ * mitzählen. Der Boden liegt danach bei 0. Blender hängt beim Export manchmal
+ * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
+ */
+function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
+  const triangles = parseObj(obj);
+  const colors = parseMtl(mtl);
+  if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const t of triangles) {
+    for (const p of t.points) {
+      minY = Math.min(minY, p[1]);
+      maxY = Math.max(maxY, p[1]);
+    }
+  }
+  const partOf = (object: string) => PARTS.find(([prefix]) => object.startsWith(prefix))?.[1] ?? 0;
+
+  let unitLength = maxY - minY;
+  if (unit === 'width') {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    for (const t of triangles) {
+      if (partOf(t.object) !== 0) continue;
+      for (const p of t.points) {
+        minX = Math.min(minX, p[0]);
+        maxX = Math.max(maxX, p[0]);
+      }
+    }
+    unitLength = maxX - minX;
+  }
+
+  // Datei (x links, y oben, z vorn) -> Modell (x vorn, y links, z oben)
+  const local = (p: [number, number, number]) =>
+    [p[2] / unitLength, p[0] / unitLength, (p[1] - minY) / unitLength] as const;
+
+  const v: number[] = [];
+  let hip = 0;
+  let shoulder = 0;
+  const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+  const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+
+  for (const t of triangles) {
+    const part = partOf(t.object);
+    const color = colors.get(t.material) ?? [0.6, 0.6, 0.6];
+    const role = MATERIAL_ROLE[t.material] ?? 0;
+    for (const p of t.points) {
+      const [x, y, z] = local(p);
+      v.push(x, y, z, part, color[0], color[1], color[2], role);
+      // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
+      if (part === 1 || part === 2) hip = Math.max(hip, z);
+      if (part === 3 || part === 4) shoulder = Math.max(shoulder, z);
+      if (part === 6) {
+        // Die Last hängt mit ihrer Vorderseite am Rücken.
+        load.back = Math.max(load.back, x);
+        load.y = [Math.min(load.y[0], y), Math.max(load.y[1], y)];
+        load.z = [Math.min(load.z[0], z), Math.max(load.z[1], z)];
+      }
+      if (part === 7) {
+        sails.y = [Math.min(sails.y[0], y), Math.max(sails.y[1], y)];
+        sails.z = [Math.min(sails.z[0], z), Math.max(sails.z[1], z)];
+      }
+    }
+  }
+
+  return {
+    vertices: new Float32Array(v),
+    hip,
+    shoulder,
+    loadAnchor: Number.isFinite(load.back)
+      ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
+      : [0, 0, 0],
+    hub: [(sails.y[0] + sails.y[1]) / 2, (sails.z[0] + sails.z[1]) / 2],
+    top: (maxY - minY) / unitLength,
+  };
+}
+
+/**
+ * Formen, die aus Modell-Dateien kommen. `scale`: Tiles je Einheit der
+ * Instanzgröße - eine Figur der Größe 0.55 ist 0.55 * 1.7 Tiles hoch.
+ */
+const MODELS: { shape: number; model: Model; scale: number }[] = [
+  { shape: SHAPE.villager, model: loadModel(villagerObj, villagerMtl, 'height'), scale: 1.7 },
+  { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp, model: loadModel(lumberCampObj, lumberCampMtl, 'width'), scale: 1 },
+  { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
+  { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
+  { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
+];
 
 interface Mesh {
   vao: WebGLVertexArrayObject;
@@ -304,7 +508,7 @@ export class EntityRenderer {
   private program: WebGLProgram;
   private building: Mesh;
   private flat: Mesh;
-  private human: Mesh;
+  private models: { shape: number; model: Model; scale: number; mesh: Mesh; list: EntityInstance[] }[];
   private instanceBuffer: WebGLBuffer;
   private uniforms = new Map<string, WebGLUniformLocation | null>();
   /** Wird nur vergrößert, nie neu belegt - eine Allokation je Frame wäre Müll. */
@@ -312,7 +516,6 @@ export class EntityRenderer {
   /** Sortierpuffer, ebenfalls wiederverwendet. */
   private flats: EntityInstance[] = [];
   private solids: EntityInstance[] = [];
-  private figures: EntityInstance[] = [];
 
   constructor(private gl: WebGL2RenderingContext) {
     const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SOURCE);
@@ -330,13 +533,14 @@ export class EntityRenderer {
     this.instanceBuffer = gl.createBuffer()!;
     this.building = this.createMesh(buildingMesh());
     this.flat = this.createMesh(flatMesh());
-    this.human = this.createMesh(humanMesh());
+    this.models = MODELS.map((m) => ({ ...m, mesh: this.createMesh(m.model.vertices, 8), list: [] }));
 
     gl.useProgram(this.program);
     uploadTerrainParams(gl, (name) => this.location(name));
   }
 
-  private createMesh(vertices: Float32Array): Mesh {
+  /** @param components Floats je Eckpunkt: 4 (aCorner) oder 8 (aCorner + aMaterial). */
+  private createMesh(vertices: Float32Array, components = 4): Mesh {
     const gl = this.gl;
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
@@ -345,7 +549,11 @@ export class EntityRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(0, 4, gl.FLOAT, false, components * 4, 0);
+    if (components === 8) {
+      gl.enableVertexAttribArray(6);
+      gl.vertexAttribPointer(6, 4, gl.FLOAT, false, 32, 16);
+    }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
     for (let loc = 1; loc <= 5; loc++) {
@@ -353,7 +561,7 @@ export class EntityRenderer {
       gl.vertexAttribDivisor(loc, 1);
     }
     gl.bindVertexArray(null);
-    return { vao, vertices: vertices.length / 4 };
+    return { vao, vertices: vertices.length / components };
   }
 
   private location(name: string): WebGLUniformLocation | null {
@@ -383,8 +591,16 @@ export class EntityRenderer {
    * Zeichnet über ein bereits gezeichnetes Gelände - dessen Tiefenpuffer
    * verdeckt, was hinter Hügeln liegt.
    * @param minSizeTiles Mindestgröße, damit Gebäude beim Herauszoomen nicht verschwinden
+   * @param pixelRatio Geräte-Pixel je CSS-Pixel - Lebensbalken haben feste CSS-Größe
+   * @param healthBars Lebensbalken über allem mit `health` zeichnen
    */
-  render(instances: EntityInstance[], camera: GpuCamera, minSizeTiles: number) {
+  render(
+      instances: EntityInstance[],
+      camera: GpuCamera,
+      minSizeTiles: number,
+      pixelRatio = 1,
+      healthBars = false,
+  ) {
     if (instances.length === 0) return;
     const gl = this.gl;
 
@@ -392,22 +608,25 @@ export class EntityRenderer {
     // Vorschau-Klötze mischen sich sonst mit dem falschen Hintergrund.
     const flats = this.flats;
     const solids = this.solids;
-    const figures = this.figures;
     flats.length = 0;
     solids.length = 0;
-    figures.length = 0;
+    for (const m of this.models) m.list.length = 0;
     for (const e of instances) {
-      (e.shape === SHAPE.flat ? flats : e.shape === SHAPE.villager ? figures : solids).push(e);
+      if (e.shape === SHAPE.flat) flats.push(e);
+      else (this.models.find((m) => m.shape === e.shape)?.list ?? solids).push(e);
     }
-    solids.sort((a, b) => a.x + a.y - (b.x + b.y));
-    figures.sort((a, b) => a.x + a.y - (b.x + b.y));
+    const backToFront = (a: EntityInstance, b: EntityInstance) => a.x + a.y - (b.x + b.y);
+    solids.sort(backToFront);
+    for (const m of this.models) m.list.sort(backToFront);
 
-    if (this.data.length < instances.length * STRIDE) {
-      this.data = new Float32Array(instances.length * STRIDE * 2);
+    const bars = healthBars ? instances.filter((e) => e.health !== undefined) : [];
+    const total = instances.length + bars.length;
+    if (this.data.length < total * STRIDE) {
+      this.data = new Float32Array(total * STRIDE * 2);
     }
     const d = this.data;
     let i = 0;
-    for (const list of [flats, solids, figures]) {
+    for (const list of [flats, solids, ...this.models.map((m) => m.list)]) {
       for (const e of list) {
         const o = i++ * STRIDE;
         d[o] = e.x;
@@ -429,10 +648,14 @@ export class EntityRenderer {
         d[o + 14] = a[2] / 255;
       }
     }
+    for (const e of bars) {
+      const o = i++ * STRIDE;
+      this.writeBar(d, o, e, camera.pixelsPerTile, minSizeTiles, pixelRatio);
+    }
 
     gl.useProgram(this.program);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, instances.length * STRIDE), gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, total * STRIDE), gl.DYNAMIC_DRAW);
 
     setCameraUniforms(gl, (name) => this.location(name), camera);
     gl.uniform1f(this.location('uMinSizeTiles'), minSizeTiles);
@@ -448,10 +671,60 @@ export class EntityRenderer {
     this.draw(this.flat, 0, flats.length);
     gl.depthMask(true);
     this.draw(this.building, flats.length, solids.length);
-    this.draw(this.human, flats.length + solids.length, figures.length);
+
+    gl.uniform1f(this.location('uTime'), performance.now() / 1000);
+    let first = flats.length + solids.length;
+    for (const m of this.models) {
+      if (m.list.length > 0) {
+        gl.uniform1f(this.location('uModelScale'), m.scale);
+        gl.uniform1f(this.location('uHip'), m.model.hip);
+        gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
+        gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
+        gl.uniform2fv(this.location('uHub'), m.model.hub);
+        this.draw(m.mesh, first, m.list.length);
+      }
+      first += m.list.length;
+    }
+
+    // Lebensbalken zuletzt und ohne Tiefentest: sie liegen über allem, auch
+    // wenn ein Hügel oder ein Gebäude davor steht.
+    if (bars.length > 0) {
+      gl.disable(gl.DEPTH_TEST);
+      this.draw(this.flat, instances.length, bars.length);
+      gl.enable(gl.DEPTH_TEST);
+    }
 
     gl.disable(gl.BLEND);
     gl.depthFunc(gl.LESS);
     gl.bindVertexArray(null);
+  }
+
+  /** Ein Lebensbalken für Instanz `e`: verankert über ihrem höchsten Punkt. */
+  private writeBar(
+      d: Float32Array, o: number, e: EntityInstance,
+      pixelsPerTile: number, minSizeTiles: number, pixelRatio: number,
+  ) {
+    const model = this.models.find((m) => m.shape === e.shape);
+    const figure = e.shape === SHAPE.villager;
+    // Dieselbe Mindestgröße wie im Vertex-Shader, sonst schwebt der Balken
+    // herausgezoomt im Gebäude statt darüber.
+    const size = Math.max(e.size, figure ? minSizeTiles * 0.5 : minSizeTiles);
+    const top = model ? model.model.top * model.scale * size : (BOX_TOP[e.shape] ?? 1) * size;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    const width = figure
+      ? clamp(pixelsPerTile * 0.6, 22 * pixelRatio, 36 * pixelRatio)
+      : clamp(size * pixelsPerTile * 0.8, 40 * pixelRatio, 110 * pixelRatio);
+    const height = (figure ? 4 : 6) * pixelRatio;
+
+    d.fill(0, o, o + STRIDE);
+    d[o] = e.x;
+    d[o + 1] = e.y;
+    d[o + 5] = SHAPE.healthBar;
+    d[o + 6] = 1;
+    d[o + 7] = width;
+    d[o + 8] = Math.max(0, Math.min(1, e.health ?? 1));
+    d[o + 9] = top;
+    d[o + 10] = height;
+    d[o + 11] = 5 * pixelRatio;
   }
 }
