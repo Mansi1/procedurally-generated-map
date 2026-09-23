@@ -230,7 +230,10 @@ function updateResourceUI() {
     ).join('') +
     `<span class="res"><span class="amount">Bevölkerung <b>${pop.used}/${pop.cap}</b>` +
     `${pop.training > 0 ? ` (+${pop.training})` : ''}</span>` +
-    workers(idle, `${idle} untätig`) + `</span>`;
+    // Ein Klick darauf wählt den nächsten untätigen Dorfbewohner aus.
+    (idle > 0
+      ? `<button type="button" class="workers busy idle-btn" data-action="idle" title="Alle untätigen auswählen (Taste .) - mit Umschalt einzeln">${idle} untätig</button>`
+      : workers(0, '0 untätig')) + `</span>`;
   if (stockEl.innerHTML !== html) stockEl.innerHTML = html;
 
   for (const [type, button] of buildButtons) {
@@ -476,6 +479,61 @@ function trainVillager() {
  * Taste H: zum Hauptgebäude springen und es auswählen - bei mehreren reihum,
  * beginnend nach dem gerade ausgewählten.
  */
+/**
+ * Untätige Dorfbewohner auswählen und zu ihnen springen. Normal alle auf
+ * einmal - dann genügt ein Rechtsklick, um sie an die Arbeit zu schicken.
+ * Mit `all = false` nur einen, bei wiederholtem Aufruf reihum.
+ */
+function selectIdleVillager(all = true) {
+  const idle = world.villagers.filter((v) => v.task.kind === 'idle');
+  if (idle.length === 0) {
+    hint('Kein Dorfbewohner ist untätig');
+    return;
+  }
+  selectedBuilding = null;
+  selectedResource = null;
+  let target: Villager;
+  if (all) {
+    selectedVillagers.clear();
+    for (const v of idle) selectedVillagers.add(v.id);
+    // Zur Mitte der Gruppe - verteilt über die Karte zum ersten.
+    const mx = idle.reduce((sum, v) => sum + v.x, 0) / idle.length;
+    const my = idle.reduce((sum, v) => sum + v.y, 0) / idle.length;
+    const spread = Math.max(...idle.map((v) => Math.hypot(v.x - mx, v.y - my)));
+    target = spread < 40 ? { ...idle[0], x: mx, y: my } : idle[0];
+  } else {
+    // Nach dem gerade ausgewählten weitermachen, damit wiederholtes Klicken
+    // alle der Reihe nach durchgeht.
+    const current = selectedVillagers.size === 1 ? [...selectedVillagers][0] : -1;
+    const index = idle.findIndex((v) => v.id === current);
+    target = idle[(index + 1) % idle.length];
+    selectedVillagers.clear();
+    selectedVillagers.add(target.id);
+  }
+  const center = centerFor(view(), target.x, target.y, zAt(target.x, target.y),
+      viewWidth / 2, viewHeight / 2);
+  camX = center.x;
+  camY = center.y;
+  if (mousePixelX !== undefined && mousePixelY !== undefined) {
+    updateHoveredTile(mousePixelX, mousePixelY);
+  }
+  updateSelectionUI();
+}
+
+// Die Knöpfe entstehen bei jeder Aktualisierung neu - darum Delegation, und
+// mousedown statt click, damit ein Neuzeichnen zwischen Drücken und Loslassen
+// den Klick nicht verschluckt.
+for (const panel of [stockEl, selectionEl]) {
+  panel.addEventListener('mousedown', (e) => {
+    const button = (e.target as HTMLElement).closest('button');
+    if (e.button !== 0 || button?.dataset.action !== 'idle') return;
+    // Kein Fokus auf dem Knopf - sonst bleibt ein Fokusrahmen stehen.
+    e.preventDefault();
+    e.stopPropagation();
+    selectIdleVillager(!e.shiftKey);
+  });
+}
+
 function cycleTownCenter() {
   const centers = world.townCenters();
   if (centers.length === 0) {
@@ -601,7 +659,10 @@ function updateSelectionUI() {
     const idle = world.villagers.filter((v) => v.task.kind === 'idle').length;
     html = `<div class="muted">Klicke auf das Hauptgebäude, um Dorfbewohner auszubilden (V), ` +
       `oder wähle Dorfbewohner aus.</div>` +
-      (idle > 0 ? `<div>Untätig: <b>${idle}</b></div>` : '');
+      (idle > 0
+        ? `<div class="actions"><button class="build-btn" data-action="idle">` +
+          `<span class="name">. Untätige</span><span class="cost">${idle} ohne Arbeit</span></button></div>`
+        : '');
   }
   if (selectionEl.innerHTML !== html) selectionEl.innerHTML = html;
   // Auswahl hat sich vielleicht geändert, oder das Feld unter dem Zeiger ist
@@ -714,6 +775,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
   // H wie in AoE2 - "Home".
   if (e.key.toLowerCase() === 'h') cycleTownCenter();
+  // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
+  if (e.key === '.' || e.key === ':') selectIdleVillager(!e.shiftKey);
   if (e.key === ' ') {
     // Leertaste gedrückt halten legt das Gelände flach (siehe loop). Sonst
     // scrollt die Seite oder ein fokussierter Knopf wird ausgelöst - bei
