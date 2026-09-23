@@ -12,7 +12,6 @@ import {
 import {
   MapRenderer,
   MiniMap,
-  RESOURCE_TYPE_COLORS,
   RESOURCE_TYPE_LABEL,
   TILE_TYPE_COLOR,
   TILE_TYPE_LABEL,
@@ -30,6 +29,7 @@ import {
   type Stock,
 } from './world/buildings';
 import { World, type Villager } from './world/world';
+import { ResourceBar } from './resourceBar';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
@@ -215,30 +215,25 @@ function hint(text: string) {
   hintTimer = window.setTimeout(() => hintEl.classList.remove('show'), 1800);
 }
 
+/** Reihenfolge in der Rohstoffleiste - wie in AoE2: Holz, Nahrung, Gold, Stein. */
+const RESOURCE_BAR_ORDER: (keyof Stock)[] = ['wood', 'berries', 'gold', 'stone'];
+const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER);
+
 /** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
 function updateResourceUI() {
   const pop = world.population();
   const { counts, idle } = world.gatherers();
-  // Unter jedem Vorrat, wie viele Dorfbewohner ihn gerade sammeln - wie in
-  // AoE2 sieht man so auf einen Blick, wie die Arbeit verteilt ist.
-  const workers = (n: number, text: string) =>
-    `<span class="workers${n > 0 ? ' busy' : ''}">${text}</span>`;
-  const html =
-    RESOURCE_ORDER.map(
-      (r) =>
-        `<span class="res"><span class="amount">` +
-        `<i style="background:${RESOURCE_TYPE_COLORS[r].toRgbString()}"></i>` +
-        `${RESOURCE_TYPE_LABEL[r]} <b>${Math.floor(world.stock[r])}</b></span>` +
-        workers(counts[r], `${counts[r]} ${VILLAGER.label}`) +
-        `</span>`,
-    ).join('') +
-    `<span class="res"><span class="amount">Bevölkerung <b>${pop.used}/${pop.cap}</b>` +
-    `${pop.training > 0 ? ` (+${pop.training})` : ''}</span>` +
-    // Ein Klick darauf wählt den nächsten untätigen Dorfbewohner aus.
-    (idle > 0
-      ? `<button type="button" class="workers busy idle-btn" data-action="idle" title="Alle untätigen auswählen (Taste .) - mit Umschalt einzeln">${idle} untätig</button>`
-      : workers(0, '0 untätig')) + `</span>`;
-  if (stockEl.innerHTML !== html) stockEl.innerHTML = html;
+  // Wie in AoE2: Holz, Nahrung, Gold, Stein - im Symbol, wie viele
+  // Dorfbewohner gerade daran sammeln.
+  resourceBar.update({
+    order: RESOURCE_BAR_ORDER,
+    stock: world.stock,
+    labels: RESOURCE_TYPE_LABEL,
+    gatherers: counts,
+    population: pop,
+    idle,
+    villagerLabel: VILLAGER.label,
+  });
 
   for (const [type, button] of buildButtons) {
     button.disabled = !world.affordable(type) || (type !== 'town_center' && !world.hasTownCenter());
