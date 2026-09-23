@@ -60,11 +60,16 @@ function tufts(m, rnd, lumps, count, len, mtl = 'Paint') {
   }
 }
 
-/** A berry: small double cone, n = 5; `shine` adds a highlight. */
+/**
+ * A berry: small double cone, n = 5; `shine` adds a highlight. All parts of
+ * one berry share a number (Berry.<n>) - the game hides picked berries whole.
+ */
+let berryCount = 0;
 function berry(m, p, r, mtl, shine = false) {
-  m.box('Berry', mtl, [p[0] - r * 0.7, p[0] + r * 0.7], [p[1] - r, p[1]], [p[2] - r * 0.7, p[2] + r * 0.7], { n: 5, x: [p[0] - r, p[0] + r], z: [p[2] - r, p[2] + r] });
-  m.box('Berry', mtl, [p[0] - r, p[0] + r], [p[1], p[1] + r * 0.9], [p[2] - r, p[2] + r], { n: 5, x: [p[0] - r * 0.45, p[0] + r * 0.45], z: [p[2] - r * 0.45, p[2] + r * 0.45] });
-  if (shine) m.box('Berry.Shine', 'Shine', [p[0] - r * 0.3, p[0] + r * 0.1], [p[1] + r * 0.45, p[1] + r * 0.75], [p[2] + r * 0.4, p[2] + r * 0.75]);
+  const name = `Berry.${berryCount++}`;
+  m.box(name, mtl, [p[0] - r * 0.7, p[0] + r * 0.7], [p[1] - r, p[1]], [p[2] - r * 0.7, p[2] + r * 0.7], { n: 5, x: [p[0] - r, p[0] + r], z: [p[2] - r, p[2] + r] });
+  m.box(name, mtl, [p[0] - r, p[0] + r], [p[1], p[1] + r * 0.9], [p[2] - r, p[2] + r], { n: 5, x: [p[0] - r * 0.45, p[0] + r * 0.45], z: [p[2] - r * 0.45, p[2] + r * 0.45] });
+  if (shine) m.box(`${name}.Shine`, 'Shine', [p[0] - r * 0.3, p[0] + r * 0.1], [p[1] + r * 0.45, p[1] + r * 0.75], [p[2] + r * 0.4, p[2] + r * 0.75]);
 }
 
 /** Clusters of berries on the lumps. mtls: colours to pick from, weighted by repetition. */

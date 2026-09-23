@@ -219,6 +219,15 @@ function hint(text: string) {
 const RESOURCE_BAR_ORDER: (keyof Stock)[] = ['wood', 'berries', 'gold', 'stone'];
 const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER);
 
+/** Dauer als "1:35 h", "4:05 min" bzw. "40 s". */
+function formatDuration(seconds: number): string {
+  const s = Math.ceil(seconds);
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
+  const m = Math.ceil(s / 60);
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`;
+}
+
 /** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
 function updateResourceUI() {
   const pop = world.population();
@@ -693,9 +702,14 @@ function updateSelectionUI() {
         `${kind ? ` <span class="muted">${RESOURCE_TYPE_LABEL[info.type]}</span>` : ''}</div>` +
         `<div>Übrig <b>${left}/${info.total}</b></div>` +
         `<div class="bar"><i style="width:${percent}%"></i></div>` +
+        // Beerensträucher wachsen nach - wie lange noch, bis er wieder voll ist.
+        (info.regrowIn !== undefined && info.regrowIn > 1
+          ? `<div class="muted">${left === 0 ? 'Leer gepflückt - wächst nach' : 'Wächst nach'}` +
+            ` · voll in ${formatDuration(info.regrowIn)}</div>`
+          : '') +
         `<div>Sammler <b>${info.gatherers}/${MAX_GATHERERS}</b>` +
         `${info.gatherers >= MAX_GATHERERS ? ' <span class="muted">- voll besetzt</span>' : ''}</div>` +
-        (info.gatherers === 0
+        (info.gatherers === 0 && left > 0
           ? `<div class="muted">Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.</div>`
           : '');
     } else {

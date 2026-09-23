@@ -71,6 +71,9 @@ function treeAt(x: number, y: number, height: number): number {
   return kind === SHAPE.treeOak ? OAKS[Math.floor(hash(x, y, 10) * OAKS.length)] : kind;
 }
 
+/** Die Beerensträucher - leer gepflückt bleiben sie stehen. */
+const BUSHES: number[] = [SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4];
+
 /** Welche Form eines Vorkommens mit mehreren Varianten auf Tile (x, y) steht - fest je Tile. */
 function variantAt(x: number, y: number, kinds: number[]): number {
   return kinds[Math.floor(hash(x, y, 6) * kinds.length)];
@@ -232,14 +235,19 @@ export class ResourceField {
         for (const node of nodes) {
           if (node.x < view.x || node.x > x1 || node.y < view.y || node.y > y1) continue;
           const share = world.remainingShare(node.x, node.y, node.total);
-          if (share <= 0) continue;
-          node.instance.size = node.size * (0.45 + 0.55 * share);
+          // Beerensträucher bleiben stehen und verlieren nur ihre Beeren
+          // (motion[3] = Rest, siehe P_BERRY im Shader). Alles andere
+          // schrumpft und verschwindet, wenn es leer ist.
+          const bush = BUSHES.includes(node.shape);
+          if (share <= 0 && !bush) continue;
+          node.instance.size = bush ? node.size : node.size * (0.45 + 0.55 * share);
           // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
           // Falls stecken in motion[1] und motion[2].
           const motion = node.instance.motion!;
           const fall = TREES.includes(node.shape) ? world.fall(node.x, node.y, blend) : null;
           motion[1] = fall ? fall.angle : 0;
           motion[2] = fall ? fall.dir : 0;
+          motion[3] = share;
           // Die Instanzen werden wiederverwendet - der Balken muss also auch
           // wieder weg, wenn die Auswahl wechselt.
           node.instance.health =

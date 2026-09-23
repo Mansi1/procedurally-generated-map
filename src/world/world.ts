@@ -127,8 +127,12 @@ export interface ViewRect {
 
 const key = (x: number, y: number) => `${x},${y}`;
 
-/** Farbe der Markierung über einem leergeräumten Vorkommen. */
-const EXHAUSTED_COLOR: [number, number, number] = [16, 18, 22];
+/**
+ * Beerensträucher: nach dem letzten Pflücken BERRY_REST Sekunden Pause, dann
+ * wachsen sie in BERRY_REGROW_TIME Sekunden von leer auf voll nach.
+ */
+const BERRY_REST = 90 * 60;
+const BERRY_REGROW_TIME = 5 * 60;
 
 /** Neue Figur an (x, y) - alle Laufzeit-Felder auf Anfang. */
 function newVillager(id: number, x: number, y: number): Villager {
@@ -169,6 +173,11 @@ export class World {
   private occupied = new Map<string, string>();
   private harvested = new Map<string, number>();
   private exhausted = new Set<string>();
+  /**
+   * Angepflückte Beerensträucher: volle Menge und wann zuletzt gepflückt
+   * wurde (Weltzeit). Sie wachsen nach einer Pause nach (siehe regrowBerries).
+   */
+  private berryTiles = new Map<string, { total: number; picked: number }>();
   /**
    * Gefällte Bäume: wann (Weltzeit) und in welche Richtung (Radiant) sie
    * umgefallen sind. Ein Baum fällt beim ersten Axthieb und wird danach als
@@ -285,18 +294,28 @@ export class World {
    * viele Dorfbewohner gerade daran sammeln. null, wenn dort nichts (mehr) ist.
    */
   resourceInfo(x: number, y: number):
-      { type: GatherType; remaining: number; total: number; gatherers: number } | null {
+      { type: GatherType; remaining: number; total: number; gatherers: number; regrowIn?: number } | null {
+    const k = key(x, y);
+    const bush = this.berryTiles.get(k);
+    const bushTotal = bush?.total;
     const found = this.remainingAt(x, y);
-    if (!found.type || found.amount <= 0) return null;
+    // Leere Beerensträucher bleiben auswählbar - sie wachsen nach.
+    if (bushTotal === undefined && (!found.type || found.amount <= 0)) return null;
     let gatherers = 0;
     for (const v of this.villagers) {
       if (v.task.kind === 'gather' && v.task.x === x && v.task.y === y) gatherers++;
     }
+    const total = bushTotal ?? this.probe.getTile(x, y).resourceAmount;
+    const remaining = bushTotal !== undefined ? Math.max(0, total - (this.harvested.get(k) ?? 0)) : found.amount;
     return {
-      type: found.type,
-      remaining: found.amount,
-      total: this.probe.getTile(x, y).resourceAmount,
+      type: bushTotal !== undefined ? 'berries' : found.type!,
+      remaining,
+      total,
       gatherers,
+      // Sekunden, bis der Strauch wieder voll ist: Rest der Pause plus Wachsen.
+      regrowIn: bush
+        ? Math.max(0, BERRY_REST - (this.time - bush.picked)) + (total - remaining) / (total / BERRY_REGROW_TIME)
+        : undefined,
     };
   }
 
@@ -559,6 +578,7 @@ export class World {
     this.lastDt = dt;
     if (this.ruins.length > 0) this.ruins = this.ruins.filter((r) => this.time - r.at < RUIN_DURATION);
     for (const b of this.buildings.values()) this.tickTraining(b, dt);
+    this.regrowBerries(dt);
     for (const v of this.villagers) {
       v.prevX = v.x;
       v.prevY = v.y;
@@ -740,12 +760,14 @@ export class World {
         const spotX = task.x + 0.5 + Math.cos(angle) * GATHER_SPREAD;
         const spotY = task.y + 0.5 + Math.sin(angle) * GATHER_SPREAD;
         if (!this.walk(v, spotX, spotY, 0.05, dt)) return;
-        // Am Platz: zum Vorkommen drehen und arbeiten.
+        // Am Platz: zum Vorkommen drehen und arbeiten - Beeren kniend pflücken.
         v.heading = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
-        v.pose = POSE.work;
+        v.pose = task.type === 'berries' ? POSE.pick : POSE.work;
         // Der Arm schlägt zu, wenn sin(Phase) sein Minimum durchläuft (siehe
-        // Shader) - genau dann soll man den Hieb hören.
-        const strikes = (time: number) => Math.floor((time * WORK_TEMPO - Math.PI * 1.5) / (Math.PI * 2));
+        // Shader) - genau dann soll man den Hieb hören. Pflücken ist im
+        // Shader langsamer (Phase * 0.6), das Rascheln folgt dem Griff.
+        const tempo = task.type === 'berries' ? WORK_TEMPO * 0.6 : WORK_TEMPO;
+        const strikes = (time: number) => Math.floor((time * tempo - Math.PI * 1.5) / (Math.PI * 2));
         const before = strikes(v.workTime);
         v.workTime += dt;
         if (strikes(v.workTime) > before) {
@@ -772,6 +794,10 @@ export class World {
         }
         const taken = (this.harvested.get(k) ?? 0) + take;
         this.harvested.set(k, taken);
+        if (task.type === 'berries') {
+          const total = this.berryTiles.get(k)?.total ?? found.amount + taken - take;
+          this.berryTiles.set(k, { total, picked: this.time });
+        }
         if (found.amount - take <= 1e-6) this.exhausted.add(k);
         v.carrying += take;
         this.dirty = true;
@@ -816,16 +842,6 @@ export class World {
     const x1 = view.x + view.width + margin;
     const y1 = view.y + view.height + margin;
 
-    // Leergeräumte Felder zuerst: das Gelände zeigt dort noch die Einfärbung
-    // des Vorkommens, obwohl nichts mehr da ist.
-    for (const k of this.exhausted) {
-      const comma = k.indexOf(',');
-      const x = Number(k.slice(0, comma));
-      const y = Number(k.slice(comma + 1));
-      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
-      out.push({ x, y, size: 1, color: EXHAUSTED_COLOR, shape: SHAPE.flat, alpha: 0.45 });
-    }
-
     this.ruinInstances(x0, y0, x1, y1, out, blend);
 
     for (const building of this.buildings.values()) {
@@ -849,7 +865,7 @@ export class World {
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
       const phase = v.pose === POSE.walk
         ? lerp(v.prevStride, v.stride, blend) * (Math.PI * 2 / STRIDE_LENGTH)
-        : v.pose === POSE.work
+        : v.pose === POSE.work || v.pose === POSE.pick
           ? lerp(v.prevWorkTime, v.workTime, blend) * WORK_TEMPO
           // Stehen: Weltzeit in Sekunden, je Figur versetzt (Leerlauf-Animation).
           : this.time + blend * this.lastDt + v.id * 7.3;
@@ -1008,6 +1024,9 @@ export class World {
       const comma = k.indexOf(',');
       const tile = this.probe.getTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1)));
       if (amount >= tile.resourceAmount) this.exhausted.add(k);
+      // Wann zuletzt gepflückt wurde, steht nicht im Speicherstand - die
+      // Pause beginnt beim Laden von vorn.
+      if (tile.resource === 'berries') this.berryTiles.set(k, { total: tile.resourceAmount, picked: 0 });
       // Angefangene Bäume liegen schon - ohne noch einmal umzufallen. Die
       // Richtung steht nicht im Speicherstand; sie ergibt sich aus der Lage.
       if (tile.resource === 'wood') {
@@ -1040,12 +1059,34 @@ export class World {
     }
   }
 
+  /**
+   * Beerensträucher wachsen nach: erst BERRY_REST Sekunden nach dem letzten
+   * Pflücken, dann in BERRY_REGROW_TIME Sekunden von leer auf voll. Sobald
+   * wieder etwas daran hängt, kann man sie erneut abernten.
+   */
+  private regrowBerries(dt: number) {
+    for (const [k, { total, picked }] of this.berryTiles) {
+      if (this.time - picked < BERRY_REST) continue;
+      const taken = (this.harvested.get(k) ?? 0) - (total / BERRY_REGROW_TIME) * dt;
+      if (taken <= 0) {
+        this.harvested.delete(k);
+        this.berryTiles.delete(k);
+        this.exhausted.delete(k);
+      } else {
+        this.harvested.set(k, taken);
+        if (taken < total - 1) this.exhausted.delete(k);
+      }
+      this.dirty = true;
+    }
+  }
+
   /** Alles zurücksetzen - für den Neustart-Knopf. */
   reset() {
     this.buildings.clear();
     this.occupied.clear();
     this.harvested.clear();
     this.exhausted.clear();
+    this.berryTiles.clear();
     this.felled.clear();
     this.villagers = [];
     this.stock = initialStock();

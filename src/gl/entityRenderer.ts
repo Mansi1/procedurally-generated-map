@@ -185,6 +185,8 @@ export const POSE = {
   stand: 0,
   walk: 1,
   work: 2,
+  /** Kniend Beeren pflücken - ohne Beil. */
+  pick: 3,
 } as const;
 
 export interface EntityInstance {
@@ -281,6 +283,10 @@ const int P_SHIN_L = 9;
 const int P_SHIN_R = 10;
 const int P_FOREARM_L = 11;
 const int P_FOREARM_R = 12;
+const int P_TOOL = 13;       // Beil in der rechten Hand, schwingt mit dem Unterarm
+// Beere am Strauch. aCorner.w = 14 + Zufall * 0.45 je Beere: sie ist zu
+// sehen, solange der Rest des Vorkommens (aMotion.w) über dem Zufall liegt.
+const int P_BERRY = 14;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -341,7 +347,7 @@ void main() {
       bool legL = part == P_LEG_L || part == P_SHIN_L;
       bool legR = part == P_LEG_R || part == P_SHIN_R;
       bool armL = part == P_ARM_L || part == P_FOREARM_L;
-      bool armR = part == P_ARM_R || part == P_FOREARM_R;
+      bool armR = part == P_ARM_R || part == P_FOREARM_R || part == P_TOOL;
       // Oberkörper: alles über der Hüfte, was kein Bein ist - er neigt und
       // dreht sich über der Hüfte, Arme und Kopf gehen mit.
       bool upper = !legL && !legR && (part != P_TORSO || p.z > uHip);
@@ -387,6 +393,25 @@ void main() {
         lean = 0.12 + 0.18 * (1.0 - up);
         twist = -0.15 + 0.3 * up;
         bob = -0.03;
+      } else if (pose == 3) {
+        // Pflücken: auf dem rechten Knie, das linke Bein aufgestellt, der
+        // Oberkörper zum Strauch gebeugt. Die rechte Hand greift in den
+        // Strauch und zieht zurück, die linke hält einen Zweig fest. Die
+        // Hüfte sinkt so weit, dass das rechte Knie den Boden berührt.
+        float t = phase * 0.6;
+        float reach = 0.5 + 0.5 * sin(t);
+        hipL = 1.95;
+        kneeL = -1.95;
+        hipR = -0.05;
+        kneeR = -1.5;
+        // Gestreckt in den Strauch (reach = 1), dann die Hand zur Brust.
+        shR = 0.3 + 0.85 * reach;
+        elR = 1.95 - 1.85 * reach;
+        shL = 1.05 + 0.08 * sin(t * 0.5);
+        elL = 0.75;
+        lean = 0.32 + 0.08 * reach;
+        twist = -0.1 + 0.12 * reach;
+        bob = -(uKnee - 0.04);
       } else {
         // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
         // eine Gruppe nicht im Gleichtakt atmet.
@@ -421,7 +446,10 @@ void main() {
       if (part == P_SHIN_L) p = swingAround(p, uKnee, kneeL);
       if (part == P_SHIN_R) p = swingAround(p, uKnee, kneeR);
       if (part == P_FOREARM_L) p = swingAround(p, uElbow, elL);
-      if (part == P_FOREARM_R) p = swingAround(p, uElbow, elR);
+      if (part == P_FOREARM_R || part == P_TOOL) p = swingAround(p, uElbow, elR);
+      // Beim Pflücken ist das Beil weggesteckt: alle Ecken auf einen Punkt,
+      // die Dreiecke haben dann keine Fläche mehr.
+      if (part == P_TOOL && pose == 3) p = vec3(0.0, 0.0, uHip);
       if (legL) p = swingAround(p, uHip, hipL);
       if (legR) p = swingAround(p, uHip, hipR);
       if (armL) p = swingAround(p, uShoulder, shL);
@@ -437,9 +465,23 @@ void main() {
       } else if (part == P_TORSO) {
         // Rock und Hosenboden schwingen beim Gehen etwas mit.
         p.y += twist * 0.25 * (uHip - p.z);
+        if (pose == 3) {
+          // Kniend: der Rock staucht sich bis zum Boden und legt sich vorn
+          // über das aufgestellte Knie.
+          float below = (uHip - p.z) / uHip;
+          p.z = uHip - (uHip - p.z) * (uHip + bob) / (uHip - 0.02);
+          p.x += below * 0.14;
+        }
       }
       p.y += sway;
       p.z += bob;
+    }
+
+    if (part == P_BERRY) {
+      // Abgeerntet: die Beeren verschwinden eine nach der anderen, der Strauch
+      // bleibt stehen. Alle Ecken einer Beere auf einen Punkt - unsichtbar.
+      float keep = (aCorner.w - 14.0) / 0.45;
+      if (keep >= aMotion.w) p = vec3(0.0);
     }
 
     if (part == P_CLOTH) {
@@ -677,7 +719,10 @@ const PARTS: [prefix: string, part: number][] = [
   ['Leg.L.Lower', 9],
   ['Leg.R.Lower', 10],
   ['Arm.L.Lower', 11],
+  // Das Beil vor dem Unterarm, sonst fiele es unter 'Arm.R.Lower'.
+  ['Arm.R.Lower.Tool', 13],
   ['Arm.R.Lower', 12],
+  ['Berry', 14],
   ['Leg.L', 1],
   ['Leg.R', 2],
   ['Arm.L', 3],
@@ -714,6 +759,18 @@ interface Model {
   top: number;
   /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
   meters: number;
+}
+
+/** Nummer einer Beere aus ihrem Objektnamen ("Berry.12.Shine" -> 12). */
+function berryNumber(object: string): number {
+  return Number(/^Berry\.(\d+)/.exec(object)?.[1] ?? 0);
+}
+
+/** Fester Zufall 0..1 je Beeren-Nummer - welche Beere zuerst gepflückt wird. */
+function berryRandom(index: number): number {
+  let h = Math.imul(index + 1, 2654435761);
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
+  return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
 }
 
 /**
@@ -790,10 +847,12 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
     const role = MATERIAL_ROLE[t.material] ?? 0;
     for (const p of t.points) {
       const [x, y, z] = local(p);
-      v.push(x, y, z, part, color[0], color[1], color[2], role);
+      // Beeren: je Beere (Objekt) ein fester Zufall im Nachkomma-Teil, siehe P_BERRY.
+      const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45 : part;
+      v.push(x, y, z, partValue, color[0], color[1], color[2], role);
       if (lod) {
         LOD_PARTS.forEach((min, i) => {
-          if ((extent.get(t.index) ?? 1) >= min) lods[i].push(x, y, z, part, color[0], color[1], color[2], role);
+          if ((extent.get(t.index) ?? 1) >= min) lods[i].push(x, y, z, partValue, color[0], color[1], color[2], role);
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
