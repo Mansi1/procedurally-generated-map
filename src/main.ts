@@ -407,7 +407,7 @@ function trainVillager() {
 }
 
 /**
- * Leertaste: zum Hauptgebäude springen und es auswählen - bei mehreren reihum,
+ * Taste H: zum Hauptgebäude springen und es auswählen - bei mehreren reihum,
  * beginnend nach dem gerade ausgewählten.
  */
 function cycleTownCenter() {
@@ -583,7 +583,9 @@ function view(): IsoView {
  * die man sieht.
  */
 function zAt(x: number, y: number): number {
-  return reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio)));
+  // Mit der aktuellen Reliefstärke - flachgelegt trifft der Klick sonst
+  // die Stelle, an der der Berg stünde.
+  return reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))) * renderer.relief;
 }
 
 /** Welt-Punkt unter einer Canvas-Position (CSS-Pixel), mit Relief. */
@@ -644,12 +646,14 @@ window.addEventListener('keydown', (e) => {
     else clearSelection();
   }
   if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
+  // H wie in AoE2 - "Home".
+  if (e.key.toLowerCase() === 'h') cycleTownCenter();
   if (e.key === ' ') {
-    // Sonst scrollt die Seite oder ein fokussierter Knopf wird ausgelöst -
-    // bei Knöpfen passiert das erst beim Loslassen, darum auch der Fokus weg.
+    // Leertaste gedrückt halten legt das Gelände flach (siehe loop). Sonst
+    // scrollt die Seite oder ein fokussierter Knopf wird ausgelöst - bei
+    // Knöpfen passiert das erst beim Loslassen, darum auch der Fokus weg.
     e.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur();
-    cycleTownCenter();
   }
   if (e.key.toLowerCase() === VILLAGER.key) trainVillager();
 
@@ -866,7 +870,16 @@ function loop(now: number) {
   if (keys['s'] || keys['arrowdown']) dy += speed;
   if (keys['a'] || keys['arrowleft']) dx -= speed;
   if (keys['d'] || keys['arrowright']) dx += speed;
-  if (dx !== 0 || dy !== 0) {
+  // Leertaste halten: Relief sinkt flach, um hinter Berge zu sehen. Weich
+  // überblendet, damit man sieht, was wohin gehört. Nie ganz 0 - siehe
+  // MapRenderer.relief.
+  const targetRelief = keys[' '] ? 0.02 : 1;
+  const reliefBefore = renderer.relief;
+  renderer.relief += (targetRelief - renderer.relief) * Math.min(1, dt * 10);
+  if (Math.abs(targetRelief - renderer.relief) < 0.002) renderer.relief = targetRelief;
+  const reliefChanged = renderer.relief !== reliefBefore;
+
+  if (dx !== 0 || dy !== 0 || reliefChanged) {
     const d = panDelta(tileSize, dx, dy);
     camX += d.x;
     camY += d.y;

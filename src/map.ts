@@ -299,6 +299,12 @@ export class TileProbe {
 export class MapRenderer {
   private terrain: TerrainRenderer;
   private entities: EntityRenderer;
+  /**
+   * Stärke des Reliefs, 1 = voll, gegen 0 flach. Zum Flachlegen, um hinter
+   * Berge zu sehen. Nie ganz 0: das wäre für den Cache "kein Relief" und
+   * würde ihn neu befüllen.
+   */
+  relief = 1;
 
   constructor(
       canvas: HTMLCanvasElement,
@@ -325,7 +331,7 @@ export class MapRenderer {
       centerX,
       centerY,
       pixelsPerTile: this.tileSize * this.pixelRatio,
-      reliefScale: 1,
+      reliefScale: this.relief,
     }, canvas.width, canvas.height);
 
     this.terrain.hoverTile =

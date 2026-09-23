@@ -379,7 +379,12 @@ export class TerrainRenderer {
 
     // Unten ragt Gelände um den höchsten Gipfel ins Bild, dessen Fuß noch
     // unter dem Bildrand liegt - das muss mit in den Cache.
-    const reach = Math.ceil(camera.reliefScale * Z_SCREEN * MAX_RELIEF * ppt);
+    // Der Cache hängt nur daran, ob es überhaupt Relief gibt - nicht an der
+    // Stärke: beim Flachlegen (Leertaste) läuft die von 1 auf 0, und ein
+    // Neubefüllen je Bild wäre viel zu teuer. Die Farben behalten dabei die
+    // Schattierung des vollen Reliefs; man erkennt die Berge so auch flach.
+    const relief = camera.reliefScale > 0 ? 1 : 0;
+    const reach = Math.ceil(relief * Z_SCREEN * MAX_RELIEF * ppt);
     const margin = CACHE_MARGIN + Math.ceil(this.cellSize(camera) * ppt);
     // Unten überlappen Blase und Gipfel-Reichweite - es zählt die größere.
     const cacheWidth = Math.min(width + 2 * (margin + this.bubblePixels), max);
@@ -388,7 +393,7 @@ export class TerrainRenderer {
     const bubbleU = Math.max(0, Math.floor((cacheWidth - width) / 2) - margin);
     const bubbleV = Math.max(0, Math.min(this.bubblePixels, cacheHeight - height - 2 * margin));
 
-    const key = `${ppt}|${camera.reliefScale}|${this.debugMode}`;
+    const key = `${ppt}|${relief}|${this.debugMode}`;
     if (cacheWidth !== this.cacheWidth || cacheHeight !== this.cacheHeight) {
       this.allocateCache(cacheWidth, cacheHeight);
       this.window = null;
@@ -480,7 +485,7 @@ export class TerrainRenderer {
 
     const f = (name: string) => this.fillLocation(name);
     gl.uniform1f(f('uPixelsPerTile'), ppt);
-    gl.uniform1f(f('uReliefScale'), camera.reliefScale);
+    gl.uniform1f(f('uReliefScale'), camera.reliefScale > 0 ? 1 : 0);
     gl.uniform1i(f('uDebug'), this.debugMode);
     gl.uniform2f(f('uWindowStart'), win.u / ppt, win.v / ppt);
     gl.uniform2f(f('uWindowMod'), mod(win.u, W), mod(win.v, H));
