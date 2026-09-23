@@ -11,7 +11,14 @@ import {
   FILL_VERTEX_SOURCE,
   VERTEX_SOURCE,
 } from './terrainShader';
-import { MAX_RELIEF, Z_SCREEN, setCameraUniforms, type GpuCamera } from './iso';
+import {
+  MAX_RELIEF,
+  Z_SCREEN,
+  setCameraUniforms,
+  viewRotation,
+  worldToGround,
+  type GpuCamera,
+} from './iso';
 import type { Color } from '../functions/Color';
 
 /** Reihenfolge muss zu den B_*-Konstanten im Shader passen. */
@@ -393,7 +400,8 @@ export class TerrainRenderer {
     const bubbleU = Math.max(0, Math.floor((cacheWidth - width) / 2) - margin);
     const bubbleV = Math.max(0, Math.min(this.bubblePixels, cacheHeight - height - 2 * margin));
 
-    const key = `${ppt}|${relief}|${this.debugMode}`;
+    // Gedreht zeigt jedes Texel eine andere Weltstelle - neu befüllen.
+    const key = `${ppt}|${relief}|${this.debugMode}|${viewRotation()}`;
     if (cacheWidth !== this.cacheWidth || cacheHeight !== this.cacheHeight) {
       this.allocateCache(cacheWidth, cacheHeight);
       this.window = null;
@@ -410,8 +418,9 @@ export class TerrainRenderer {
       gl.activeTexture(gl.TEXTURE0);
     }
 
-    const u = Math.floor((camera.centerX - camera.centerY) * ppt - width / 2 - margin - bubbleU);
-    const v = Math.floor((camera.centerX + camera.centerY) / 2 * ppt - height / 2 - margin - bubbleV);
+    const cam = worldToGround(camera.centerX, camera.centerY);
+    const u = Math.floor(cam.u * ppt - width / 2 - margin - bubbleU);
+    const v = Math.floor(cam.v * ppt - height / 2 - margin - bubbleV);
     const next: TexelRect = { u, v, width: cacheWidth, height: cacheHeight };
 
     // Dringend ist nur, was im Bild liegt (plus schmaler Rand). Alles andere -
@@ -486,6 +495,7 @@ export class TerrainRenderer {
     const f = (name: string) => this.fillLocation(name);
     gl.uniform1f(f('uPixelsPerTile'), ppt);
     gl.uniform1f(f('uReliefScale'), camera.reliefScale > 0 ? 1 : 0);
+    gl.uniform1i(f('uRotation'), viewRotation());
     gl.uniform1i(f('uDebug'), this.debugMode);
     gl.uniform2f(f('uWindowStart'), win.u / ppt, win.v / ppt);
     gl.uniform2f(f('uWindowMod'), mod(win.u, W), mod(win.v, H));
@@ -551,8 +561,7 @@ export class TerrainRenderer {
     const halfU = width / 2 / camera.pixelsPerTile;
     const halfV = height / 2 / camera.pixelsPerTile;
     const reach = camera.reliefScale * Z_SCREEN * MAX_RELIEF;
-    const camU = camera.centerX - camera.centerY;
-    const camV = (camera.centerX + camera.centerY) / 2;
+    const { u: camU, v: camV } = worldToGround(camera.centerX, camera.centerY);
 
     // Am Weltraster ausgerichtet, damit die Eckpunkte beim Verschieben an
     // derselben Weltstelle bleiben.

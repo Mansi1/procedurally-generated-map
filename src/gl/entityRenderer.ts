@@ -9,7 +9,7 @@
 // stehen sie genau auf dem Boden, den der Gelände-Shader zeichnet.
 
 import type { RGB } from '../functions/Color';
-import { PROJECT_GLSL, setCameraUniforms, type GpuCamera } from './iso';
+import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
 import { TERRAIN_COMMON } from './terrainShader';
 import { parseMtl, parseObj } from './obj';
@@ -344,8 +344,8 @@ flat in vec3 vParams;
 flat in float vRoof;
 out vec4 fragColor;
 
-// Zur Kamera: ein Schritt in x + y ist ein Z_SCREEN-tel Schritt in z.
-const vec3 TO_CAMERA = vec3(1.0, 1.0, ${(2 / Math.sqrt(6)).toFixed(8)});
+// Zur Kamera, in Weltkoordinaten - hängt von der Blickrichtung ab.
+uniform vec3 uToCamera;
 // Licht von links oben im Bild - dieselbe Sonne wie im Gelände-Shader.
 const vec3 SUN = vec3(-0.45, 0.35, 0.82);
 
@@ -378,7 +378,7 @@ void main() {
   // Flächennormale aus den Bildschirm-Ableitungen - die Klötze sind eckig,
   // eine Normale je Fläche ist genau richtig und spart ein Attribut.
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-  if (dot(normal, TO_CAMERA) < 0.0) normal = -normal;
+  if (dot(normal, uToCamera) < 0.0) normal = -normal;
 
   vec3 base = vColor;
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
@@ -735,6 +735,7 @@ export class EntityRenderer {
     gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, total * STRIDE), gl.DYNAMIC_DRAW);
 
     setCameraUniforms(gl, (name) => this.location(name), camera);
+    gl.uniform3fv(this.location('uToCamera'), cameraDirection());
     gl.uniform1f(this.location('uMinSizeTiles'), minSizeTiles);
 
     gl.enable(gl.BLEND);

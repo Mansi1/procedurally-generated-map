@@ -225,7 +225,7 @@ void main() {
   int col = gl_VertexID % uGridColumns;
   int row = gl_VertexID / uGridColumns;
   vec2 g = uGridOrigin + vec2(float(col), float(row)) * uGridCell;
-  vec2 world = vec2(g.y + g.x * 0.5, g.y - g.x * 0.5);
+  vec2 world = groundToWorld(g);
 
   float z = 0.0;
   if (uReliefScale > 0.0) {
@@ -356,7 +356,7 @@ void main() {
   // Position, die im aktuellen Fenster auf t faellt.
   vec2 rel = mod(floor(gl_FragCoord.xy) - uWindowMod, uCacheSize);
   vec2 g = uWindowStart + (rel + 0.5) * step;
-  vec2 tile = vec2(g.y + g.x * 0.5, g.y - g.x * 0.5);
+  vec2 tile = groundToWorld(g);
   vec2 n = tile * uMapScale;
 
   float detailStep = step * uDetailPixels;

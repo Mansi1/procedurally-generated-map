@@ -44,14 +44,58 @@ export interface IsoView {
   height: number;
 }
 
+/**
+ * Blickrichtung in Vierteldrehungen (0..3). Die Welt wird vor der Projektion
+ * um k * 90° gedreht - Kamera, Mausabfrage und Shader lesen alle diesen Wert.
+ * Gebäude und Bäume behalten ihre Ausrichtung in der Welt; nach dem Drehen
+ * sieht man sie von einer anderen Seite.
+ */
+let rotation = 0;
+
+export function viewRotation(): number {
+  return rotation;
+}
+
+export function setViewRotation(k: number) {
+  rotation = ((k % 4) + 4) % 4;
+}
+
+/** Dreht einen Welt-Vektor um k Vierteldrehungen gegen den Uhrzeigersinn. */
+function rotate(x: number, y: number, k: number): [number, number] {
+  switch (k) {
+    case 1: return [-y, x];
+    case 2: return [-x, -y];
+    case 3: return [y, -x];
+    default: return [x, y];
+  }
+}
+
+/** Welt -> Boden-Koordinaten (u, v) in der aktuellen Blickrichtung. */
+export function worldToGround(x: number, y: number): { u: number; v: number } {
+  const [a, b] = rotate(x, y, rotation);
+  return { u: a - b, v: (a + b) / 2 };
+}
+
 export function groundToWorld(u: number, v: number): { x: number; y: number } {
-  return { x: v + u / 2, y: v - u / 2 };
+  const [x, y] = rotate(v + u / 2, v - u / 2, (4 - rotation) % 4);
+  return { x, y };
+}
+
+/**
+ * Richtung zur Kamera in Weltkoordinaten - in der Grundstellung (1, 1, 1/Z).
+ * Die Modelle drehen damit ihre Flächennormalen zur Kamera.
+ */
+export function cameraDirection(): [number, number, number] {
+  const [x, y] = rotate(1, 1, (4 - rotation) % 4);
+  return [x, y, 1 / Z_SCREEN];
 }
 
 /** Welt -> Bildschirm (CSS-Pixel ab links oben). */
 export function worldToScreen(view: IsoView, x: number, y: number, z: number) {
-  const du = x - y - (view.centerX - view.centerY);
-  const dv = (x + y - view.centerX - view.centerY) / 2;
+  const p = worldToGround(x, y);
+  const c = worldToGround(view.centerX, view.centerY);
+  const du = p.u - c.u;
+  const dv = p.v - c.v;
   return {
     x: view.width / 2 + du * view.tileSize,
     y: view.height / 2 + (dv - Z_SCREEN * z) * view.tileSize,
@@ -167,8 +211,9 @@ export function depthRange(camera: GpuCamera, heightPx: number): number {
 export function snapCamera(camera: GpuCamera, widthPx: number, heightPx: number): GpuCamera {
   const ppt = camera.pixelsPerTile;
   const snap = (texel: number, size: number) => (Math.round(texel - size / 2) + size / 2) / ppt;
-  const u = snap((camera.centerX - camera.centerY) * ppt, widthPx);
-  const v = snap((camera.centerX + camera.centerY) / 2 * ppt, heightPx);
+  const g = worldToGround(camera.centerX, camera.centerY);
+  const u = snap(g.u * ppt, widthPx);
+  const v = snap(g.v * ppt, heightPx);
   const center = groundToWorld(u, v);
   return { ...camera, centerX: center.x, centerY: center.y };
 }
@@ -181,8 +226,9 @@ export function setCameraUniforms(
 ) {
   const { width, height } = gl.canvas;
   gl.uniform2f(location('uResolution'), width, height);
-  gl.uniform2f(location('uCameraGround'),
-      camera.centerX - camera.centerY, (camera.centerX + camera.centerY) / 2);
+  const g = worldToGround(camera.centerX, camera.centerY);
+  gl.uniform2f(location('uCameraGround'), g.u, g.v);
+  gl.uniform1i(location('uRotation'), rotation);
   gl.uniform1f(location('uPixelsPerTile'), camera.pixelsPerTile);
   gl.uniform1f(location('uReliefScale'), camera.reliefScale);
   gl.uniform1f(location('uDepthRange'), depthRange(camera, height));
@@ -195,11 +241,26 @@ uniform vec2  uCameraGround;   // (u, v) der Bildmitte
 uniform float uPixelsPerTile;  // Geraete-Pixel je u/v-Einheit
 uniform float uDepthRange;
 uniform float uReliefScale;    // 1 = volles Relief, 0 = flach
+uniform int   uRotation;       // Blickrichtung in Vierteldrehungen, siehe viewRotation()
 
 const float Z_SCREEN = ${Z_SCREEN.toFixed(8)};
 
+// Welt um k Vierteldrehungen drehen - wie rotate() in iso.ts.
+vec2 rotateQuarter(vec2 p, int k) {
+  if (k == 1) return vec2(-p.y, p.x);
+  if (k == 2) return -p;
+  if (k == 3) return vec2(p.y, -p.x);
+  return p;
+}
+
+// Boden-Koordinaten (u, v) -> Welt, in der aktuellen Blickrichtung.
+vec2 groundToWorld(vec2 g) {
+  return rotateQuarter(vec2(g.y + g.x * 0.5, g.y - g.x * 0.5), (4 - uRotation) % 4);
+}
+
 vec4 project(vec2 world, float z) {
-  vec2 g = vec2(world.x - world.y, (world.x + world.y) * 0.5) - uCameraGround;
+  vec2 r = rotateQuarter(world, uRotation);
+  vec2 g = vec2(r.x - r.y, (r.x + r.y) * 0.5) - uCameraGround;
   vec2 px = vec2(g.x, g.y - Z_SCREEN * z) * uPixelsPerTile;
   // Naeher an der Kamera = weiter unten im Bild und hoeher.
   float depth = -(g.y + Z_SCREEN * z) / uDepthRange;

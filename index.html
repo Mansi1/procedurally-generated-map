@@ -236,6 +236,52 @@
         box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
         cursor: pointer;
       }
+      /* Kompass über der Minimap: Klick auf eine Himmelsrichtung dreht die
+         Ansicht so, dass sie nach oben zeigt. */
+      #compass {
+        position: absolute;
+        bottom: 326px;
+        right: 12px;
+        width: 78px;
+        height: 78px;
+        border-radius: 50%;
+        background: var(--panel);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 1px solid var(--border);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      }
+      #compass button {
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--text);
+        font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+        cursor: pointer;
+        transition: left 0.25s, top 0.25s;
+      }
+      #compass button:hover {
+        background: rgba(110, 231, 160, 0.18);
+      }
+      #compass button[data-dir='N'] {
+        color: #ff7a6b;
+      }
+      #compass .needle {
+        position: absolute;
+        left: 35px;
+        top: 17px;
+        width: 8px;
+        height: 44px;
+        pointer-events: none;
+        transition: transform 0.3s;
+        transform-origin: 4px 22px;
+        background: linear-gradient(#ff7a6b 0 50%, rgba(207, 233, 214, 0.55) 50% 100%);
+        clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+      }
     </style>
   </head>
   <body>
@@ -273,6 +319,13 @@
     <div id="build" class="panel"></div>
 
     <canvas id="minimap"></canvas>
+    <div id="compass" title="Blickrichtung - klicke auf eine Himmelsrichtung">
+      <div class="needle"></div>
+      <button type="button" data-dir="N">N</button>
+      <button type="button" data-dir="E">O</button>
+      <button type="button" data-dir="S">S</button>
+      <button type="button" data-dir="W">W</button>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
