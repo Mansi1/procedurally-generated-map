@@ -12,9 +12,9 @@ export interface Settings {
   speed: number;
   /** Kamera-Tempo mit WASD/Pfeiltasten: 1 = normal. */
   scroll: number;
-  /** Hilfe mit Tasten und Legende oben rechts. */
+  /** Tastenhilfe oben rechts. */
   showHelp: boolean;
-  /** Tile-, Kamera- und FPS-Anzeige unten links. */
+  /** Legende und Tile-, Kamera- und FPS-Anzeige oben links. */
   showDebug: boolean;
 }
 
@@ -103,8 +103,8 @@ export class SettingsMenu {
         </section>
         <section>
           <h3>Anzeige</h3>
-          <label class="menu-row"><span>Hilfe und Legende</span><input type="checkbox" data-set="showHelp"></label>
-          <label class="menu-row"><span>Entwickler-Infos</span><input type="checkbox" data-set="showDebug"></label>
+          <label class="menu-row"><span>Tastenhilfe</span><input type="checkbox" data-set="showHelp"></label>
+          <label class="menu-row"><span>Legende und Entwickler-Infos</span><input type="checkbox" data-set="showDebug"></label>
         </section>
         <div class="menu-footer">
           <button type="button" class="menu-btn danger" data-act="new">Neues Spiel</button>

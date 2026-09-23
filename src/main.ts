@@ -19,7 +19,7 @@ import {
 } from './map';
 import type { TileType } from './noise';
 import type { EntityInstance } from './gl/entityRenderer';
-import { SHAPE, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
+import { SHAPE, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
   BUILDING_ORDER,
@@ -199,8 +199,11 @@ function updateCursor() {
   } else if (trainer && BUILDINGS[trainer.type].trains) {
     cursor = RALLY_CURSOR;
   } else if (selectedVillagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
-    const found = world.remainingAt(mouseTileX, mouseTileY);
-    if (found.type && found.amount > 0 && !world.at(mouseTileX, mouseTileY)) {
+    // Zeigt der Zeiger auf ein Objekt (Baumkrone, Fels), gilt dessen Feld.
+    const t = world.at(mouseTileX, mouseTileY) ? undefined : hoverObject;
+    const [tx, ty] = t ? [t.x, t.y] : [mouseTileX, mouseTileY];
+    const found = world.remainingAt(tx, ty);
+    if (found.type && found.amount > 0 && !world.at(tx, ty)) {
       cursor = GATHER_CURSOR[found.type];
     }
   }
@@ -469,6 +472,52 @@ function villagerAt(px: number, py: number): Villager | undefined {
   return best;
 }
 
+/**
+ * Vorkommen, dessen Objekt (Baum, Fels, Strauch) unter dem Zeiger steht -
+ * auch an der Krone, nicht nur am Fuß. Jedes Objekt gilt als aufrechter
+ * Streifen vom Fuß bis zur Spitze; der vorderste Treffer gewinnt.
+ */
+function resourceObjectAt(px: number, py: number): { x: number; y: number } | undefined {
+  if (tileSize < RESOURCE_OBJECTS_MIN_ZOOM) return undefined;
+  const v = view();
+  // Etwas Rand: hohe Bäume unterhalb des Bildes ragen mit der Krone herein.
+  const rect = visibleWorldRect(v);
+  const margin = 4;
+  const area = { x: rect.x - margin, y: rect.y - margin, width: rect.width + 2 * margin, height: rect.height + 2 * margin };
+  return resources.pick(area, (inst, x, y) => {
+    const dims = modelSize(inst.shape);
+    if (!dims) return undefined;
+    // Leer abgebaut und nicht mehr zu sehen (Bäume, Felsen) - nicht treffen.
+    if (!world.resourceInfo(x, y)) return undefined;
+    const cx = inst.x + 0.5;
+    const cy = inst.y + 0.5;
+    const z = zAt(cx, cy);
+    // Ein gefällter Baum liegt flach.
+    const fallen = inst.motion && inst.motion[1] > 0.5;
+    const height = fallen ? 0.3 * inst.size : dims.height * inst.size;
+    const base = worldToScreen(v, cx, cy, z);
+    const top = worldToScreen(v, cx, cy, z + height);
+    // Halbe Breite in Pixeln: ein Stück quer zur Blickrichtung am Boden.
+    const w = dims.width * inst.size * 0.4;
+    const side = worldToScreen(v, cx + w, cy - w, z);
+    const half = Math.max(6, Math.hypot(side.x - base.x, side.y - base.y));
+    // Abstand des Zeigers zum Streifen von base nach top.
+    const sx = top.x - base.x;
+    const sy = top.y - base.y;
+    const len2 = sx * sx + sy * sy || 1;
+    const t = Math.max(0, Math.min(1, ((px - base.x) * sx + (py - base.y) * sy) / len2));
+    const d = Math.hypot(px - (base.x + sx * t), py - (base.y + sy * t));
+    return d <= half ? base.y : undefined;
+  });
+}
+
+/** Tile, auf das ein Klick zielt: ein Vorkommen am Objekt getroffen, sonst der Boden. */
+function targetTileAt(px: number, py: number): { x: number; y: number } {
+  const tile = tileAt(px, py);
+  if (world.at(tile.x, tile.y)) return tile;
+  return resourceObjectAt(px, py) ?? tile;
+}
+
 /** Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst Vorkommen, sonst nichts. */
 function clickSelect(px: number, py: number, add: boolean) {
   const villager = villagerAt(px, py);
@@ -479,7 +528,7 @@ function clickSelect(px: number, py: number, add: boolean) {
     if (add && selectedVillagers.has(villager.id)) selectedVillagers.delete(villager.id);
     else selectedVillagers.add(villager.id);
   } else {
-    const { x, y } = tileAt(px, py);
+    const { x, y } = targetTileAt(px, py);
     const building = world.at(x, y);
     selectedVillagers.clear();
     selectedBuilding = building ? world.anchorOf(building) : null;
@@ -564,7 +613,8 @@ canvas.addEventListener('contextmenu', (e) => {
     return;
   }
   const p = canvasPoint(e);
-  const { x, y } = tileAt(p.x, p.y);
+  // Auf das Objekt gezielt (Baumkrone, Fels) zählt dessen Feld.
+  const { x, y } = targetTileAt(p.x, p.y);
 
   // Ausbildendes Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt.
   const trainer = selectedBuilding ? world.building(selectedBuilding) : undefined;
@@ -974,9 +1024,18 @@ minimapCanvas.addEventListener('mouseleave', () => {
 });
 
 /** Markierung und Anzeige auf das Tile unter der angegebenen Canvas-Position setzen. */
+/** Vorkommen, auf dessen Objekt der Zeiger gerade zeigt - für den Sammel-Mauszeiger. */
+let hoverObject: { x: number; y: number } | undefined;
+
 function updateHoveredTile(mouseX: number, mouseY: number) {
   mousePixelX = mouseX;
   mousePixelY = mouseY;
+  // Nur mit ausgewählten Dorfbewohnern zählt, worauf der Zeiger zeigt.
+  const object = selectedVillagers.size > 0 ? resourceObjectAt(mouseX, mouseY) : undefined;
+  if (object?.x !== hoverObject?.x || object?.y !== hoverObject?.y) {
+    hoverObject = object;
+    updateCursor();
+  }
   const tile = tileAt(mouseX, mouseY);
   if (tile.x === mouseTileX && tile.y === mouseTileY) return;
   mouseTileX = tile.x;

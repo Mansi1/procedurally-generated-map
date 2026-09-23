@@ -287,6 +287,10 @@ uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 // Modelle: Groesse je Tile der Instanzgroesse, Nabe der Fluegel (links, oben)
 // und die Zeit fuer alles, was sich von selbst bewegt.
 uniform float uModelScale;
+uniform float uModelTop;     // Höhe des Modells in Modell-Einheiten (Bäume: Absägen)
+uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
+// Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
+float gSawn = 0.0;
 uniform vec2  uHub;
 uniform float uTime;
 
@@ -313,6 +317,10 @@ const int P_TOOL = 13;       // Beil in der rechten Hand, schwingt mit dem Unter
 // Beere am Strauch. aCorner.w = 14 + Zufall * 0.45 je Beere: sie ist zu
 // sehen, solange der Rest des Vorkommens (aMotion.w) über dem Zufall liegt.
 const int P_BERRY = 14;
+// Baum außer dem Stamm (Laub, Äste, Zapfen, Wurzeln). aCorner.w = 15 + Höhe
+// des Teils (0..1 der Baumhöhe) * 0.45 - beim Absägen verschwindet es ganz,
+// sobald der Schnitt darunter liegt.
+const int P_CROWN = 15;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -503,6 +511,24 @@ void main() {
       p.z += bob;
     }
 
+    if (${TREES.map((n) => `shape == ${n}`).join(' || ')}) {
+      // Holz wird verbraucht: der (gefällte) Baum wird von der Spitze her
+      // abgesägt, statt zu schrumpfen - erst die Krone, dann der Stamm. Was
+      // über dem Schnitt liegt, wird auf die Schnitthöhe gedrückt und bildet
+      // die Schnittfläche. Ganz leer bleibt ein Stumpf stehen.
+      float cut = mix(uStump, uModelTop, aMotion.w);
+      if (part == P_CROWN) {
+        // Laub, Äste, Zapfen: weg, sobald der Schnitt unter ihrem Ansatz liegt.
+        float from = (aCorner.w - 15.0) / 0.45 * uModelTop;
+        if (from > cut) p = vec3(0.0);
+      } else if (p.z > cut) {
+        // Stamm: auf die Schnitthöhe gedrückt - die Schnittfläche, hell wie
+        // frisch gesägtes Holz.
+        p.z = cut;
+        gSawn = 1.0;
+      }
+    }
+
     if (part == P_BERRY) {
       // Abgeerntet: die Beeren verschwinden eine nach der anderen, der Strauch
       // bleibt stehen. Alle Ecken einer Beere auf einen Punkt - unsichtbar.
@@ -553,19 +579,28 @@ void main() {
     // aMotion.z = Richtung in Weltkoordinaten. Der Anteil in Fallrichtung
     // und die Hoehe drehen sich, der Anteil quer dazu bleibt.
     bool falling = natural && aMotion.y > 0.0;
-    if (falling) {
+    // Der Stumpf und alles am Boden (Wurzeln, Gras, Laub) bleiben stehen;
+    // der Stamm darüber kippt um die Oberkante des Stumpfs.
+    bool grounded = p.z <= uStump + 1e-4
+        || (part == P_CROWN && aCorner.w - 15.0 < 0.002);
+    if (falling && !grounded) {
       vec2 dir = vec2(cos(aMotion.z), sin(aMotion.z));
+      float hinge = uStump * scale;
       float along = dot(offset, dir);
       vec2 across = offset - dir * along;
       float c = cos(aMotion.y);
       float s = sin(aMotion.y);
-      offset = across + dir * (along * c + up * s);
-      up = -along * s + up * c;
+      float lift = up - hinge;
+      offset = across + dir * (along * c + lift * s);
+      up = hinge - along * s + lift * c;
     }
 
     vec2 xy = center + offset;
     float base = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(center);
     float z = base + up;
+    // Am Hang liegt der umgefallene Stamm auf dem Gelände auf, statt
+    // hineinzutauchen: kein Punkt unter den Boden an seiner Stelle.
+    if (falling && !grounded) z = max(z, groundZ(xy) + 0.004);
     // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
     // Hang keine Luecke darunter aufgeht. Ein kippender Baum nicht - sein
     // Sockel wuerde sonst als Stange aus dem Boden ragen.
@@ -615,6 +650,7 @@ void main() {
     // die Last in der Farbe der Ressource, alles andere wie in der MTL-Datei.
     int role = int(aMaterial.w + 0.5);
     vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
+    if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
     if (shape != 5 && shape != 18 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
@@ -778,6 +814,8 @@ interface Model {
   shoulder: number;
   knee: number;
   elbow: number;
+  /** Bäume: Höhe des Stumpfs (Modell-Einheiten) - dort knickt der Stamm beim Fällen ab. */
+  stump: number;
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
@@ -807,7 +845,7 @@ function berryRandom(index: number): number {
  * mitzählen. Der Boden liegt danach bei 0. Blender hängt beim Export manchmal
  * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
  */
-function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = false): Model {
+function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = false, sawable = false): Model {
   const triangles = parseObj(obj);
   const colors = parseMtl(mtl);
   if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
@@ -843,7 +881,9 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
   // Größe jedes Teils (größte Ausdehnung in Modell-Einheiten) - für die
   // vereinfachten Fassungen.
   const extent = new Map<number, number>();
-  if (lod) {
+  // Bäume: wie hoch jedes Teil ansetzt (0 = Boden, 1 = Spitze), siehe P_CROWN.
+  const bottom = new Map<number, number>();
+  if (lod || sawable) {
     const box = new Map<number, number[]>();
     for (const t of triangles) {
       const b = box.get(t.index) ?? [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
@@ -855,7 +895,10 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
       }
       box.set(t.index, b);
     }
-    for (const [i, b] of box) extent.set(i, Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / unitLength);
+    for (const [i, b] of box) {
+      extent.set(i, Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / unitLength);
+      bottom.set(i, (b[1] - minY) / (maxY - minY));
+    }
   }
   const lods: number[][] = LOD_PARTS.map(() => []);
 
@@ -864,6 +907,7 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
   let shoulder = 0;
   let knee = 0;
   let elbow = 0;
+  let stump = 0;
   const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
@@ -874,7 +918,10 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
     for (const p of t.points) {
       const [x, y, z] = local(p);
       // Beeren: je Beere (Objekt) ein fester Zufall im Nachkomma-Teil, siehe P_BERRY.
-      const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45 : part;
+      const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45
+        // Bäume: alles außer dem Stamm verschwindet beim Absägen als Ganzes.
+        : sawable && !t.object.startsWith('Trunk') ? 15 + (bottom.get(t.index) ?? 0) * 0.45
+        : part;
       v.push(x, y, z, partValue, color[0], color[1], color[2], role);
       if (lod) {
         LOD_PARTS.forEach((min, i) => {
@@ -887,6 +934,7 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
       // Knie und Ellbogen an der Oberkante von Unterschenkel und Unterarm.
       if (part === 9 || part === 10) knee = Math.max(knee, z);
       if (part === 11 || part === 12) elbow = Math.max(elbow, z);
+      if (t.object.startsWith('Trunk.Stump')) stump = Math.max(stump, z);
       if (part === 6) {
         // Die Last hängt mit ihrer Vorderseite am Rücken.
         load.back = Math.max(load.back, x);
@@ -907,6 +955,7 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
     shoulder,
     knee,
     elbow,
+    stump,
     loadAnchor: Number.isFinite(load.back)
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
@@ -936,7 +985,7 @@ const GOLD_METERS = 2.8;
 
 /** Ein Vorkommen: mit vereinfachten Fassungen, in seiner echten Breite. */
 function natural(shape: number, obj: string, mtl: string, meters: number) {
-  const model = loadModel(obj, mtl, 'width', true);
+  const model = loadModel(obj, mtl, 'width', true, TREES.includes(shape));
   return [{ shape, model, scale: model.meters / meters }];
 }
 
@@ -975,6 +1024,15 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   // der Mast allein wäre als Maßstab viel zu schmal.
   { shape: SHAPE.rallyFlag, model: loadModel(rallyFlagObj, rallyFlagMtl, 'height'), scale: 1 },
 ];
+
+/**
+ * Größe eines Modells in Tiles je Einheit der Instanzgröße: Höhe und Breite.
+ * Für das Anklicken von Bäumen und Felsen an ihrer Krone statt am Boden.
+ */
+export function modelSize(shape: number): { height: number; width: number } | undefined {
+  const m = MODELS.find((entry) => entry.shape === shape);
+  return m && { height: m.model.top * m.scale, width: m.scale };
+}
 
 interface Mesh {
   vao: WebGLVertexArrayObject;
@@ -1181,6 +1239,8 @@ export class EntityRenderer {
         gl.uniform1f(this.location('uKnee'), m.model.knee);
         gl.uniform1f(this.location('uElbow'), m.model.elbow);
         gl.uniform1f(this.location('uStride'), m.stride ?? 1);
+        gl.uniform1f(this.location('uModelTop'), m.model.top);
+        gl.uniform1f(this.location('uStump'), m.model.stump);
         gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
         gl.uniform2fv(this.location('uHub'), m.model.hub);
         this.draw(lod > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[lod - 1] : m.mesh, first, m.list.length);

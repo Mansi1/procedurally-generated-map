@@ -60,11 +60,29 @@ function tufts(m, rnd, masses, count, len, mtls, droop = 0) {
 }
 
 /** Trunk as beam segments through `pts` with radius going from r0 to r1. */
+/**
+ * Height of the stump ring, in metres before stretching. The trunk is split
+ * there: the game leaves the stump standing when the tree falls and hinges
+ * the rest of the trunk at this ring (it reads the height from the model).
+ */
+const STUMP = 0.45;
+
 function trunk(m, pts, r0, r1, mtl, n = 7) {
   for (let i = 0; i + 1 < pts.length; i++) {
     const f0 = i / (pts.length - 1), f1 = (i + 1) / (pts.length - 1);
     const w0 = 2 * (r0 + (r1 - r0) * f0), w1 = 2 * (r0 + (r1 - r0) * f1);
-    m.beam('Trunk', typeof mtl === 'function' ? mtl(i) : mtl, pts[i], pts[i + 1], w0, { w1, n });
+    const material = typeof mtl === 'function' ? mtl(i) : mtl;
+    const [a, b] = [pts[i], pts[i + 1]];
+    if (i === 0 && a[1] < STUMP && b[1] > STUMP) {
+      // Stump: its own short piece up to the ring.
+      const f = (STUMP - a[1]) / (b[1] - a[1]);
+      const ring = a.map((v, j) => v + (b[j] - v) * f);
+      const wr = w0 + (w1 - w0) * f;
+      m.beam('Trunk.Stump', material, a, ring, w0, { w1: wr, n });
+      m.beam('Trunk', material, ring, b, wr, { w1, n });
+      continue;
+    }
+    m.beam('Trunk', material, a, b, w0, { w1, n });
   }
 }
 
@@ -72,7 +90,9 @@ function trunk(m, pts, r0, r1, mtl, n = 7) {
 function roots(m, rnd, r, count, len, mtl = 'Bark') {
   for (let i = 0; i < count; i++) {
     const a = (i / count) * Math.PI * 2 + rnd() * 0.5;
-    m.beam('Root', mtl, [Math.cos(a) * r * 0.4, r * 1.3, Math.sin(a) * r * 0.4], [Math.cos(a) * (r + len), 0, Math.sin(a) * (r + len)], r * 0.9, { w1: r * 0.25, n: 5 });
+    // Kurz und flach am Stammfuß - sonst sieht der Stumpf nach dem Fällen
+    // wie eine Feuerstelle aus.
+    m.beam('Root', mtl, [Math.cos(a) * r * 0.5, r * 0.75, Math.sin(a) * r * 0.5], [Math.cos(a) * (r + len * 0.55), 0, Math.sin(a) * (r + len * 0.55)], r * 0.75, { w1: r * 0.25, n: 5 });
   }
 }
 

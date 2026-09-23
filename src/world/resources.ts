@@ -125,6 +125,31 @@ export class ResourceField {
 
   constructor(private probe: TileProbe, private mapGen: MapGenerator) {}
 
+  /**
+   * Vorkommen, deren Objekt am Bildschirmpunkt liegt: `hit` bekommt je
+   * sichtbarem Objekt Tile, Lage (Mitte am Boden) und Instanz und liefert die
+   * Tiefe des Treffers oder undefined. Gewinnt der vorderste Treffer.
+   */
+  pick(view: ViewRect, hit: (inst: EntityInstance, x: number, y: number) => number | undefined): { x: number; y: number } | undefined {
+    const x1 = view.x + view.width;
+    const y1 = view.y + view.height;
+    let best: { x: number; y: number } | undefined;
+    let bestDepth = -Infinity;
+    for (let cy = Math.floor(view.y / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
+      for (let cx = Math.floor(view.x / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++) {
+        for (const node of this.chunks.get(`${cx},${cy}`) ?? []) {
+          if (node.x < view.x || node.x > x1 || node.y < view.y || node.y > y1) continue;
+          const depth = hit(node.instance, node.x, node.y);
+          if (depth !== undefined && depth > bestDepth) {
+            bestDepth = depth;
+            best = { x: node.x, y: node.y };
+          }
+        }
+      }
+    }
+    return best;
+  }
+
   /** Baum- oder Strauchart auf Tile (x, y), z. B. "Eiche" - sonst undefined. */
   kindAt(x: number, y: number): string | undefined {
     const found = this.probe.resourceAt(x, y);
@@ -236,16 +261,21 @@ export class ResourceField {
           if (node.x < view.x || node.x > x1 || node.y < view.y || node.y > y1) continue;
           const share = world.remainingShare(node.x, node.y, node.total);
           // Beerensträucher bleiben stehen und verlieren nur ihre Beeren
-          // (motion[3] = Rest, siehe P_BERRY im Shader). Alles andere
-          // schrumpft und verschwindet, wenn es leer ist.
+          // (motion[3] = Rest, siehe P_BERRY im Shader). Felsen schrumpfen
+          // und verschwinden, wenn sie leer sind.
           const bush = BUSHES.includes(node.shape);
-          if (share <= 0 && !bush) continue;
-          node.instance.size = bush ? node.size : node.size * (0.45 + 0.55 * share);
+          // Bäume behalten ihre Größe: sie werden im Shader von der Spitze her
+          // abgesägt (motion[3] = Rest), leer bleibt ein Stumpf stehen.
+          const tree = TREES.includes(node.shape);
+          if (share <= 0 && !bush && !tree) continue;
+          node.instance.size = bush || tree ? node.size : node.size * (0.45 + 0.55 * share);
           // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
           // Falls stecken in motion[1] und motion[2].
           const motion = node.instance.motion!;
           const fall = TREES.includes(node.shape) ? world.fall(node.x, node.y, blend) : null;
-          motion[1] = fall ? fall.angle : 0;
+          // Ganz verbraucht steht der Stumpf wieder aufrecht - der liegende
+          // Stamm ist abgesägt und weggetragen.
+          motion[1] = fall && share > 0 ? fall.angle : 0;
           motion[2] = fall ? fall.dir : 0;
           motion[3] = share;
           // Die Instanzen werden wiederverwendet - der Balken muss also auch
