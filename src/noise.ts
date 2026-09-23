@@ -513,6 +513,18 @@ export class MapGenerator {
     return (this.detailNoise.noise2D((x * 0.35) / step, (y * 0.35) / step) + 1) * 0.5;
   }
 
+  /**
+   * Höhe und Biom eines Tiles ohne Schattierung und Farbrauschen - ein Drittel
+   * der Arbeit von getTile(), für Abfragen über viele Tiles.
+   */
+  terrainAt(x: number, y: number): { height: number; tileType: TileType } {
+    const nx = x * MAP_SCALE;
+    const ny = y * MAP_SCALE;
+    const height = this.elevation(nx, ny);
+    const { moisture, temperature } = this.climate(nx, ny, height);
+    return { height, tileType: this.classify(height, moisture, temperature) };
+  }
+
   /** Höhe -1..1 an einer beliebigen Welt-Position (in Tiles, nicht gerundet). */
   heightAt(x: number, y: number, step: number = 1): number {
     return this.elevation(x * MAP_SCALE, y * MAP_SCALE, step);

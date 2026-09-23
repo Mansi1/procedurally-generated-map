@@ -208,6 +208,37 @@ export class World {
     return { counts, idle };
   }
 
+  /**
+   * Alles über ein Vorkommen für die Anzeige: Art, Rest, Anfangsmenge und wie
+   * viele Dorfbewohner gerade daran sammeln. null, wenn dort nichts (mehr) ist.
+   */
+  resourceInfo(x: number, y: number):
+      { type: GatherType; remaining: number; total: number; gatherers: number } | null {
+    const found = this.remainingAt(x, y);
+    if (!found.type || found.amount <= 0) return null;
+    let gatherers = 0;
+    for (const v of this.villagers) {
+      if (v.task.kind === 'gather' && v.task.x === x && v.task.y === y) gatherers++;
+    }
+    return {
+      type: found.type,
+      remaining: found.amount,
+      total: this.probe.getTile(x, y).resourceAmount,
+      gatherers,
+    };
+  }
+
+  /**
+   * Anteil, der an einem Feld noch übrig ist (0..1), ohne das Gelände neu zu
+   * berechnen - `total` kennt der Aufrufer schon.
+   */
+  remainingShare(x: number, y: number, total: number): number {
+    const k = key(x, y);
+    if (this.exhausted.has(k)) return 0;
+    const taken = this.harvested.get(k);
+    return taken === undefined ? 1 : Math.max(0, 1 - taken / total);
+  }
+
   /** Was an einem Feld noch im Boden liegt. */
   remainingAt(x: number, y: number): { type: GatherType | null; amount: number } {
     const k = key(x, y);

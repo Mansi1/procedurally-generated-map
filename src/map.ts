@@ -275,6 +275,14 @@ export class TileProbe {
     return resourceFromNoise(tile.tileType, r);
   }
 
+  /** Nur das Vorkommen und die Höhe eines Tiles - billiger als getTile(). */
+  resourceAt(x: number, y: number): { height: number; type: ResourceType; amount: number } {
+    const terrain = this.mapGen.terrainAt(x, y);
+    const r = this.resourceNoise.noise2D(x * RESOURCE_SCALE, y * RESOURCE_SCALE);
+    const res = resourceFromNoise(terrain.tileType, r);
+    return { height: terrain.height, type: res.type, amount: res.amount };
+  }
+
   getTile(worldX: number, worldY: number): RenderTile {
     const tile = this.mapGen.getTile(Math.floor(worldX), Math.floor(worldY));
     const res = this.generateResources(tile);

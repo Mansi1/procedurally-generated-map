@@ -1,0 +1,15 @@
+# stone.mtl
+
+newmtl Stone
+Kd 0.620 0.620 0.640
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl StoneDark
+Kd 0.480 0.480 0.500
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

@@ -27,6 +27,7 @@ import {
   type Stock,
 } from './world/buildings';
 import { World, type Villager } from './world/world';
+import { ResourceField } from './world/resources';
 import { GATHER_CURSOR } from './cursors';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -127,6 +128,14 @@ const { seed, x: startX, y: startY, zoom: startZoom } = parseURL();
 const mapGen = new MapGenerator(seed);
 const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
+const resources = new ResourceField(probe, mapGen);
+
+/**
+ * Ab dieser Zoomstufe (CSS-Pixel je Tile) stehen Bäume, Felsen und Sträucher
+ * als Objekte in der Landschaft. Weiter draußen wären sie ein, zwei Pixel
+ * groß - dort zeigt die Einfärbung des Geländes die Vorkommen.
+ */
+const RESOURCE_OBJECTS_MIN_ZOOM = 8;
 
 /** Aktuell zum Bauen ausgewählter Typ, oder null im Ansichtsmodus. */
 let selected: BuildingType | null = null;
@@ -230,13 +239,18 @@ function updateResourceUI() {
 
 // --- Auswahl ---------------------------------------------------------------
 
-/** Ausgewählte Dorfbewohner (IDs) - oder ein ausgewähltes Gebäude, nie beides. */
+/**
+ * Ausgewählte Dorfbewohner (IDs), ein ausgewähltes Gebäude oder ein
+ * ausgewähltes Vorkommen - immer nur eine der drei Arten.
+ */
 const selectedVillagers = new Set<number>();
 let selectedBuilding: string | null = null;
+let selectedResource: { x: number; y: number } | null = null;
 
 function clearSelection() {
   selectedVillagers.clear();
   selectedBuilding = null;
+  selectedResource = null;
   updateSelectionUI();
 }
 
@@ -263,9 +277,10 @@ function villagerAt(px: number, py: number): Villager | undefined {
   return best;
 }
 
-/** Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst nichts. */
+/** Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst Vorkommen, sonst nichts. */
 function clickSelect(px: number, py: number, add: boolean) {
   const villager = villagerAt(px, py);
+  selectedResource = null;
   if (villager) {
     selectedBuilding = null;
     if (!add) selectedVillagers.clear();
@@ -276,6 +291,7 @@ function clickSelect(px: number, py: number, add: boolean) {
     const building = world.at(x, y);
     selectedVillagers.clear();
     selectedBuilding = building ? world.anchorOf(building) : null;
+    if (!building && world.resourceInfo(x, y)) selectedResource = { x, y };
   }
   updateSelectionUI();
 }
@@ -286,6 +302,7 @@ function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean)
   const [top, bottom] = y0 < y1 ? [y0, y1] : [y1, y0];
   if (!add) selectedVillagers.clear();
   selectedBuilding = null;
+  selectedResource = null;
   for (const v of world.villagers) {
     const s = villagerScreen(v);
     if (s.x >= left && s.x <= right && s.y >= top && s.y <= bottom) selectedVillagers.add(v.id);
@@ -390,6 +407,7 @@ function cycleTownCenter() {
   const next = centers[(current + 1) % centers.length];
 
   selectedVillagers.clear();
+  selectedResource = null;
   selectedBuilding = world.anchorOf(next);
   // Mitte des Gebäudes in die Bildmitte - mit seiner Geländehöhe, sonst
   // säße es auf einem Hügel ein gutes Stück über der Mitte.
@@ -464,6 +482,22 @@ function updateSelectionUI() {
         `<button class="build-btn" data-action="demolish">` +
         `<span class="name">Entf Abreißen</span><span class="cost">50 % zurück</span></button>`);
     html += `<div class="actions">${actions.join('')}</div>`;
+  } else if (selectedResource) {
+    const info = world.resourceInfo(selectedResource.x, selectedResource.y);
+    if (info) {
+      const left = Math.ceil(info.remaining);
+      const percent = Math.round((info.remaining / info.total) * 100);
+      html = `<div class="title">${RESOURCE_TYPE_LABEL[info.type]}</div>` +
+        `<div>Übrig <b>${left}/${info.total}</b></div>` +
+        `<div class="bar"><i style="width:${percent}%"></i></div>` +
+        `<div class="muted">${info.gatherers > 0
+          ? `${info.gatherers} ${VILLAGER.label} sammeln hier`
+          : 'Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.'}</div>`;
+    } else {
+      // Leer gesammelt, während es ausgewählt war.
+      selectedResource = null;
+      html = `<div class="title">Leer</div><div class="muted">Hier ist nichts mehr zu holen.</div>`;
+    }
   } else if (selectedVillagers.size > 0) {
     const chosen = world.villagers.filter((v) => selectedVillagers.has(v.id));
     // Gleiche Tätigkeiten zusammenfassen: "3x sammelt Holz, 1x untätig".
@@ -720,7 +754,12 @@ function invalidatePlacementCheck() {
 /** Gebäude, erschöpfte Felder und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
-  world.instances(visibleWorldRect(view()), overlay, blend,
+  const visible = visibleWorldRect(view());
+  if (tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
+    resources.update(visible, camX, camY);
+    resources.instances(visible, world, overlay, selectedResource);
+  }
+  world.instances(visible, overlay, blend,
       { villagers: selectedVillagers, building: selectedBuilding });
 
   // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.
@@ -737,6 +776,12 @@ function collectOverlay(blend: number) {
     overlay.push({
       x: building.x, y: building.y, size: BUILDINGS[building.type].footprint + 0.4,
       color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
+    });
+  }
+  if (selectedResource) {
+    overlay.push({
+      x: selectedResource.x, y: selectedResource.y, size: 1,
+      color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.3,
     });
   }
 

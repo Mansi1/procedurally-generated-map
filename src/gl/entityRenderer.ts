@@ -25,6 +25,14 @@ import townCenterObj from '../models/town_center.obj?raw';
 import townCenterMtl from '../models/town_center.mtl?raw';
 import miningCampObj from '../models/mining_camp.obj?raw';
 import miningCampMtl from '../models/mining_camp.mtl?raw';
+import treeObj from '../models/tree.obj?raw';
+import treeMtl from '../models/tree.mtl?raw';
+import stoneObj from '../models/stone.obj?raw';
+import stoneMtl from '../models/stone.mtl?raw';
+import goldObj from '../models/gold.obj?raw';
+import goldMtl from '../models/gold.mtl?raw';
+import berryBushObj from '../models/berry_bush.obj?raw';
+import berryBushMtl from '../models/berry_bush.mtl?raw';
 
 /** Formen für aParams.x - die Zahlen stehen so auch im Shader. */
 export const SHAPE = {
@@ -48,7 +56,23 @@ export const SHAPE = {
   healthBar: 10,
   /** Schuppen mit Steinen, Gold und Erzwagen (models/mining_camp.obj). */
   miningCamp: 11,
+  // Vorkommen in der Landschaft - ab hier "natürliche" Objekte: eigene
+  // Drehung je Instanz, keine Mindestgröße, keine Sortierung (undurchsichtig).
+  /** Kiefer auf Holz-Tiles (models/tree.obj). */
+  tree: 12,
+  /** Felsen auf Stein-Tiles (models/stone.obj). */
+  stoneRock: 13,
+  /** Fels mit Goldnuggets (models/gold.obj). */
+  goldRock: 14,
+  /** Beerenstrauch (models/berry_bush.obj). */
+  berryBush: 15,
 } as const;
+
+/** Ab dieser Form sind es Vorkommen, keine Gebäude oder Figuren. */
+const FIRST_NATURAL = SHAPE.tree;
+
+/** Gebäude schauen schräg zur Kamera (die steht bei +x +y). */
+const BUILDING_HEADING = 0.5;
 
 /** Was eine Figur gerade tut - steuert die Animation. */
 export const POSE = {
@@ -74,6 +98,11 @@ export interface EntityInstance {
   /** Nur für Figuren: Farbe der Last auf dem Rücken. */
   accent?: RGB;
   /**
+   * Geländehöhe unter der Instanz in Tiles, falls schon bekannt. Sonst rechnet
+   * der Shader sie aus - für ein paar Gebäude billig, für Tausende Bäume nicht.
+   */
+  ground?: number;
+  /**
    * Trefferpunkte 0..1 - gesetzt, wird darüber ein Lebensbalken gezeichnet.
    * Die Welt setzt es nur für Ausgewähltes, wie in AoE2.
    */
@@ -83,8 +112,10 @@ export interface EntityInstance {
 /** Oberkante der Klotz-Formen in Kantenlängen (Wand + Dach, wie `dims` im Shader). */
 const BOX_TOP: Record<number, number> = { 0: 0.55, 1: 1.6, 2: 0.9, 3: 0.42 };
 
-/** Float-Werte je Instanz: aTile(2) + aColor(3) + aParams(3) + aMotion(4) + aAccent(3). */
-const STRIDE = 15;
+/** Float-Werte je Instanz: aTile(2) + aColor(3) + aParams(3) + aMotion(4) + aAccent(3) + aGround(1). */
+const STRIDE = 16;
+/** aGround-Wert für "unbekannt, im Shader ausrechnen". */
+const GROUND_UNKNOWN = -1e4;
 
 /** Unterteilung flacher Overlays je Kante, damit sie sich an Hänge anschmiegen. */
 const FLAT_SEGMENTS = 4;
@@ -107,6 +138,7 @@ layout(location = 3) in vec3 aParams;   // x = Form, y = Alpha, z = Größe in T
 layout(location = 4) in vec4 aMotion;   // Figuren: Blickrichtung, Phase, Pose, Ladung
 layout(location = 5) in vec3 aAccent;   // Figuren: Farbe der Last
 layout(location = 6) in vec4 aMaterial; // Modelle: Materialfarbe, w = Rolle (MATERIAL_ROLE)
+layout(location = 7) in float aGround;  // Geländehöhe in Tiles, oder ${GROUND_UNKNOWN} = ausrechnen
 
 /** Untergrenze für die Größe, damit Gebäude beim Herauszoomen sichtbar bleiben. */
 uniform float uMinSizeTiles;
@@ -135,10 +167,6 @@ const int P_ARM_R = 4;
 const int P_HEAD = 5;
 const int P_LOAD = 6;
 const int P_SAILS = 7;
-
-// Gebaeude-Modelle schauen schraeg zur Kamera (die steht bei +x +y): man
-// sieht die Vorderseite und eine Flanke, und die Fluegel wirken raeumlich.
-const float BUILDING_HEADING = 0.5;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -184,7 +212,11 @@ void main() {
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5;
-    float size = figure ? max(aParams.z, uMinSizeTiles * 0.5) : max(aParams.z, uMinSizeTiles);
+    bool natural = shape >= ${FIRST_NATURAL};
+    // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
+    // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
+    float size = natural ? aParams.z
+        : figure ? max(aParams.z, uMinSizeTiles * 0.5) : max(aParams.z, uMinSizeTiles);
     float scale = size * uModelScale;
     int part = int(aCorner.w + 0.5);
     vec3 p = aCorner.xyz;
@@ -221,11 +253,12 @@ void main() {
       p.yz = uHub + vec2(q.x * cos(a) - q.y * sin(a), q.x * sin(a) + q.y * cos(a));
     }
 
-    float heading = figure ? aMotion.x : BUILDING_HEADING;
+    // Blickrichtung je Instanz (Gebäude bekommen sie vom Renderer).
+    float heading = aMotion.x;
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
     vec2 xy = center + (forward * p.x + left * p.y) * scale;
-    float base = groundZ(center);
+    float base = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(center);
     float z = base + p.z * scale;
     // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
     // Hang keine Luecke darunter aufgeht.
@@ -497,6 +530,10 @@ const MODELS: { shape: number; model: Model; scale: number }[] = [
   { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
   { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
   { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
+  { shape: SHAPE.tree, model: loadModel(treeObj, treeMtl, 'width'), scale: 1 },
+  { shape: SHAPE.stoneRock, model: loadModel(stoneObj, stoneMtl, 'width'), scale: 1 },
+  { shape: SHAPE.goldRock, model: loadModel(goldObj, goldMtl, 'width'), scale: 1 },
+  { shape: SHAPE.berryBush, model: loadModel(berryBushObj, berryBushMtl, 'width'), scale: 1 },
 ];
 
 interface Mesh {
@@ -556,7 +593,7 @@ export class EntityRenderer {
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
-    for (let loc = 1; loc <= 5; loc++) {
+    for (const loc of [1, 2, 3, 4, 5, 7]) {
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribDivisor(loc, 1);
     }
@@ -584,6 +621,7 @@ export class EntityRenderer {
     gl.vertexAttribPointer(3, 3, gl.FLOAT, false, bytes, offset + 20);
     gl.vertexAttribPointer(4, 4, gl.FLOAT, false, bytes, offset + 32);
     gl.vertexAttribPointer(5, 3, gl.FLOAT, false, bytes, offset + 48);
+    gl.vertexAttribPointer(7, 1, gl.FLOAT, false, bytes, offset + 60);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.vertices, count);
   }
 
@@ -617,7 +655,9 @@ export class EntityRenderer {
     }
     const backToFront = (a: EntityInstance, b: EntityInstance) => a.x + a.y - (b.x + b.y);
     solids.sort(backToFront);
-    for (const m of this.models) m.list.sort(backToFront);
+    // Nur Halbdurchsichtiges braucht die Reihenfolge; Bäume und Felsen sind
+    // undurchsichtig, der Tiefenpuffer reicht - und es sind Tausende.
+    for (const m of this.models) if (m.shape < FIRST_NATURAL) m.list.sort(backToFront);
 
     const bars = healthBars ? instances.filter((e) => e.health !== undefined) : [];
     const total = instances.length + bars.length;
@@ -638,7 +678,7 @@ export class EntityRenderer {
         d[o + 6] = e.alpha;
         d[o + 7] = e.size;
         const m = e.motion;
-        d[o + 8] = m ? m[0] : 0;
+        d[o + 8] = m ? m[0] : BUILDING_HEADING;
         d[o + 9] = m ? m[1] : 0;
         d[o + 10] = m ? m[2] : 0;
         d[o + 11] = m ? m[3] : 0;
@@ -646,6 +686,7 @@ export class EntityRenderer {
         d[o + 12] = a[0] / 255;
         d[o + 13] = a[1] / 255;
         d[o + 14] = a[2] / 255;
+        d[o + 15] = e.ground ?? GROUND_UNKNOWN;
       }
     }
     for (const e of bars) {

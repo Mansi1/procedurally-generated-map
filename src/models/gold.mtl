@@ -1,0 +1,15 @@
+# gold.mtl
+
+newmtl Rock
+Kd 0.360 0.340 0.330
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Gold
+Kd 0.950 0.760 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
