@@ -26,14 +26,34 @@ import townCenterObj from '../models/town_center.obj?raw';
 import townCenterMtl from '../models/town_center.mtl?raw';
 import miningCampObj from '../models/mining_camp.obj?raw';
 import miningCampMtl from '../models/mining_camp.mtl?raw';
-import treeObj from '../models/tree.obj?raw';
-import treeMtl from '../models/tree.mtl?raw';
+import treeSpruceObj from '../models/tree_spruce.obj?raw';
+import treeSpruceMtl from '../models/tree_spruce.mtl?raw';
+import treePineObj from '../models/tree_pine.obj?raw';
+import treePineMtl from '../models/tree_pine.mtl?raw';
+import treeOakObj from '../models/tree_oak.obj?raw';
+import treeOakMtl from '../models/tree_oak.mtl?raw';
+import treeBirchObj from '../models/tree_birch.obj?raw';
+import treeBirchMtl from '../models/tree_birch.mtl?raw';
+import treePoplarObj from '../models/tree_poplar.obj?raw';
+import treePoplarMtl from '../models/tree_poplar.mtl?raw';
+import treeMapleObj from '../models/tree_maple.obj?raw';
+import treeMapleMtl from '../models/tree_maple.mtl?raw';
+import treeOakOldObj from '../models/tree_oak_old.obj?raw';
+import treeOakOldMtl from '../models/tree_oak_old.mtl?raw';
+import treeOakYoungObj from '../models/tree_oak_young.obj?raw';
+import treeOakYoungMtl from '../models/tree_oak_young.mtl?raw';
 import stoneObj from '../models/stone.obj?raw';
 import stoneMtl from '../models/stone.mtl?raw';
 import goldObj from '../models/gold.obj?raw';
 import goldMtl from '../models/gold.mtl?raw';
-import berryBushObj from '../models/berry_bush.obj?raw';
-import berryBushMtl from '../models/berry_bush.mtl?raw';
+import berryBush1Obj from '../models/berry_bush_1.obj?raw';
+import berryBush1Mtl from '../models/berry_bush_1.mtl?raw';
+import berryBush2Obj from '../models/berry_bush_2.obj?raw';
+import berryBush2Mtl from '../models/berry_bush_2.mtl?raw';
+import berryBush3Obj from '../models/berry_bush_3.obj?raw';
+import berryBush3Mtl from '../models/berry_bush_3.mtl?raw';
+import berryBush4Obj from '../models/berry_bush_4.obj?raw';
+import berryBush4Mtl from '../models/berry_bush_4.mtl?raw';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
 
@@ -61,13 +81,13 @@ export const SHAPE = {
   miningCamp: 11,
   // Vorkommen in der Landschaft - ab hier "natürliche" Objekte: eigene
   // Drehung je Instanz, keine Mindestgröße, keine Sortierung (undurchsichtig).
-  /** Kiefer auf Holz-Tiles (models/tree.obj). */
+  /** Fichte auf Holz-Tiles (models/tree_spruce.obj) - weitere Bäume ab 22. */
   tree: 12,
   /** Felsen auf Stein-Tiles (models/stone.obj). */
   stoneRock: 13,
   /** Fels mit Goldnuggets (models/gold.obj). */
   goldRock: 14,
-  /** Beerenstrauch (models/berry_bush.obj). */
+  /** Johannisbeerstrauch (models/berry_bush_1.obj) - weitere Sträucher ab 19. */
   berryBush: 15,
   /** Fahne am Sammelpunkt eines Gebäudes (models/rally_flag.obj). */
   rallyFlag: 16,
@@ -78,6 +98,26 @@ export const SHAPE = {
   dust: 17,
   /** Wie `villager`, als Frau (models/villager_female.obj). */
   villagerFemale: 18,
+  /** Brombeere mit Ranken (models/berry_bush_2.obj). */
+  berryBush2: 19,
+  /** Heidelbeeren, mehrere kleine Büsche (models/berry_bush_3.obj). */
+  berryBush3: 20,
+  /** Hoher Himbeerstrauch (models/berry_bush_4.obj). */
+  berryBush4: 21,
+  /** Kiefer mit hohem, rötlichem Stamm (models/tree_pine.obj). */
+  treePine: 22,
+  /** Eiche mit breiter Krone (models/tree_oak.obj). */
+  treeOak: 23,
+  /** Birke mit zwei weißen Stämmen (models/tree_birch.obj). */
+  treeBirch: 24,
+  /** Schmale, hohe Pappel (models/tree_poplar.obj). */
+  treePoplar: 25,
+  /** Ahorn mit runder, dichter Krone (models/tree_maple.obj). */
+  treeMaple: 26,
+  /** Alte Eiche: knorriger Stamm mit Höhle, weit ausladend (models/tree_oak_old.obj). */
+  treeOakOld: 27,
+  /** Junge Eiche mit schlankem Stamm (models/tree_oak_young.obj). */
+  treeOakYoung: 28,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -108,9 +148,17 @@ export function millMotion(x: number, y: number): [number, number, number, numbe
   return [BUILDING_HEADING, r * Math.PI * 2, 0.8 + 0.4 * ((r * 7.13) % 1), 0];
 }
 
-/** Von bis: diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
-const FIRST_NATURAL = SHAPE.tree;
-const LAST_NATURAL = SHAPE.berryBush;
+/** Alle Bäume - sie werden gefällt und kippen um. */
+export const TREES: number[] = [
+  SHAPE.tree, SHAPE.treePine, SHAPE.treeOak, SHAPE.treeBirch, SHAPE.treePoplar, SHAPE.treeMaple,
+  SHAPE.treeOakOld, SHAPE.treeOakYoung,
+];
+
+/** Diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
+const NATURAL: number[] = [
+  ...TREES, SHAPE.stoneRock, SHAPE.goldRock,
+  SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4,
+];
 
 /** Gebäude schauen schräg zur Kamera (die steht bei +x +y). */
 export const BUILDING_HEADING = 0.5;
@@ -261,7 +309,7 @@ void main() {
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5 || shape == 18;
-    bool natural = shape >= ${FIRST_NATURAL} && shape <= ${LAST_NATURAL};
+    bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
     // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
     float size = natural ? aParams.z
@@ -633,6 +681,11 @@ const MATERIAL_ROLE: Record<string, number> = {
 interface Model {
   /** Je Eckpunkt: x vorn, y links, z oben (Modell-Einheiten), Teil, r, g, b, Rolle. */
   vertices: Float32Array;
+  /**
+   * Vereinfachte Fassungen fürs Herauszoomen (siehe LOD_PARTS): ohne die
+   * kleinen Teile - Beeren, Blattbüschel, Rinde. Nur bei Vorkommen.
+   */
+  lods?: Float32Array[];
   hip: number;
   shoulder: number;
   knee: number;
@@ -642,6 +695,8 @@ interface Model {
   hub: [number, number];
   /** Höchster Punkt in Modell-Einheiten - dort sitzt der Lebensbalken. */
   top: number;
+  /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
+  meters: number;
 }
 
 /**
@@ -652,7 +707,7 @@ interface Model {
  * mitzählen. Der Boden liegt danach bei 0. Blender hängt beim Export manchmal
  * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
  */
-function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
+function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = false): Model {
   const triangles = parseObj(obj);
   const colors = parseMtl(mtl);
   if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
@@ -685,6 +740,25 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
   const local = (p: [number, number, number]) =>
     [p[2] / unitLength, p[0] / unitLength, (p[1] - minY) / unitLength] as const;
 
+  // Größe jedes Teils (größte Ausdehnung in Modell-Einheiten) - für die
+  // vereinfachten Fassungen.
+  const extent = new Map<number, number>();
+  if (lod) {
+    const box = new Map<number, number[]>();
+    for (const t of triangles) {
+      const b = box.get(t.index) ?? [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (const p of t.points) {
+        for (let i = 0; i < 3; i++) {
+          b[i] = Math.min(b[i], p[i]);
+          b[i + 3] = Math.max(b[i + 3], p[i]);
+        }
+      }
+      box.set(t.index, b);
+    }
+    for (const [i, b] of box) extent.set(i, Math.max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / unitLength);
+  }
+  const lods: number[][] = LOD_PARTS.map(() => []);
+
   const v: number[] = [];
   let hip = 0;
   let shoulder = 0;
@@ -700,6 +774,11 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
     for (const p of t.points) {
       const [x, y, z] = local(p);
       v.push(x, y, z, part, color[0], color[1], color[2], role);
+      if (lod) {
+        LOD_PARTS.forEach((min, i) => {
+          if ((extent.get(t.index) ?? 1) >= min) lods[i].push(x, y, z, part, color[0], color[1], color[2], role);
+        });
+      }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
       if (part === 1 || part === 2) hip = Math.max(hip, z);
       if (part === 3 || part === 4) shoulder = Math.max(shoulder, z);
@@ -721,6 +800,7 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
 
   return {
     vertices: new Float32Array(v),
+    lods: lod ? lods.map((l) => new Float32Array(l)) : undefined,
     hip,
     shoulder,
     knee,
@@ -730,7 +810,30 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width'): Model {
       : [0, 0, 0],
     hub: [(sails.y[0] + sails.y[1]) / 2, (sails.z[0] + sails.z[1]) / 2],
     top: (maxY - minY) / unitLength,
+    meters: unitLength,
   };
+}
+
+/**
+ * Vereinfachte Fassungen der Vorkommen: Teile kleiner als dieser Anteil der
+ * Modellbreite fallen weg - unter LOD_ZOOM[0] CSS-Pixeln je Tile die erste,
+ * unter LOD_ZOOM[1] die zweite. Ein Wald hat Tausende Bäume, und weit draußen
+ * sind Beeren und Blattbüschel ohnehin kleiner als ein Pixel.
+ */
+const LOD_PARTS = [0.12, 0.45];
+const LOD_ZOOM = [32, 12];
+
+/**
+ * Bäume und Sträucher in Metern: so breit ist einer der Instanzgröße 1.
+ * Eine schmale Pappel wird so nicht auf die Breite einer Eiche aufgeblasen.
+ */
+const TREE_METERS = 3;
+const BUSH_METERS = 2.25;
+
+/** Ein Vorkommen: mit vereinfachten Fassungen, in seiner echten Breite. */
+function natural(shape: number, obj: string, mtl: string, meters: number) {
+  const model = loadModel(obj, mtl, 'width', true);
+  return [{ shape, model, scale: model.meters / meters }];
 }
 
 /**
@@ -746,10 +849,20 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
   { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
   { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
-  { shape: SHAPE.tree, model: loadModel(treeObj, treeMtl, 'width'), scale: 1 },
+  ...natural(SHAPE.tree, treeSpruceObj, treeSpruceMtl, TREE_METERS),
+  ...natural(SHAPE.treePine, treePineObj, treePineMtl, TREE_METERS),
+  ...natural(SHAPE.treeOak, treeOakObj, treeOakMtl, TREE_METERS),
+  ...natural(SHAPE.treeBirch, treeBirchObj, treeBirchMtl, TREE_METERS),
+  ...natural(SHAPE.treePoplar, treePoplarObj, treePoplarMtl, TREE_METERS),
+  ...natural(SHAPE.treeMaple, treeMapleObj, treeMapleMtl, TREE_METERS),
+  ...natural(SHAPE.treeOakOld, treeOakOldObj, treeOakOldMtl, TREE_METERS),
+  ...natural(SHAPE.treeOakYoung, treeOakYoungObj, treeOakYoungMtl, TREE_METERS),
   { shape: SHAPE.stoneRock, model: loadModel(stoneObj, stoneMtl, 'width'), scale: 1 },
   { shape: SHAPE.goldRock, model: loadModel(goldObj, goldMtl, 'width'), scale: 1 },
-  { shape: SHAPE.berryBush, model: loadModel(berryBushObj, berryBushMtl, 'width'), scale: 1 },
+  ...natural(SHAPE.berryBush, berryBush1Obj, berryBush1Mtl, BUSH_METERS),
+  ...natural(SHAPE.berryBush2, berryBush2Obj, berryBush2Mtl, BUSH_METERS),
+  ...natural(SHAPE.berryBush3, berryBush3Obj, berryBush3Mtl, BUSH_METERS),
+  ...natural(SHAPE.berryBush4, berryBush4Obj, berryBush4Mtl, BUSH_METERS),
   // Nach Höhe gemessen: das Tuch bewegt sich und zählt nicht zur Breite,
   // der Mast allein wäre als Maßstab viel zu schmal.
   { shape: SHAPE.rallyFlag, model: loadModel(rallyFlagObj, rallyFlagMtl, 'height'), scale: 1 },
@@ -764,7 +877,10 @@ export class EntityRenderer {
   private program: WebGLProgram;
   private building: Mesh;
   private flat: Mesh;
-  private models: { shape: number; model: Model; scale: number; stride?: number; mesh: Mesh; list: EntityInstance[] }[];
+  private models: {
+    shape: number; model: Model; scale: number; stride?: number;
+    mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
+  }[];
   private instanceBuffer: WebGLBuffer;
   private uniforms = new Map<string, WebGLUniformLocation | null>();
   /** Wird nur vergrößert, nie neu belegt - eine Allokation je Frame wäre Müll. */
@@ -790,7 +906,12 @@ export class EntityRenderer {
     this.instanceBuffer = gl.createBuffer()!;
     this.building = this.createMesh(buildingMesh());
     this.flat = this.createMesh(flatMesh());
-    this.models = MODELS.map((m) => ({ ...m, mesh: this.createMesh(m.model.vertices, 8), list: [] }));
+    this.models = MODELS.map((m) => ({
+      ...m,
+      mesh: this.createMesh(m.model.vertices, 8),
+      lodMeshes: (m.model.lods ?? []).map((l) => this.createMesh(l, 8)),
+      list: [],
+    }));
 
     gl.useProgram(this.program);
     uploadTerrainParams(gl, (name) => this.location(name));
@@ -881,7 +1002,7 @@ export class EntityRenderer {
     // Nur Halbdurchsichtiges braucht die Reihenfolge; Bäume und Felsen sind
     // undurchsichtig, der Tiefenpuffer reicht - und es sind Tausende.
     for (const m of this.models) {
-      if (m.shape < FIRST_NATURAL || m.shape > LAST_NATURAL) m.list.sort(backToFront);
+      if (!NATURAL.includes(m.shape)) m.list.sort(backToFront);
     }
 
     const bars = healthBars ? instances.filter((e) => e.health !== undefined) : [];
@@ -940,6 +1061,9 @@ export class EntityRenderer {
     this.draw(this.building, flats.length, solids.length);
 
     gl.uniform1f(this.location('uTime'), performance.now() / 1000);
+    // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
+    const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
+    const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     let first = flats.length + solids.length;
     for (const m of this.models) {
       if (m.list.length > 0) {
@@ -951,7 +1075,7 @@ export class EntityRenderer {
         gl.uniform1f(this.location('uStride'), m.stride ?? 1);
         gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
         gl.uniform2fv(this.location('uHub'), m.model.hub);
-        this.draw(m.mesh, first, m.list.length);
+        this.draw(lod > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[lod - 1] : m.mesh, first, m.list.length);
       }
       first += m.list.length;
     }
@@ -989,7 +1113,7 @@ export class EntityRenderer {
     const size = Math.max(e.size, figure ? minSizeTiles * 0.5 : minSizeTiles);
     let top = model ? model.model.top * model.scale * size : (BOX_TOP[e.shape] ?? 1) * size;
     // Ein liegender Baum ist flach - der Balken gehört knapp darüber.
-    if (e.shape === SHAPE.tree && e.motion && e.motion[1] > 0.5) top = 0.3 * size;
+    if (TREES.includes(e.shape) && e.motion && e.motion[1] > 0.5) top = 0.3 * size;
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     const width = figure
       ? clamp(pixelsPerTile * 0.6, 22 * pixelRatio, 36 * pixelRatio)

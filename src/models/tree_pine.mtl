@@ -1,0 +1,57 @@
+# tree_pine.mtl
+
+newmtl Paint
+Kd 0.160 0.380 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Bark
+Kd 0.360 0.240 0.140
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Cone
+Kd 0.460 0.300 0.170
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Grass
+Kd 0.340 0.560 0.220
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl LeafDry
+Kd 0.620 0.480 0.240
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Needle
+Kd 0.120 0.300 0.170
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl NeedleDark
+Kd 0.080 0.200 0.120
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl PineBark
+Kd 0.620 0.360 0.220
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

@@ -693,7 +693,9 @@ function updateSelectionUI() {
     if (info) {
       const left = Math.ceil(info.remaining);
       const percent = Math.round((info.remaining / info.total) * 100);
-      html = `<div class="title">${RESOURCE_TYPE_LABEL[info.type]}</div>` +
+      const kind = resources.kindAt(selectedResource.x, selectedResource.y);
+      html = `<div class="title">${kind ?? RESOURCE_TYPE_LABEL[info.type]}` +
+        `${kind ? ` <span class="muted">${RESOURCE_TYPE_LABEL[info.type]}</span>` : ''}</div>` +
         `<div>Übrig <b>${left}/${info.total}</b></div>` +
         `<div class="bar"><i style="width:${percent}%"></i></div>` +
         `<div>Sammler <b>${info.gatherers}/${MAX_GATHERERS}</b>` +
@@ -905,10 +907,12 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   cursorCoordsEl.textContent = `${mouseTileX}, ${mouseTileY}`;
 
   const info = probe.getTile(mouseTileX, mouseTileY);
+  // Baum- oder Straucharten dazu, z. B. "Holz (Eiche)".
+  const kind = resources.kindAt(mouseTileX, mouseTileY);
   const resource =
     info.resource === 'none'
       ? ''
-      : ` | ${RESOURCE_TYPE_LABEL[info.resource]} ${info.resourceAmount}`;
+      : ` | ${RESOURCE_TYPE_LABEL[info.resource]}${kind ? ` (${kind})` : ''} ${info.resourceAmount}`;
   const building = world.at(mouseTileX, mouseTileY);
   const built = building ? ` | ${BUILDINGS[building.type].label}` : '';
   tileInfoEl.textContent =

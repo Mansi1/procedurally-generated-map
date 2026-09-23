@@ -6,7 +6,7 @@
 // Tausende Tiles; je Bild neu zu rechnen wäre viel zu teuer.
 
 import type { EntityInstance } from '../gl/entityRenderer';
-import { SHAPE } from '../gl/entityRenderer';
+import { SHAPE, TREES } from '../gl/entityRenderer';
 import type { TileProbe } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
 import type { GatherType } from './buildings';
@@ -17,13 +17,82 @@ const CHUNK = 16;
 /** So viele Stücke bleiben im Speicher - grob das Zehnfache eines Bildschirms. */
 const MAX_CHUNKS = 6400;
 
-/** Modell und Grundgröße (Tiles) je Ressource. */
-const LOOK: Record<GatherType, { shape: number; size: number; color: [number, number, number] }> = {
+/**
+ * Modell und Grundgröße (Tiles) je Ressource. `variants`: stattdessen eine
+ * dieser Formen, fest je Tile gewählt - nicht jeder Strauch sieht gleich aus.
+ */
+const LOOK: Record<GatherType, { shape: number; size: number; color: [number, number, number]; variants?: number[] }> = {
   wood: { shape: SHAPE.tree, size: 0.6, color: [42, 97, 52] },
   stone: { shape: SHAPE.stoneRock, size: 0.6, color: [158, 158, 164] },
   gold: { shape: SHAPE.goldRock, size: 0.56, color: [242, 194, 51] },
-  berries: { shape: SHAPE.berryBush, size: 0.45, color: [62, 115, 52] },
+  berries: {
+    shape: SHAPE.berryBush, size: 0.45, color: [62, 115, 52],
+    variants: [SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4],
+  },
 };
+
+/** Nadelbäume wachsen lieber oben, Laubbäume weiter unten. */
+const CONIFERS = [SHAPE.tree, SHAPE.treePine];
+/** Laubbäume, jeder so oft, wie er hier steht - Eichen am häufigsten. */
+const BROADLEAF = [
+  SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeBirch, SHAPE.treeBirch,
+  SHAPE.treeMaple, SHAPE.treePoplar,
+];
+/**
+ * In einem Eichenhain stehen junge, ausgewachsene und alte Eichen gemischt -
+ * je Tile eine davon, alte am seltensten.
+ */
+const OAKS = [
+  SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak,
+  SHAPE.treeOakYoung, SHAPE.treeOakYoung, SHAPE.treeOakYoung, SHAPE.treeOakOld, SHAPE.treeOakOld,
+];
+
+/** Kantenlänge eines Hains in Tiles: darin wächst meist dieselbe Art. */
+const GROVE = 7;
+
+/**
+ * Welche Baumart auf Tile (x, y) wächst: meist die des Hains, jeder vierte
+ * Baum eine zufällige. Hoch gelegen mehr Nadelbäume.
+ */
+function treeAt(x: number, y: number, height: number): number {
+  const own = hash(x, y, 7) < 0.25;
+  const gx = own ? x : Math.floor(x / GROVE);
+  const gy = own ? y : Math.floor(y / GROVE);
+  // Waldtiles liegen etwa zwischen -0.3 und 0.5 hoch.
+  const conifer = Math.min(1, Math.max(0, (height + 0.1) / 0.45));
+  const kinds = hash(gx, gy, 8) < 0.25 + 0.6 * conifer ? CONIFERS : BROADLEAF;
+  const kind = kinds[Math.floor(hash(gx, gy, 9) * kinds.length)];
+  return kind === SHAPE.treeOak ? OAKS[Math.floor(hash(x, y, 10) * OAKS.length)] : kind;
+}
+
+/** Welcher Strauch auf Tile (x, y) wächst - fest je Tile. */
+function bushAt(x: number, y: number): number {
+  const kinds = LOOK.berries.variants!;
+  return kinds[Math.floor(hash(x, y, 6) * kinds.length)];
+}
+
+/** Namen der Baum- und Straucharten für die Anzeige. */
+const KIND_LABEL: Record<number, string> = {
+  [SHAPE.tree]: 'Fichte',
+  [SHAPE.treePine]: 'Kiefer',
+  [SHAPE.treeOak]: 'Eiche',
+  [SHAPE.treeBirch]: 'Birke',
+  [SHAPE.treePoplar]: 'Pappel',
+  [SHAPE.treeMaple]: 'Ahorn',
+  [SHAPE.treeOakOld]: 'Alte Eiche',
+  [SHAPE.treeOakYoung]: 'Junge Eiche',
+  [SHAPE.berryBush]: 'Johannisbeere',
+  [SHAPE.berryBush2]: 'Brombeere',
+  [SHAPE.berryBush3]: 'Heidelbeere',
+  [SHAPE.berryBush4]: 'Himbeere',
+};
+
+/** Form des Vorkommens auf einem Tile - dieselbe Wahl für Bild und Anzeige. */
+function shapeAt(x: number, y: number, type: GatherType, height: number): number {
+  if (type === 'wood') return treeAt(x, y, height);
+  if (type === 'berries') return bushAt(x, y);
+  return LOOK[type].shape;
+}
 
 interface ResourceNode {
   x: number;
@@ -47,6 +116,13 @@ export class ResourceField {
   private chunks = new Map<string, ResourceNode[]>();
 
   constructor(private probe: TileProbe, private mapGen: MapGenerator) {}
+
+  /** Baum- oder Strauchart auf Tile (x, y), z. B. "Eiche" - sonst undefined. */
+  kindAt(x: number, y: number): string | undefined {
+    const found = this.probe.resourceAt(x, y);
+    if (found.type === 'none') return undefined;
+    return KIND_LABEL[shapeAt(x, y, found.type as GatherType, found.height)];
+  }
 
   /**
    * Rechnet fehlende Stücke im Rechteck aus, die der Mitte nächsten zuerst,
@@ -99,10 +175,11 @@ export class ResourceField {
         const shade = 0.82 + 0.3 * hash(x, y, 2);
         const ox = x + (hash(x, y, 3) - 0.5) * 0.35;
         const oy = y + (hash(x, y, 4) - 0.5) * 0.35;
+        const shape = shapeAt(x, y, found.type as GatherType, found.height);
         nodes.push({
           x,
           y,
-          shape: look.shape,
+          shape,
           total: found.amount,
           size,
           instance: {
@@ -110,7 +187,7 @@ export class ResourceField {
             y: oy,
             size,
             color: look.color.map((c) => Math.min(255, Math.round(c * shade))) as [number, number, number],
-            shape: look.shape,
+            shape,
             alpha: 1,
             motion: [hash(x, y, 5) * Math.PI * 2, 0, 0, 0],
             ground: this.groundUnder(ox + 0.5, oy + 0.5, size / 2),
@@ -155,7 +232,7 @@ export class ResourceField {
           // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
           // Falls stecken in motion[1] und motion[2].
           const motion = node.instance.motion!;
-          const fall = node.shape === SHAPE.tree ? world.fall(node.x, node.y, blend) : null;
+          const fall = TREES.includes(node.shape) ? world.fall(node.x, node.y, blend) : null;
           motion[1] = fall ? fall.angle : 0;
           motion[2] = fall ? fall.dir : 0;
           // Die Instanzen werden wiederverwendet - der Balken muss also auch

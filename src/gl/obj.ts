@@ -9,6 +9,8 @@ export type RGB01 = [number, number, number];
 export interface ObjTriangle {
   /** Name des Objekts (`o`) oder der Gruppe (`g`), in dem die Fläche steht. */
   object: string;
+  /** Laufende Nummer des Objekts - auseinanderzuhalten, auch wenn Namen sich wiederholen. */
+  index: number;
   material: string;
   /** Drei Eckpunkte in Datei-Koordinaten. */
   points: [RGB01, RGB01, RGB01];
@@ -19,6 +21,7 @@ export function parseObj(source: string): ObjTriangle[] {
   const positions: RGB01[] = [];
   const triangles: ObjTriangle[] = [];
   let object = '';
+  let index = -1;
   let material = '';
 
   for (const raw of source.split('\n')) {
@@ -33,6 +36,7 @@ export function parseObj(source: string): ObjTriangle[] {
       case 'o':
       case 'g':
         object = args.join(' ');
+        index++;
         break;
       case 'usemtl':
         material = args.join(' ');
@@ -47,7 +51,7 @@ export function parseObj(source: string): ObjTriangle[] {
           return point;
         });
         for (let i = 1; i + 1 < corners.length; i++) {
-          triangles.push({ object, material, points: [corners[0], corners[i], corners[i + 1]] });
+          triangles.push({ object, index, material, points: [corners[0], corners[i], corners[i + 1]] });
         }
         break;
       }

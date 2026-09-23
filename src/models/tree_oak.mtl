@@ -1,0 +1,64 @@
+# tree_oak.mtl
+
+newmtl Paint
+Kd 0.160 0.380 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Bark
+Kd 0.360 0.240 0.140
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl BarkDark
+Kd 0.240 0.160 0.100
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Grass
+Kd 0.340 0.560 0.220
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl LeafDark
+Kd 0.110 0.260 0.140
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl LeafDry
+Kd 0.620 0.480 0.240
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl LeafLight
+Kd 0.360 0.560 0.250
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Moss
+Kd 0.360 0.460 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Soot
+Kd 0.100 0.080 0.070
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
