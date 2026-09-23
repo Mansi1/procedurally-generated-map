@@ -19,7 +19,7 @@ import {
 } from './map';
 import type { TileType } from './noise';
 import type { EntityInstance } from './gl/entityRenderer';
-import { SHAPE } from './gl/entityRenderer';
+import { SHAPE, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
   BUILDING_ORDER,
@@ -30,6 +30,7 @@ import {
 } from './world/buildings';
 import { World, type Villager } from './world/world';
 import { ResourceBar } from './resourceBar';
+import { loadSettings, SettingsMenu } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
@@ -219,6 +220,57 @@ function hint(text: string) {
 const RESOURCE_BAR_ORDER: (keyof Stock)[] = ['wood', 'berries', 'gold', 'stone'];
 const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER);
 
+// --- Einstellungen und Menü ------------------------------------------------
+
+const settings = loadSettings();
+/** Angehalten (F3 oder Menü): die Welt steht, Kamera und Auswahl gehen weiter. */
+let paused = false;
+const pausedEl = document.createElement('div');
+pausedEl.id = 'paused';
+pausedEl.textContent = 'Pause';
+pausedEl.hidden = true;
+document.body.appendChild(pausedEl);
+
+function applySettings() {
+  sound.volume = settings.volume;
+  // Mühlenflügel und Fahnen laufen mit der Spielgeschwindigkeit.
+  setAnimationSpeed(settings.speed);
+  document.getElementById('ui')!.hidden = !settings.showHelp;
+  document.getElementById('debug')!.hidden = !settings.showDebug;
+}
+
+function togglePause() {
+  paused = !paused;
+  pausedEl.hidden = !paused;
+  // Auch Mühlenflügel und Fahnen halten an.
+  setAnimationsPaused(paused);
+  menu.refresh();
+}
+
+const menu = new SettingsMenu(settings, {
+  apply: applySettings,
+  soundEnabled: () => sound.enabled,
+  toggleSound: () => toggleSound(),
+  paused: () => paused,
+  togglePause,
+  newGame: () => {
+    world.reset();
+    clearSelection();
+    if (paused) togglePause();
+    updateResourceUI();
+  },
+});
+
+// Zahnrad am Ende der Rohstoffleiste öffnet das Menü.
+const menuButton = document.createElement('button');
+menuButton.type = 'button';
+menuButton.className = 'rb-menu';
+menuButton.title = 'Menü (F10)';
+menuButton.innerHTML =
+  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>';
+menuButton.addEventListener('click', () => menu.toggle());
+stockEl.appendChild(menuButton);
+
 /** Dauer als "1:35 h", "4:05 min" bzw. "40 s". */
 function formatDuration(seconds: number): string {
   const s = Math.ceil(seconds);
@@ -265,10 +317,12 @@ function updateSoundButton() {
 function toggleSound() {
   sound.toggle();
   updateSoundButton();
+  menu.refresh();
 }
 
 soundButton.addEventListener('click', toggleSound);
 updateSoundButton();
+applySettings();
 
 const GATHER_SOUND: Record<string, SoundName> = {
   wood: 'chop',
@@ -845,6 +899,22 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
 }
 
 window.addEventListener('keydown', (e) => {
+  // F10 wie in AoE2: Menü. Solange es offen ist, keine Spieltasten.
+  if (e.key === 'F10') {
+    e.preventDefault();
+    menu.toggle();
+    return;
+  }
+  if (menu.isOpen()) {
+    if (e.key === 'Escape') menu.close();
+    return;
+  }
+  // F3 wie in AoE2: Pause.
+  if (e.key === 'F3') {
+    e.preventDefault();
+    togglePause();
+    return;
+  }
   keys[e.key.toLowerCase()] = true;
   if (e.key === 'e') setZoom(zoomIndex + 1);
   if (e.key === 'q') setZoom(zoomIndex - 1);
@@ -1075,7 +1145,7 @@ function loop(now: number) {
   // gleich, aber auf 3200 Pixel je Sekunde gedeckelt: ganz nah heran zoomt
   // man, um genau hinzusehen - dort flöge die Karte sonst in einem
   // Zehntel einer Sekunde vorbei.
-  const speed = Math.min(400 * (tileSize / 4), 3200) * dt;
+  const speed = Math.min(400 * (tileSize / 4), 3200) * dt * settings.scroll;
   let dx = 0;
   let dy = 0;
   if (keys['w'] || keys['arrowup']) dy -= speed;
@@ -1103,7 +1173,7 @@ function loop(now: number) {
 
   // Feste Schritte. Der Rest bleibt für den nächsten Frame liegen, damit über
   // die Zeit weder etwas verloren geht noch doppelt gefördert wird.
-  tickAccumulator += dt;
+  if (!paused) tickAccumulator += dt * settings.speed;
   while (tickAccumulator >= TICK) {
     world.tick(TICK);
     tickAccumulator -= TICK;

@@ -25,6 +25,8 @@ export class Sound {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private muted = false;
+  /** Lautstärke 0..1 aus den Einstellungen. */
+  private level = 1;
   /** Zeitpunkte der zuletzt gespielten Töne - begrenzt, wie viele gleichzeitig laufen. */
   private recent: number[] = [];
 
@@ -53,8 +55,22 @@ export class Sound {
     } catch {
       // egal
     }
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+    this.applyGain();
     return !this.muted;
+  }
+
+  /** Lautstärke 0..1 (Einstellungen). */
+  get volume(): number {
+    return this.level;
+  }
+
+  set volume(v: number) {
+    this.level = Math.min(1, Math.max(0, v));
+    this.applyGain();
+  }
+
+  private applyGain() {
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5 * this.level;
   }
 
   private ensure(): AudioContext | null {
@@ -63,7 +79,7 @@ export class Sound {
     if (!Ctor) return null;
     this.ctx = new Ctor();
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.5;
+    this.applyGain();
     // Leichte Kompression: viele gleichzeitige Axthiebe sollen nicht übersteuern.
     const compressor = this.ctx.createDynamicsCompressor();
     compressor.threshold.value = -18;
@@ -84,7 +100,7 @@ export class Sound {
    * @param pan -1 links .. 1 rechts
    */
   play(name: SoundName, volume = 1, pan = 0) {
-    if (this.muted || volume <= 0.01) return;
+    if (this.muted || this.level <= 0.01 || volume <= 0.01) return;
     const ctx = this.ensure();
     if (!ctx || ctx.state !== 'running' || !this.master) return;
 

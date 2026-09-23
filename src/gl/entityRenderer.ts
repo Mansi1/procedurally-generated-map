@@ -180,6 +180,32 @@ const NATURAL: number[] = [
 /** Gebäude schauen schräg zur Kamera (die steht bei +x +y). */
 export const BUILDING_HEADING = 0.5;
 
+/**
+ * Uhr für alles, was sich von selbst bewegt (Mühlenflügel, Fahnen). Sie steht,
+ * solange das Spiel angehalten ist, und läuft mit der Spielgeschwindigkeit -
+ * Hauptansicht und Minimap teilen sie.
+ */
+let animationClock = 0;
+let animationLast = performance.now() / 1000;
+let animationPaused = false;
+let animationSpeed = 1;
+
+export function setAnimationsPaused(paused: boolean) {
+  animationPaused = paused;
+}
+
+/** Spielgeschwindigkeit: 1 = normal, 2 = doppelt so schnell. */
+export function setAnimationSpeed(speed: number) {
+  animationSpeed = speed;
+}
+
+function animationTime(): number {
+  const now = performance.now() / 1000;
+  if (!animationPaused) animationClock += (now - animationLast) * animationSpeed;
+  animationLast = now;
+  return animationClock;
+}
+
 /** Was eine Figur gerade tut - steuert die Animation. */
 export const POSE = {
   stand: 0,
@@ -1142,7 +1168,7 @@ export class EntityRenderer {
     gl.depthMask(true);
     this.draw(this.building, flats.length, solids.length);
 
-    gl.uniform1f(this.location('uTime'), performance.now() / 1000);
+    gl.uniform1f(this.location('uTime'), animationTime());
     // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
