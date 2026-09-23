@@ -70,6 +70,11 @@ export const SHAPE = {
   berryBush: 15,
   /** Fahne am Sammelpunkt eines Gebäudes (models/rally_flag.obj). */
   rallyFlag: 16,
+  /**
+   * Staubwolke: runder, weicher Fleck, der zur Kamera zeigt - verankert in
+   * der Welt (motion[0] = Höhe über Grund), Größe in Tiles.
+   */
+  dust: 17,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -83,6 +88,16 @@ const GUST_RATE = 0.35;
  * Jede Mühle dreht so in ihrem eigenen Takt, dazu mit Böen, die sie mal
  * schneller, mal langsamer drehen lassen (siehe Shader, P_SAILS).
  */
+/**
+ * Wie millMotion, aber die Flügel stehen still - in der Stellung, die sie
+ * zur Zeit `t` (Sekunden, wie uTime im Shader) hatten. Für eingestürzte Mühlen.
+ */
+export function frozenMillMotion(x: number, y: number, t: number): [number, number, number, number] {
+  const [heading, phase, speed] = millMotion(x, y);
+  const angle = t * SAIL_SPEED * speed + phase + GUST_AMOUNT * Math.sin(t * GUST_RATE * speed + phase * 3.1);
+  return [heading, angle, -1, 0];
+}
+
 export function millMotion(x: number, y: number): [number, number, number, number] {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -95,7 +110,7 @@ const FIRST_NATURAL = SHAPE.tree;
 const LAST_NATURAL = SHAPE.berryBush;
 
 /** Gebäude schauen schräg zur Kamera (die steht bei +x +y). */
-const BUILDING_HEADING = 0.5;
+export const BUILDING_HEADING = 0.5;
 
 /** Was eine Figur gerade tut - steuert die Animation. */
 export const POSE = {
@@ -231,7 +246,7 @@ void main() {
     return;
   }
 
-  if (shape >= 5) {  // 10 (Lebensbalken) ist oben schon abgefangen
+  if (shape >= 5 && shape != 17) {  // 10 (Lebensbalken) ist oben schon abgefangen
     // Modell aus einer OBJ-Datei. Eckpunkte in Modell-Einheiten: x nach vorn,
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
@@ -299,14 +314,30 @@ void main() {
     if (part == P_SAILS) {
       // Muehlenfluegel drehen sich um die Nabe, die Achse zeigt nach vorn.
       // aMotion.y = Startstellung, aMotion.z = Drehzahl (millMotion), dazu Böen.
+      // Drehzahl < 0: steht still - aMotion.y ist dann der feste Winkel
+      // (eingestürzte Mühle, siehe frozenMillMotion).
       float speed = aMotion.z > 0.0 ? aMotion.z : 1.0;
-      float a = -(uTime * ${SAIL_SPEED.toFixed(3)} * speed + aMotion.y
+      float a = aMotion.z < 0.0 ? -aMotion.y : -(uTime * ${SAIL_SPEED.toFixed(3)} * speed + aMotion.y
           + ${GUST_AMOUNT.toFixed(3)} * sin(uTime * ${GUST_RATE.toFixed(3)} * speed + aMotion.y * 3.1));
       vec2 q = p.yz - uHub;
       p.yz = uHub + vec2(q.x * cos(a) - q.y * sin(a), q.x * sin(a) + q.y * cos(a));
     }
 
     // Blickrichtung je Instanz (Gebäude bekommen sie vom Renderer).
+    // Einsturz (Gebäude, aMotion.w = Fortschritt 0..1): jeder Eckpunkt sackt
+    // unterschiedlich weit ab - aus dem Gebäude wird ein Schutthaufen, der
+    // unten etwas breiter läuft. Erst nach dem Drehen der Mühlenflügel: sonst
+    // würden die zusammengedrückten Flügel um die Nabe gedreht und schnellten
+    // verzerrt nach oben.
+    if (!figure && !natural && aMotion.w > 0.0) {
+      float c = aMotion.w;
+      float h = fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+      p.z *= mix(1.0, 0.12 + 0.4 * h, c);
+      p.xy *= 1.0 + c * 0.35 * (0.4 + h);
+      // Der Haufen sackt schief zusammen.
+      p.z += c * 0.12 * (p.x - 0.4 * p.y);
+    }
+
     float heading = aMotion.x;
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
@@ -333,8 +364,21 @@ void main() {
     // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
     // Hang keine Luecke darunter aufgeht. Ein kippender Baum nicht - sein
     // Sockel wuerde sonst als Stange aus dem Boden ragen.
-    if (!figure && !falling && p.z < 0.001) z = base - 1.0;
+    // Vorkommen stehen schon auf dem tiefsten Punkt ihres Fußes (und Schutt
+    // fliegt durch die Luft) - die brauchen keinen Sockel.
+    if (!figure && !natural && p.z < 0.001) z = base - 1.0;
     world = vec3(xy, z);
+  } else if (shape == 17) {
+    // Staub: ein zur Kamera gedrehter Fleck. Mitte in der Welt, Ausdehnung
+    // in Bildschirmpixeln - so wirkt die Wolke von jeder Seite rund.
+    vec4 clip = project(center, groundZ(center) + aMotion.x);
+    clip.xy += (aCorner.xy - 0.5) * aParams.z * uPixelsPerTile * 2.0 / uResolution;
+    gl_Position = clip;
+    vWorld = vec3(aCorner.xy, 0.0);
+    vColor = aColor;
+    vParams = aParams;
+    vRoof = 0.0;
+    return;
   } else if (shape == 4) {
     // Overlays behalten ihre Tile-Größe - sie sollen genau ihr Feld abdecken.
     // Jede Ecke sitzt auf ihrer eigenen Geländehöhe, leicht angehoben, damit
@@ -368,7 +412,7 @@ void main() {
     vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
-    if (shape != 5 && aParams.y < 0.99) vColor = aColor;
+    if (shape != 5 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
   }
   vParams = aParams;
   vRoof = aCorner.w;
@@ -396,6 +440,17 @@ void main() {
 
   if (shape == 4) {
     fragColor = vec4(vColor, alpha);
+    return;
+  }
+
+  if (shape == 17) {
+    // Staub: rund, zur Mitte dicht, zum Rand weich auslaufend, leicht fleckig.
+    vec2 q = vWorld.xy - 0.5;
+    float r = length(q) * 2.0;
+    float clumps = 0.75 + 0.25 * sin(q.x * 23.0 + q.y * 17.0) * sin(q.y * 29.0 - q.x * 11.0);
+    float a = alpha * (1.0 - smoothstep(0.35, 1.0, r)) * clumps;
+    if (a <= 0.002) discard;
+    fragColor = vec4(vColor, a);
     return;
   }
 
@@ -628,6 +683,7 @@ export class EntityRenderer {
   /** Sortierpuffer, ebenfalls wiederverwendet. */
   private flats: EntityInstance[] = [];
   private solids: EntityInstance[] = [];
+  private puffs: EntityInstance[] = [];
 
   constructor(private gl: WebGL2RenderingContext) {
     const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SOURCE);
@@ -721,11 +777,14 @@ export class EntityRenderer {
     // Vorschau-Klötze mischen sich sonst mit dem falschen Hintergrund.
     const flats = this.flats;
     const solids = this.solids;
+    const puffs = this.puffs;
     flats.length = 0;
     solids.length = 0;
+    puffs.length = 0;
     for (const m of this.models) m.list.length = 0;
     for (const e of instances) {
       if (e.shape === SHAPE.flat) flats.push(e);
+      else if (e.shape === SHAPE.dust) puffs.push(e);
       else (this.models.find((m) => m.shape === e.shape)?.list ?? solids).push(e);
     }
     const backToFront = (a: EntityInstance, b: EntityInstance) => a.x + a.y - (b.x + b.y);
@@ -743,7 +802,7 @@ export class EntityRenderer {
     }
     const d = this.data;
     let i = 0;
-    for (const list of [flats, solids, ...this.models.map((m) => m.list)]) {
+    for (const list of [flats, solids, ...this.models.map((m) => m.list), puffs]) {
       for (const e of list) {
         const o = i++ * STRIDE;
         d[o] = e.x;
@@ -803,6 +862,14 @@ export class EntityRenderer {
         this.draw(m.mesh, first, m.list.length);
       }
       first += m.list.length;
+    }
+
+    // Staub zuletzt: halbdurchsichtig über allem, was dahinter steht, ohne
+    // selbst Tiefe zu schreiben.
+    if (puffs.length > 0) {
+      gl.depthMask(false);
+      this.draw(this.flat, first, puffs.length);
+      gl.depthMask(true);
     }
 
     // Lebensbalken zuletzt und ohne Tiefentest: sie liegen über allem, auch

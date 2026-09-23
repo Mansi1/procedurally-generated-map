@@ -14,6 +14,7 @@ export type SoundName =
   | 'deliver' // Ladung abgeliefert
   | 'place' // Gebäude gesetzt
   | 'trained' // Dorfbewohner fertig ausgebildet
+  | 'collapse' // Gebäude stürzt ein
   | 'click' // Auswahl, Befehl
   | 'error'; // geht nicht
 
@@ -201,6 +202,15 @@ const SOUNDS: Record<SoundName, Synth> = {
     // Zwei Töne aufwärts: "fertig".
     tone(ctx, out, t, 'triangle', 523, 523, 0.3, 0.01, 0.25);
     tone(ctx, out, t + 0.12, 'triangle', 784, 784, 0.3, 0.01, 0.35);
+  },
+  collapse: (ctx, out, t, v, noise) => {
+    // Knarzen, dann Rumpeln mit splitterndem Holz.
+    tone(ctx, out, t, 'sawtooth', 120 * v, 60 * v, 0.12, 0.05, 0.3);
+    noiseBurst(ctx, out, noise, t + 0.2, 'lowpass', 350 * v, 0.7, 1.0, 0.04, 1.3);
+    tone(ctx, out, t + 0.2, 'sine', 60, 30, 0.8, 0.02, 0.8);
+    for (const [dt, f] of [[0.28, 1800], [0.45, 1300], [0.6, 2200], [0.85, 1500]]) {
+      noiseBurst(ctx, out, noise, t + dt + Math.random() * 0.05, 'bandpass', f * v, 2, 0.5, 0.003, 0.08);
+    }
   },
   click: (ctx, out, t, v) => {
     tone(ctx, out, t, 'sine', 1100 * v, 800 * v, 0.2, 0.001, 0.05);

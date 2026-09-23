@@ -5,7 +5,7 @@
 // werden, während das Gelände jederzeit neu berechnet werden kann.
 
 import type { EntityInstance } from '../gl/entityRenderer';
-import { POSE, SHAPE, millMotion } from '../gl/entityRenderer';
+import { BUILDING_HEADING, POSE, SHAPE, frozenMillMotion, millMotion } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
 import { reliefZ } from '../noise';
 import {
@@ -91,7 +91,32 @@ export type WorldEvent =
   | { kind: 'strike'; resource: GatherType; x: number; y: number }
   | { kind: 'treeFall'; x: number; y: number }
   | { kind: 'deliver'; x: number; y: number }
+  | { kind: 'collapse'; x: number; y: number }
   | { kind: 'trained'; x: number; y: number };
+
+/**
+ * Ein abgerissenes Gebäude, das noch einstürzt: nur fürs Bild, es belegt
+ * keine Felder mehr und verschwindet nach RUIN_DURATION Sekunden.
+ */
+interface Ruin {
+  type: BuildingType;
+  x: number;
+  y: number;
+  at: number;
+  /** Uhrzeit (performance.now, Sekunden) beim Abriss - dort bleiben die Mühlenflügel stehen. */
+  clock: number;
+  /** Schuttbrocken: Flugrichtung und -weite, Steiggeschwindigkeit, Bodenhöhe am Landepunkt. */
+  debris: { dx: number; dy: number; vz: number; size: number; heading: number; ground: number }[];
+}
+
+/** Ablauf des Einsturzes in Sekunden. */
+const RUIN_SHAKE = 0.3;
+const RUIN_COLLAPSE_START = 0.25;
+const RUIN_COLLAPSE = 1.0;
+const RUIN_FLIGHT = 0.8;
+const RUIN_FADE_START = 2.4;
+const RUIN_DURATION = 3.0;
+const DUST_COLOR: [number, number, number] = [214, 200, 172];
 
 export interface ViewRect {
   x: number;
@@ -150,6 +175,7 @@ export class World {
    * liegender Stamm abgebaut - wie in AoE2.
    */
   private felled = new Map<string, { at: number; dir: number }>();
+  private ruins: Ruin[] = [];
   /** Weltzeit in Sekunden, läuft mit den Ticks. */
   private time = 0;
   private lastDt = 0;
@@ -399,12 +425,41 @@ export class World {
     }
     const anchor = key(building.x, building.y);
     this.buildings.delete(anchor);
+    this.addRuin(building);
     // Wer gerade genau hierhin liefern wollte, sucht sich beim nächsten Tick
     // ein anderes Lager oder bleibt mit seiner Ladung stehen.
     for (const v of this.villagers) {
       if (v.task.kind === 'deliver' && v.task.building === anchor) v.task = { kind: 'idle' };
     }
     this.dirty = true;
+  }
+
+  /** Legt den Einsturz an: Schutt fliegt in alle Richtungen, landet auf dem Gelände. */
+  private addRuin(building: Building) {
+    const def = BUILDINGS[building.type];
+    const cx = building.x + 0.5;
+    const cy = building.y + 0.5;
+    const debris: Ruin['debris'] = [];
+    const count = 7 + Math.round(def.size * 3);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2 + Math.random() * 0.6;
+      const reach = def.size * (0.45 + Math.random() * 0.7);
+      const dx = Math.cos(angle) * reach;
+      const dy = Math.sin(angle) * reach;
+      debris.push({
+        dx,
+        dy,
+        vz: def.size * (1.2 + Math.random() * 1.6),
+        size: def.size * (0.12 + Math.random() * 0.14),
+        heading: Math.random() * Math.PI * 2,
+        ground: reliefZ(this.probe.getTile(Math.floor(cx + dx), Math.floor(cy + dy)).height),
+      });
+    }
+    this.ruins.push({
+      type: building.type, x: building.x, y: building.y, at: this.time,
+      clock: performance.now() / 1000, debris,
+    });
+    this.onEvent?.({ kind: 'collapse', x: cx, y: cy });
   }
 
   /**
@@ -502,6 +557,7 @@ export class World {
   tick(dt: number) {
     this.time += dt;
     this.lastDt = dt;
+    if (this.ruins.length > 0) this.ruins = this.ruins.filter((r) => this.time - r.at < RUIN_DURATION);
     for (const b of this.buildings.values()) this.tickTraining(b, dt);
     for (const v of this.villagers) {
       v.prevX = v.x;
@@ -770,6 +826,8 @@ export class World {
       out.push({ x, y, size: 1, color: EXHAUSTED_COLOR, shape: SHAPE.flat, alpha: 0.45 });
     }
 
+    this.ruinInstances(x0, y0, x1, y1, out, blend);
+
     for (const building of this.buildings.values()) {
       if (building.x < x0 || building.x > x1 || building.y < y0 || building.y > y1) continue;
       const def = BUILDINGS[building.type];
@@ -812,6 +870,75 @@ export class World {
       });
     }
     return out;
+  }
+
+  /** Einstürzende Gebäude: Wackeln, Zusammensacken, Staub, fliegender Schutt, Ausblenden. */
+  private ruinInstances(x0: number, y0: number, x1: number, y1: number, out: EntityInstance[], blend: number) {
+    const now = this.time + blend * this.lastDt;
+    const ease = (t: number) => t * t * (3 - 2 * t);
+    for (const ruin of this.ruins) {
+      if (ruin.x < x0 || ruin.x > x1 || ruin.y < y0 || ruin.y > y1) continue;
+      const def = BUILDINGS[ruin.type];
+      const t = now - ruin.at;
+      const fade = t < RUIN_FADE_START ? 1 : Math.max(0, 1 - (t - RUIN_FADE_START) / (RUIN_DURATION - RUIN_FADE_START));
+      const collapse = ease(Math.min(1, Math.max(0, (t - RUIN_COLLAPSE_START) / RUIN_COLLAPSE)));
+      // Wackeln, bevor es nachgibt.
+      const shake = t < RUIN_SHAKE ? Math.sin(t * 70) * 0.04 * def.size : 0;
+      // Eine eingestürzte Mühle dreht nicht weiter.
+      const motion = def.shape === SHAPE.mill
+        ? frozenMillMotion(ruin.x, ruin.y, ruin.clock)
+        : [BUILDING_HEADING, 0, 0, 0] as [number, number, number, number];
+      motion[3] = Math.max(0.001, collapse);
+      out.push({
+        x: ruin.x + shake,
+        y: ruin.y - shake,
+        size: def.size,
+        color: def.color.toRGB(),
+        shape: def.shape,
+        // Knapp unter 1: bleibt so vorn in der Sortierung für Halbdurchsichtiges.
+        alpha: Math.max(0.01, fade * 0.999),
+        motion,
+      });
+
+      // Staub quillt in Wolken rund um das Gebäude auf, steigt und verzieht sich.
+      const dustT = Math.min(1, t / 2.2);
+      if (dustT < 1) {
+        const spread = Math.max(def.footprint, def.size) * 0.5;
+        for (let i = 0; i < 7; i++) {
+          const angle = (i / 7) * Math.PI * 2 + ruin.x * 0.7;
+          const reach = spread * (i === 0 ? 0 : 0.5 + 0.9 * ease(dustT));
+          out.push({
+            x: ruin.x + Math.cos(angle) * reach,
+            y: ruin.y + Math.sin(angle) * reach,
+            size: def.size * (0.7 + 0.9 * ease(dustT)) * (i === 0 ? 1.3 : 1),
+            color: DUST_COLOR,
+            shape: SHAPE.dust,
+            alpha: 0.75 * (1 - dustT) ** 1.3 * Math.min(1, t * 6),
+            motion: [def.size * (0.25 + 0.6 * dustT), 0, 0, 0],
+          });
+        }
+      }
+
+      // Schutt fliegt im Bogen hinaus und bleibt liegen.
+      const ground = reliefZ(this.probe.getTile(ruin.x, ruin.y).height);
+      const tf = Math.min(t, RUIN_FLIGHT);
+      for (const d of ruin.debris) {
+        const along = tf / RUIN_FLIGHT;
+        // Höhe: Wurfparabel, die genau nach RUIN_FLIGHT auf der Landestelle ankommt.
+        const arc = d.vz * tf - 0.5 * (2 * d.vz / RUIN_FLIGHT) * tf * tf;
+        const z = ground + (d.ground - ground) * along + Math.max(0, arc) * 0.6;
+        out.push({
+          x: ruin.x + d.dx * along,
+          y: ruin.y + d.dy * along,
+          size: d.size * fade,
+          color: DUST_COLOR,
+          shape: SHAPE.stoneRock,
+          alpha: 1,
+          motion: [d.heading + t * 6 * (1 - along), 0, 0, 0],
+          ground: z,
+        });
+      }
+    }
   }
 
   /** Überblendete Position zwischen zwei Ticks. */

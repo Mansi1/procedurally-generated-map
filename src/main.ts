@@ -297,6 +297,9 @@ world.onEvent = (event) => {
     case 'deliver':
       if (!offscreen) sound.play('deliver', volume * 0.6, nx * 0.8);
       break;
+    case 'collapse':
+      if (!offscreen) sound.play('collapse', volume, nx * 0.8);
+      break;
     case 'trained':
       // Wichtige Rückmeldung - auch wenn das Hauptgebäude nicht im Bild ist.
       sound.play('trained', 0.7);
