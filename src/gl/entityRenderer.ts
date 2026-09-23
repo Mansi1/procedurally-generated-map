@@ -257,12 +257,30 @@ void main() {
     float heading = aMotion.x;
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
-    vec2 xy = center + (forward * p.x + left * p.y) * scale;
+    vec2 offset = (forward * p.x + left * p.y) * scale;
+    float up = p.z * scale;
+
+    // Umfallen (Vorkommen): um den Fuss kippen, aMotion.y = Winkel,
+    // aMotion.z = Richtung in Weltkoordinaten. Der Anteil in Fallrichtung
+    // und die Hoehe drehen sich, der Anteil quer dazu bleibt.
+    bool falling = natural && aMotion.y > 0.0;
+    if (falling) {
+      vec2 dir = vec2(cos(aMotion.z), sin(aMotion.z));
+      float along = dot(offset, dir);
+      vec2 across = offset - dir * along;
+      float c = cos(aMotion.y);
+      float s = sin(aMotion.y);
+      offset = across + dir * (along * c + up * s);
+      up = -along * s + up * c;
+    }
+
+    vec2 xy = center + offset;
     float base = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(center);
-    float z = base + p.z * scale;
+    float z = base + up;
     // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
-    // Hang keine Luecke darunter aufgeht.
-    if (!figure && p.z < 0.001) z = base - 1.0;
+    // Hang keine Luecke darunter aufgeht. Ein kippender Baum nicht - sein
+    // Sockel wuerde sonst als Stange aus dem Boden ragen.
+    if (!figure && !falling && p.z < 0.001) z = base - 1.0;
     world = vec3(xy, z);
   } else if (shape == 4) {
     // Overlays behalten ihre Tile-Größe - sie sollen genau ihr Feld abdecken.
@@ -750,7 +768,9 @@ export class EntityRenderer {
     // Dieselbe Mindestgröße wie im Vertex-Shader, sonst schwebt der Balken
     // herausgezoomt im Gebäude statt darüber.
     const size = Math.max(e.size, figure ? minSizeTiles * 0.5 : minSizeTiles);
-    const top = model ? model.model.top * model.scale * size : (BOX_TOP[e.shape] ?? 1) * size;
+    let top = model ? model.model.top * model.scale * size : (BOX_TOP[e.shape] ?? 1) * size;
+    // Ein liegender Baum ist flach - der Balken gehört knapp darüber.
+    if (e.shape === SHAPE.tree && e.motion && e.motion[1] > 0.5) top = 0.3 * size;
     const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
     const width = figure
       ? clamp(pixelsPerTile * 0.6, 22 * pixelRatio, 36 * pixelRatio)

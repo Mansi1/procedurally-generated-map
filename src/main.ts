@@ -757,7 +757,7 @@ function collectOverlay(blend: number) {
   const visible = visibleWorldRect(view());
   if (tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camX, camY);
-    resources.instances(visible, world, overlay, selectedResource);
+    resources.instances(visible, world, overlay, selectedResource, blend);
   }
   world.instances(visible, overlay, blend,
       { villagers: selectedVillagers, building: selectedBuilding });

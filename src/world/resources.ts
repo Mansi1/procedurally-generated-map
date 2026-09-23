@@ -28,6 +28,7 @@ const LOOK: Record<GatherType, { shape: number; size: number; color: [number, nu
 interface ResourceNode {
   x: number;
   y: number;
+  shape: number;
   total: number;
   /** Größe, wenn noch nichts abgebaut ist. */
   size: number;
@@ -101,6 +102,7 @@ export class ResourceField {
         nodes.push({
           x,
           y,
+          shape: look.shape,
           total: found.amount,
           size,
           instance: {
@@ -138,7 +140,7 @@ export class ResourceField {
    * verschwindet. Das ausgewählte Vorkommen bekommt einen Balken mit dem Rest.
    */
   instances(view: ViewRect, world: World, out: EntityInstance[],
-            selected: { x: number; y: number } | null = null) {
+            selected: { x: number; y: number } | null = null, blend = 1) {
     const x1 = view.x + view.width;
     const y1 = view.y + view.height;
     for (let cy = Math.floor(view.y / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
@@ -150,6 +152,12 @@ export class ResourceField {
           const share = world.remainingShare(node.x, node.y, node.total);
           if (share <= 0) continue;
           node.instance.size = node.size * (0.45 + 0.55 * share);
+          // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
+          // Falls stecken in motion[1] und motion[2].
+          const motion = node.instance.motion!;
+          const fall = node.shape === SHAPE.tree ? world.fall(node.x, node.y, blend) : null;
+          motion[1] = fall ? fall.angle : 0;
+          motion[2] = fall ? fall.dir : 0;
           // Die Instanzen werden wiederverwendet - der Balken muss also auch
           // wieder weg, wenn die Auswahl wechselt.
           node.instance.health =

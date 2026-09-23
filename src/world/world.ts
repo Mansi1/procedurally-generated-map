@@ -129,6 +129,15 @@ export class World {
   private occupied = new Map<string, string>();
   private harvested = new Map<string, number>();
   private exhausted = new Set<string>();
+  /**
+   * Gefällte Bäume: wann (Weltzeit) und in welche Richtung (Radiant) sie
+   * umgefallen sind. Ein Baum fällt beim ersten Axthieb und wird danach als
+   * liegender Stamm abgebaut - wie in AoE2.
+   */
+  private felled = new Map<string, { at: number; dir: number }>();
+  /** Weltzeit in Sekunden, läuft mit den Ticks. */
+  private time = 0;
+  private lastDt = 0;
   private dirty = false;
   private nextId = 1;
 
@@ -206,6 +215,27 @@ export class World {
       else if (v.task.kind === 'idle') idle++;
     }
     return { counts, idle };
+  }
+
+  /**
+   * Wie weit ein Baum umgefallen ist: Winkel (Radiant, 0 = steht) und
+   * Richtung, oder null, wenn er noch steht. Der Fall beschleunigt wie unter
+   * Schwerkraft, federt beim Aufschlag einmal nach und bleibt dann liegen.
+   * @param blend Anteil des laufenden Ticks, damit die Bewegung flüssig ist
+   */
+  fall(x: number, y: number, blend: number): { angle: number; dir: number } | null {
+    const f = this.felled.get(key(x, y));
+    if (!f) return null;
+    const t = this.time + blend * this.lastDt - f.at;
+    const DURATION = 1.1;
+    const BOUNCE = 0.35;
+    // Nicht ganz flach - Äste und Stumpf halten den Stamm etwas hoch.
+    const LYING = Math.PI / 2 - 0.1;
+    let angle: number;
+    if (t < DURATION) angle = LYING * (t / DURATION) ** 2;
+    else if (t < DURATION + BOUNCE) angle = LYING - 0.14 * Math.sin((Math.PI * (t - DURATION)) / BOUNCE);
+    else angle = LYING;
+    return { angle, dir: f.dir };
   }
 
   /**
@@ -422,6 +452,8 @@ export class World {
    * Bildrate abhängt.
    */
   tick(dt: number) {
+    this.time += dt;
+    this.lastDt = dt;
     for (const b of this.buildings.values()) this.tickTraining(b, dt);
     for (const v of this.villagers) {
       v.prevX = v.x;
@@ -567,8 +599,11 @@ export class World {
         }
 
         // Jeder hat seinen eigenen Platz am Feld - sonst stehen alle
-        // Sammler auf demselben Punkt und sehen aus wie einer.
-        const angle = v.id * 2.39996; // goldener Winkel: gleichmäßig verteilt
+        // Sammler auf demselben Punkt und sehen aus wie einer. Der goldene
+        // Winkel verteilt mehrere Sammler gleichmäßig; der Anteil je Feld
+        // sorgt dafür, dass derselbe Dorfbewohner nicht an jedem Baum von
+        // derselben Seite kommt - sonst fielen alle seine Bäume gleich.
+        const angle = v.id * 2.39996 + tileAngle(task.x, task.y);
         const spotX = task.x + 0.5 + Math.cos(angle) * GATHER_SPREAD;
         const spotY = task.y + 0.5 + Math.sin(angle) * GATHER_SPREAD;
         if (!this.walk(v, spotX, spotY, 0.05, dt)) return;
@@ -587,6 +622,13 @@ export class World {
             found.amount,
             VILLAGER.capacity - v.carrying);
         const k = key(task.x, task.y);
+        // Der erste Hieb fällt den Baum - weg vom Holzfäller.
+        if (task.type === 'wood' && !this.felled.has(k)) {
+          // Grob weg vom Holzfäller, aber nie ganz genau - bis zu 35° daneben.
+          const away = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
+          const jitter = (tileAngle(task.x + 17, task.y - 31) / Math.PI - 1) * 0.6;
+          this.felled.set(k, { at: this.time, dir: away + jitter });
+        }
         const taken = (this.harvested.get(k) ?? 0) + take;
         this.harvested.set(k, taken);
         if (found.amount - take <= 1e-6) this.exhausted.add(k);
@@ -739,6 +781,12 @@ export class World {
       const comma = k.indexOf(',');
       const tile = this.probe.getTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1)));
       if (amount >= tile.resourceAmount) this.exhausted.add(k);
+      // Angefangene Bäume liegen schon - ohne noch einmal umzufallen. Die
+      // Richtung steht nicht im Speicherstand; sie ergibt sich aus der Lage.
+      if (tile.resource === 'wood') {
+        const [x, y] = [Number(k.slice(0, comma)), Number(k.slice(comma + 1))];
+        this.felled.set(k, { at: -Infinity, dir: ((x * 7 + y * 13) % 8) * (Math.PI / 4) });
+      }
     }
 
     for (const b of data.buildings ?? []) {
@@ -769,6 +817,7 @@ export class World {
     this.occupied.clear();
     this.harvested.clear();
     this.exhausted.clear();
+    this.felled.clear();
     this.villagers = [];
     this.stock = initialStock();
     this.dirty = true;
@@ -777,3 +826,10 @@ export class World {
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** Fester Winkel 0..2π je Feld - gleiche Welt, gleiche Werte. */
+function tileAngle(x: number, y: number): number {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (((h ^ (h >>> 16)) >>> 0) / 4294967296) * Math.PI * 2;
+}
