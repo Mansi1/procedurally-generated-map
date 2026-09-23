@@ -299,6 +299,13 @@ export class TerrainRenderer {
         new Float32Array(rules.map((r) => r.yield)));
   }
 
+  /**
+   * Zellgröße des Geländegitters beim letzten Zeichnen (Tiles) - die Figuren
+   * rechnen ihre Bodenhöhe mit derselben Feinheit, sonst stehen sie am Hang
+   * im oder über dem Boden.
+   */
+  gridCell = 1;
+
   /** Nur für Tests: 0 = Bild, 1 = Höhe, 2 = Hangneigung. */
   debugMode = 0;
 
@@ -565,6 +572,7 @@ export class TerrainRenderer {
     // Unten ragt es um den höchsten Gipfel hinaus: Gelände, dessen Fuß unter
     // dem Bildrand liegt, kann bis ins Bild hineinragen.
     const cell = this.cellSize(camera);
+    this.gridCell = cell;
     const halfU = width / 2 / camera.pixelsPerTile;
     const halfV = height / 2 / camera.pixelsPerTile;
     const reach = camera.reliefScale * Z_SCREEN * MAX_RELIEF;

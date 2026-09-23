@@ -208,6 +208,12 @@ export class World {
    * Vorkommen (main.ts setzt es). Damit arbeiten Holzfäller am liegenden Stamm.
    */
   treeLength: ((x: number, y: number) => number | undefined) | null = null;
+  /**
+   * Bodenhöhe (Tiles, ohne Relief-Skalierung) an einem Punkt - main.ts setzt
+   * es. Dorfbewohner bekommen sie mit, wie die Bäume: auf der Grafikkarte
+   * gerechnet standen sie an manchen Hängen deutlich unter dem Gelände.
+   */
+  groundAt: ((x: number, y: number) => number) | null = null;
 
   constructor(private probe: TileProbe, private seed: string) {
     this.load();
@@ -923,6 +929,7 @@ export class World {
         shape: v.female ? SHAPE.villagerFemale : SHAPE.villager,
         alpha: 1,
         motion: [v.heading, phase, v.pose, load],
+        ground: this.groundAt?.(x, y),
         health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,
         accent: v.carryType ? RESOURCE_TYPE_COLORS[v.carryType].toRGB() : undefined,
       });

@@ -19,7 +19,7 @@ import {
 } from './map';
 import type { TileType } from './noise';
 import type { EntityInstance } from './gl/entityRenderer';
-import { SHAPE, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
+import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
   BUILDING_ORDER,
@@ -135,6 +135,8 @@ const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
+// Mit derselben Feinheit wie das Geländegitter der jetzigen Zoomstufe (wie zAt).
+world.groundAt = (x, y) => reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio)));
 const resources = new ResourceField(probe, mapGen);
 const sound = new Sound();
 
@@ -202,7 +204,8 @@ function updateCursor() {
     cursor = RALLY_CURSOR;
   } else if (selectedVillagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
     // Zeigt der Zeiger auf ein Objekt (Baumkrone, Fels), gilt dessen Feld.
-    const t = world.at(mouseTileX, mouseTileY) ? undefined : hoverObject;
+    const own = world.resourceInfo(mouseTileX, mouseTileY);
+    const t = world.at(mouseTileX, mouseTileY) || (own && own.type !== 'wood') ? undefined : hoverObject;
     const [tx, ty] = t ? [t.x, t.y] : [mouseTileX, mouseTileY];
     const found = world.remainingAt(tx, ty);
     if (found.type && found.amount > 0 && !world.at(tx, ty)) {
@@ -509,20 +512,29 @@ function resourceObjectAt(px: number, py: number): { x: number; y: number } | un
     const w = dims.width * inst.size * 0.4;
     const side = worldToScreen(v, cx + w, cy - w, z);
     const half = Math.max(6, Math.hypot(side.x - base.x, side.y - base.y));
-    // Abstand des Zeigers zum Streifen von base nach top.
+    // Abstand des Zeigers zum Streifen von base nach top. Bäume laufen nach
+    // oben spitz zu - ihr Treffer auch, sonst verdeckte eine hohe Spitze den
+    // Strauch dahinter.
     const sx = top.x - base.x;
     const sy = top.y - base.y;
     const len2 = sx * sx + sy * sy || 1;
     const t = Math.max(0, Math.min(1, ((px - base.x) * sx + (py - base.y) * sy) / len2));
     const d = Math.hypot(px - (base.x + sx * t), py - (base.y + sy * t));
-    return d <= half ? base.y : undefined;
+    const taper = TREES.includes(inst.shape) && !fallen ? 1 - 0.75 * t : 1;
+    return d <= Math.max(4, half * taper) ? base.y : undefined;
   });
 }
 
-/** Tile, auf das ein Klick zielt: ein Vorkommen am Objekt getroffen, sonst der Boden. */
+/**
+ * Tile, auf das ein Klick zielt: ein Vorkommen am Objekt getroffen, sonst der
+ * Boden. Liegt direkt auf dem angeklickten Feld ein Strauch, Stein oder Gold,
+ * gewinnt der - auch wenn eine Baumspitze davor ins Bild ragt.
+ */
 function targetTileAt(px: number, py: number): { x: number; y: number } {
   const tile = tileAt(px, py);
   if (world.at(tile.x, tile.y)) return tile;
+  const own = world.resourceInfo(tile.x, tile.y);
+  if (own && own.type !== 'wood') return tile;
   return resourceObjectAt(px, py) ?? tile;
 }
 
@@ -1145,6 +1157,7 @@ function collectOverlay(blend: number) {
     overlay.push({
       x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 2,
       color: [110, 231, 160], shape: SHAPE.ring, alpha: 1,
+      ground: world.groundAt!(p.x, p.y),
     });
   }
   const building = selectedBuilding ? world.building(selectedBuilding) : undefined;

@@ -360,9 +360,13 @@ vec3 swingAround(vec3 p, float pivot, float angle) {
   return vec3(q.x * c - q.y * s, p.y, q.x * s + q.y * c + pivot);
 }
 
+// Abtastschritt wie beim Geländegitter (TerrainRenderer.gridCell) - sonst
+// fehlen hier die Feinwellen, die das Gelände nah herangezoomt hat.
+uniform float uGroundStep;
+
 float groundZ(vec2 world) {
   return uReliefScale > 0.0
-      ? reliefZ(elevation(world * uMapScale, 1.0)) * uReliefScale
+      ? reliefZ(elevation(world * uMapScale, uGroundStep)) * uReliefScale
       : 0.0;
 }
 
@@ -673,7 +677,9 @@ void main() {
     vec2 p = center + (aCorner.xy - 0.5) * aParams.z;
     // Der Auswahlring liegt fast am Boden - angehoben rutschte er in der
     // Schrägansicht nach oben und säße hinter der Figur statt unter ihr.
-    world = vec3(p, groundZ(p) + (shape == ${SHAPE_RING} ? 0.012 : 0.15));
+    // Mit mitgegebener Bodenhöhe (Mitte) liegt er waagerecht darauf.
+    float ground = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(p);
+    world = vec3(p, ground + (shape == ${SHAPE_RING} ? 0.012 : 0.15));
   } else {
     float size = max(aParams.z, uMinSizeTiles);
     // x = Anteil der Grundfläche, y = Wandhöhe, z = Dachhöhe (je Kantenlänge)
@@ -715,6 +721,12 @@ void main() {
   vParams = aParams;
   vRoof = aCorner.w;
   gl_Position = project(world.xy, world.z);
+  // Figuren und Auswahlring stehen auf der berechneten Geländehöhe; das
+  // Geländenetz nähert sie nur mit Dreiecken an und liegt in Mulden etwas
+  // höher - es schnitte Füße und Ring ab. Ihre Tiefe wird deshalb um etwa
+  // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
+  // wo es ist (siehe project: näher = kleinere Tiefe).
+  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING}) gl_Position.z -= 0.5 / uDepthRange;
 }
 `;
 
@@ -1210,6 +1222,8 @@ export class EntityRenderer {
   private program: WebGLProgram;
   private building: Mesh;
   private flat: Mesh;
+  /** Abtastschritt für die Bodenhöhe - MapRenderer setzt den des Geländegitters. */
+  groundStep = 1;
   private models: {
     shape: number; model: Model; scale: number; stride?: number;
     mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
@@ -1381,6 +1395,7 @@ export class EntityRenderer {
     gl.uniform3fv(this.location('uToCamera'), cameraDirection());
     gl.uniform1f(this.location('uMinSizeTiles'), minSizeTiles);
     gl.uniform1i(this.location('uSilhouette'), 0);
+    gl.uniform1f(this.location('uGroundStep'), this.groundStep);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
