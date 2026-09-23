@@ -65,7 +65,9 @@ function tufts(m, rnd, masses, count, len, mtls, droop = 0) {
  * there: the game leaves the stump standing when the tree falls and hinges
  * the rest of the trunk at this ring (it reads the height from the model).
  */
-const STUMP = 0.45;
+let STUMP = 0.45;
+/** Height of a finished stump in metres, after stretching (see build). */
+const STUMP_HEIGHT = 0.5;
 
 function trunk(m, pts, r0, r1, mtl, n = 7) {
   for (let i = 0; i + 1 < pts.length; i++) {
@@ -73,16 +75,38 @@ function trunk(m, pts, r0, r1, mtl, n = 7) {
     const w0 = 2 * (r0 + (r1 - r0) * f0), w1 = 2 * (r0 + (r1 - r0) * f1);
     const material = typeof mtl === 'function' ? mtl(i) : mtl;
     const [a, b] = [pts[i], pts[i + 1]];
-    if (i === 0 && a[1] < STUMP && b[1] > STUMP) {
-      // Stump: its own short piece up to the ring.
-      const f = (STUMP - a[1]) / (b[1] - a[1]);
-      const ring = a.map((v, j) => v + (b[j] - v) * f);
-      const wr = w0 + (w1 - w0) * f;
-      m.beam('Trunk.Stump', material, a, ring, w0, { w1: wr, n });
-      m.beam('Trunk', material, ring, b, wr, { w1, n });
+    if (i === 0 && a[1] < STUMP && b[1] > STUMP + 0.3) {
+      // Stump and the first piece above it are cut level (horizontal rings),
+      // like with a saw - also on a leaning trunk. The game finds both cut
+      // faces at the stump height.
+      const at = (y) => a.map((v, j) => v + (b[j] - v) * ((y - a[1]) / (b[1] - a[1])));
+      const width = (y) => w0 + (w1 - w0) * ((y - a[1]) / (b[1] - a[1]));
+      const level = (name, y0, y1) => {
+        const [c0, c1] = [at(y0), at(y1)];
+        const [r0, r1] = [width(y0) / 2, width(y1) / 2];
+        m.box(name, material, [c0[0] - r0, c0[0] + r0], [y0, y1], [c0[2] - r0, c0[2] + r0],
+          { n, x: [c1[0] - r1, c1[0] + r1], z: [c1[2] - r1, c1[2] + r1] });
+      };
+      level('Trunk.Stump', a[1], STUMP);
+      level('Trunk', STUMP, STUMP + 0.3);
+      pieces(m, material, at(STUMP + 0.3), b, width(STUMP + 0.3), w1, n);
       continue;
     }
-    m.beam('Trunk', material, a, b, w0, { w1, n });
+    pieces(m, material, a, b, w0, w1, n);
+  }
+}
+
+/**
+ * A trunk segment in short rings: the game saws the lying trunk off from
+ * the tip and colours the cut edge light - on one long piece that colour
+ * would run down the whole piece.
+ */
+function pieces(m, material, a, b, w0, w1, n) {
+  const k = Math.max(1, Math.ceil(Math.hypot(...b.map((v, j) => v - a[j])) / 0.3));
+  for (let i = 0; i < k; i++) {
+    const p0 = a.map((v, j) => v + (b[j] - v) * (i / k));
+    const p1 = a.map((v, j) => v + (b[j] - v) * ((i + 1) / k));
+    m.beam('Trunk', material, p0, p1, w0 + (w1 - w0) * (i / k), { w1: w0 + (w1 - w0) * ((i + 1) / k), n });
   }
 }
 
@@ -92,7 +116,12 @@ function roots(m, rnd, r, count, len, mtl = 'Bark') {
     const a = (i / count) * Math.PI * 2 + rnd() * 0.5;
     // Kurz und flach am Stammfuß - sonst sieht der Stumpf nach dem Fällen
     // wie eine Feuerstelle aus.
-    m.beam('Root', mtl, [Math.cos(a) * r * 0.5, r * 0.75, Math.sin(a) * r * 0.5], [Math.cos(a) * (r + len * 0.55), 0, Math.sin(a) * (r + len * 0.55)], r * 0.75, { w1: r * 0.25, n: 5 });
+    // Unter der Schnittkante des Stumpfs ansetzen - sonst ragen die Wurzeln
+    // dicker Bäume nach dem Fällen wie Beine in die Luft.
+    // Innen im Stumpf ansetzen und so dünn, dass die Wurzel nicht durch die
+    // Schnittfläche sticht.
+    const top = Math.min(r * 0.6, STUMP * 0.45);
+    m.beam('Root', mtl, [Math.cos(a) * r * 0.45, top, Math.sin(a) * r * 0.45], [Math.cos(a) * (r + len * 0.55), 0, Math.sin(a) * (r + len * 0.55)], Math.min(r * 0.7, top * 1.3), { w1: r * 0.2, n: 5 });
   }
 }
 
@@ -134,7 +163,15 @@ function stretch(file, m) {
   });
 }
 
+/** Set by build(): measure only - how tall the tree comes out before stretching. */
+let measuring = false;
+let measured = 0;
+
 function write(file, what, m, note) {
+  if (measuring) {
+    measured = Math.max(...m.out.filter((l) => l.startsWith('v ')).map((l) => Number(l.split(' ')[2])));
+    return;
+  }
   stretch(file, m);
   const colours = {
     Paint: '0.160 0.380 0.200', LeafDark: '0.110 0.260 0.140', LeafLight: '0.360 0.560 0.250',
@@ -212,9 +249,9 @@ function oak() {
   roots(m, rnd, 0.35, 6, 0.45, 'Bark');
   trunk(m, [[0, 0, 0], [0.05, 1.4, 0], [0, 2.5, 0.05]], 0.36, 0.26, 'Bark', 8);
   m.box('Trunk.Knot', 'Soot', [0.28, 0.34], [1.1, 1.28], [-0.07, 0.07], { r: 0.3 });
-  m.box('Trunk.Moss', 'Moss', [-0.37, -0.2], [0.1, 0.9], [-0.2, 0.2], { n: 5 });
+  m.box('Moss', 'Moss', [-0.37, -0.2], [STUMP + 0.05, 1.1], [-0.2, 0.2], { n: 5 });
   for (let i = 0; i < 7; i++) {
-    const y = 0.3 + i * 0.3, a = i * 2.1;
+    const y = STUMP + 0.05 + i * 0.3, a = i * 2.1;
     m.box('Bark.Ridge', 'BarkDark', [Math.cos(a) * 0.3 - 0.05, Math.cos(a) * 0.3 + 0.05], [y, y + 0.28], [Math.sin(a) * 0.3 - 0.05, Math.sin(a) * 0.3 + 0.05]);
   }
   const branchTo = [[-1.1, 3.9, 0.4], [1.2, 4.0, -0.3], [0.2, 4.4, -1.0], [0.1, 4.2, 1.1]];
@@ -237,7 +274,7 @@ function birch() {
     trunk(m, pts, s ? 0.11 : 0.14, 0.05, 'Birch', 6);
     // Black marks round the white bark.
     for (let i = 0; i < 12; i++) {
-      const f = 0.05 + (i / 12) * 0.85;
+      const f = 0.12 + (i / 12) * 0.8;
       const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
       const p = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
       const r = (s ? 0.11 : 0.14) * (1 - f * 0.6) + 0.008;
@@ -309,7 +346,7 @@ function oldOak() {
   const top = [0.1, 4.6, 0.05];
   trunk(m, [[0, 0, 0], [0.25, 2.4, 0.1], top], 1.0, 0.72, 'Bark', 9);
   for (let i = 0; i < 9; i++) {
-    const y = 0.4 + i * 0.45, a = i * 2.3;
+    const y = STUMP + 0.05 + i * 0.45, a = i * 2.3;
     m.box('Bark.Ridge', 'BarkDark', [Math.cos(a) * 0.85 - 0.12, Math.cos(a) * 0.85 + 0.12], [y, y + 0.42], [Math.sin(a) * 0.85 - 0.12, Math.sin(a) * 0.85 + 0.12]);
   }
   for (const [a, y] of [[0.8, 1.6], [2.9, 2.8], [4.6, 1.1]]) {
@@ -318,7 +355,7 @@ function oldOak() {
   }
   m.box('Hollow', 'Soot', [-0.35, 0.35], [0.9, 2.0], [0.88, 1.02], { n: 8, x: [-0.22, 0.22] });
   m.box('Hollow.Rim', 'BarkDark', [-0.45, 0.45], [0.8, 2.1], [0.84, 0.94], { n: 8, x: [-0.3, 0.3] });
-  m.box('Moss', 'Moss', [-1.05, -0.6], [0.1, 1.6], [-0.5, 0.3], { n: 5 });
+  m.box('Moss', 'Moss', [-1.05, -0.6], [STUMP + 0.05, 1.8], [-0.5, 0.3], { n: 5 });
   // Five main branches, each bent in two, reaching out wide.
   const ends = [];
   for (let i = 0; i < 5; i++) {
@@ -355,11 +392,25 @@ function youngOak() {
   write('tree_oak_young', 'Junge Eiche', m, PAINT);
 }
 
-spruce();
-pine();
-oak();
-birch();
-poplar();
-maple();
-oldOak();
-youngOak();
+/**
+ * Builds a tree twice: first to measure it, then with the stump height set
+ * so that it is STUMP_HEIGHT metres after stretching to the tree's real size.
+ * The random streams are seeded per tree, so both runs are the same tree.
+ */
+function build(fn, file) {
+  measuring = true;
+  STUMP = 0.45;
+  fn();
+  measuring = false;
+  STUMP = STUMP_HEIGHT / (SIZE[file][0] / measured);
+  fn();
+}
+
+build(spruce, 'tree_spruce');
+build(pine, 'tree_pine');
+build(oak, 'tree_oak');
+build(birch, 'tree_birch');
+build(poplar, 'tree_poplar');
+build(maple, 'tree_maple');
+build(oldOak, 'tree_oak_old');
+build(youngOak, 'tree_oak_young');

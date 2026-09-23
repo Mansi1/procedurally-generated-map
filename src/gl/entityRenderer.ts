@@ -12,7 +12,7 @@ import type { RGB } from '../functions/Color';
 import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
 import { TERRAIN_COMMON } from './terrainShader';
-import { parseMtl, parseObj } from './obj';
+import { parseMtl, parseObj, type ObjTriangle } from './obj';
 import villagerMaleObj from '../models/villager_male.obj?raw';
 import villagerFemaleObj from '../models/villager_female.obj?raw';
 import villagerMtl from '../models/villager.mtl?raw';
@@ -164,6 +164,9 @@ export function millMotion(x: number, y: number): [number, number, number, numbe
   return [BUILDING_HEADING, r * Math.PI * 2, 0.8 + 0.4 * ((r * 7.13) % 1), 0];
 }
 
+/** Figuren: verdeckt zeigen sie ihren Umriss. */
+const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale];
+
 /** Alle Bäume - sie werden gefällt und kippen um. */
 export const TREES: number[] = [
   SHAPE.tree, SHAPE.treePine, SHAPE.treeOak, SHAPE.treeBirch, SHAPE.treePoplar, SHAPE.treeMaple,
@@ -205,6 +208,13 @@ function animationTime(): number {
   animationLast = now;
   return animationClock;
 }
+
+/**
+ * Winkel eines umgefallenen Baums auf ebenem Boden: nicht ganz flach - Äste
+ * und Stumpf halten den Stamm etwas hoch. Am Hang kippt der Shader um das
+ * Gefälle weiter oder weniger weit (siehe "falling").
+ */
+export const FALL_LYING = Math.PI / 2 - 0.1;
 
 /** Was eine Figur gerade tut - steuert die Animation. */
 export const POSE = {
@@ -289,6 +299,7 @@ uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 uniform float uModelScale;
 uniform float uModelTop;     // Höhe des Modells in Modell-Einheiten (Bäume: Absägen)
 uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
+uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
 uniform vec2  uHub;
@@ -297,6 +308,7 @@ uniform float uTime;
 out vec3 vWorld;
 out vec3 vColor;
 flat out vec3 vParams;
+flat out vec3 vTeam;     // Instanzfarbe (Spielerfarbe) - für den Umriss verdeckter Figuren
 flat out float vRoof;   // Gebäude: 1 = Dachfläche. Figuren: Körperteil.
 
 // Körperteile der Figur - aCorner.w im Menschen-Mesh.
@@ -321,6 +333,11 @@ const int P_BERRY = 14;
 // des Teils (0..1 der Baumhöhe) * 0.45 - beim Absägen verschwindet es ganz,
 // sobald der Schnitt darunter liegt.
 const int P_CROWN = 15;
+// Bäume: der Stumpf bleibt beim Fällen stehen (16), sein Deckel wird dabei zur
+// hellen Schnittfläche (17), ebenso der Boden des Stamms (18).
+const int P_STUMP = 16;
+const int P_STUMP_TOP = 17;
+const int P_LOG_END = 18;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -517,7 +534,12 @@ void main() {
       // über dem Schnitt liegt, wird auf die Schnitthöhe gedrückt und bildet
       // die Schnittfläche. Ganz leer bleibt ein Stumpf stehen.
       float cut = mix(uStump, uModelTop, aMotion.w);
-      if (part == P_CROWN) {
+      // Gefällt (oder schon angesägt): die Schnittflächen sind hell.
+      bool felled = aMotion.y > 0.0 || aMotion.w < 0.999;
+      if (felled && (part == P_STUMP_TOP || part == P_LOG_END)) gSawn = 1.0;
+      if (part == P_STUMP || part == P_STUMP_TOP) {
+        // Der Stumpf bleibt, wie er ist.
+      } else if (part == P_CROWN) {
         // Laub, Äste, Zapfen: weg, sobald der Schnitt unter ihrem Ansatz liegt.
         float from = (aCorner.w - 15.0) / 0.45 * uModelTop;
         if (from > cut) p = vec3(0.0);
@@ -581,26 +603,36 @@ void main() {
     bool falling = natural && aMotion.y > 0.0;
     // Der Stumpf und alles am Boden (Wurzeln, Gras, Laub) bleiben stehen;
     // der Stamm darüber kippt um die Oberkante des Stumpfs.
-    bool grounded = p.z <= uStump + 1e-4
+    bool grounded = part == P_STUMP || part == P_STUMP_TOP
         || (part == P_CROWN && aCorner.w - 15.0 < 0.002);
     if (falling && !grounded) {
       vec2 dir = vec2(cos(aMotion.z), sin(aMotion.z));
       float hinge = uStump * scale;
+      // Am Hang: so weit kippen, dass die Spitze auf dem Gelände liegt - der
+      // Baum bleibt dabei starr. Das Gefälle vom Fuß bis zur Spitze kommt zum
+      // Winkel auf ebenem Boden hinzu (bergab weiter, bergauf weniger weit).
+      float reach = (uModelTop - uStump) * scale * 0.85;
+      float drop = groundZ(center) - groundZ(center + dir * reach);
+      float rest = clamp(${FALL_LYING.toFixed(4)} + atan(drop, reach), 0.7, 2.3);
+      float angle = aMotion.y * rest / ${FALL_LYING.toFixed(4)};
       float along = dot(offset, dir);
       vec2 across = offset - dir * along;
-      float c = cos(aMotion.y);
-      float s = sin(aMotion.y);
+      float c = cos(angle);
+      float s = sin(angle);
       float lift = up - hinge;
       offset = across + dir * (along * c + lift * s);
       up = hinge - along * s + lift * c;
+      // Gegen Ende rutscht der Stamm vom Stumpf: sein abgesägtes Ende liegt
+      // dann neben dem Stumpf auf dem Boden, nicht obendrauf.
+      float slide = smoothstep(0.75, 1.0, aMotion.y / ${FALL_LYING.toFixed(4)});
+      float logRadius = uStumpRadius * scale;
+      offset += dir * (logRadius * 2.2) * slide;
+      up -= (hinge - logRadius * 0.9) * slide;
     }
 
     vec2 xy = center + offset;
     float base = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(center);
     float z = base + up;
-    // Am Hang liegt der umgefallene Stamm auf dem Gelände auf, statt
-    // hineinzutauchen: kein Punkt unter den Boden an seiner Stelle.
-    if (falling && !grounded) z = max(z, groundZ(xy) + 0.004);
     // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
     // Hang keine Luecke darunter aufgeht. Ein kippender Baum nicht - sein
     // Sockel wuerde sonst als Stange aus dem Boden ragen.
@@ -645,6 +677,7 @@ void main() {
 
   vWorld = world;
   vColor = aColor;
+  vTeam = aColor;
   if (shape >= 5) {
     // Modelle färben nach Material: Kittel bzw. Anstrich in der Instanzfarbe,
     // die Last in der Farbe der Ressource, alles andere wie in der MTL-Datei.
@@ -666,6 +699,9 @@ precision highp float;
 
 in vec3 vWorld;
 in vec3 vColor;
+flat in vec3 vTeam;
+// 1: Umriss-Durchgang - nur die verdeckten Teile einer Figur, in Spielerfarbe.
+uniform int uSilhouette;
 flat in vec3 vParams;
 flat in float vRoof;
 out vec4 fragColor;
@@ -716,6 +752,14 @@ void main() {
   // eine Normale je Fläche ist genau richtig und spart ein Attribut.
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
   if (dot(normal, uToCamera) < 0.0) normal = -normal;
+
+  if (uSilhouette == 1) {
+    // Verdeckte Figur: halbdurchsichtig in der Spielerfarbe, Flächen, die zur
+    // Seite zeigen, heller und deckender - so liest sie sich als Umriss.
+    float rim = 1.0 - abs(dot(normal, normalize(uToCamera)));
+    fragColor = vec4(mix(vTeam, vec3(1.0), 0.25 + rim * 0.5), 0.3 + rim * 0.55);
+    return;
+  }
 
   vec3 base = vColor;
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
@@ -816,6 +860,8 @@ interface Model {
   elbow: number;
   /** Bäume: Höhe des Stumpfs (Modell-Einheiten) - dort knickt der Stamm beim Fällen ab. */
   stump: number;
+  /** Bäume: Halbmesser des Stumpfs (Modell-Einheiten) - so weit rutscht der Stamm daneben. */
+  stumpRadius: number;
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
@@ -911,6 +957,21 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
   const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
+  // Bäume: Oberkante des Stumpfs in Datei-Einheiten - dort liegen die beiden
+  // Schnittflächen (Deckel des Stumpfs, Boden des Stamms), siehe P_STUMP.
+  let stumpTop = -Infinity;
+  let stumpRadius = 0;
+  if (sawable) {
+    for (const t of triangles) {
+      if (!t.object.startsWith('Trunk.Stump')) continue;
+      for (const q of t.points) {
+        stumpTop = Math.max(stumpTop, q[1]);
+        stumpRadius = Math.max(stumpRadius, Math.hypot(q[0], q[2]) / unitLength);
+      }
+    }
+  }
+  const onCut = (t: ObjTriangle) => t.points.every((q) => Math.abs(q[1] - stumpTop) < 1e-3);
+
   for (const t of triangles) {
     const part = partOf(t.object);
     const color = colors.get(t.material) ?? [0.6, 0.6, 0.6];
@@ -921,11 +982,15 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
       const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45
         // Bäume: alles außer dem Stamm verschwindet beim Absägen als Ganzes.
         : sawable && !t.object.startsWith('Trunk') ? 15 + (bottom.get(t.index) ?? 0) * 0.45
+        // Stumpf (16), sein Deckel (17), der Boden des Stamms (18).
+        : sawable && t.object.startsWith('Trunk.Stump') ? (onCut(t) ? 17 : 16)
+        : sawable && onCut(t) ? 18
         : part;
       v.push(x, y, z, partValue, color[0], color[1], color[2], role);
       if (lod) {
         LOD_PARTS.forEach((min, i) => {
-          if ((extent.get(t.index) ?? 1) >= min) lods[i].push(x, y, z, partValue, color[0], color[1], color[2], role);
+          // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
+          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk')) lods[i].push(x, y, z, partValue, color[0], color[1], color[2], role);
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
@@ -956,6 +1021,7 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
     knee,
     elbow,
     stump,
+    stumpRadius,
     loadAnchor: Number.isFinite(load.back)
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
@@ -1213,6 +1279,7 @@ export class EntityRenderer {
     setCameraUniforms(gl, (name) => this.location(name), camera);
     gl.uniform3fv(this.location('uToCamera'), cameraDirection());
     gl.uniform1f(this.location('uMinSizeTiles'), minSizeTiles);
+    gl.uniform1i(this.location('uSilhouette'), 0);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -1231,21 +1298,40 @@ export class EntityRenderer {
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     let first = flats.length + solids.length;
+    const drawModel = (m: (typeof this.models)[number], offset: number) => {
+      gl.uniform1f(this.location('uModelScale'), m.scale);
+      gl.uniform1f(this.location('uHip'), m.model.hip);
+      gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
+      gl.uniform1f(this.location('uKnee'), m.model.knee);
+      gl.uniform1f(this.location('uElbow'), m.model.elbow);
+      gl.uniform1f(this.location('uStride'), m.stride ?? 1);
+      gl.uniform1f(this.location('uModelTop'), m.model.top);
+      gl.uniform1f(this.location('uStump'), m.model.stump);
+      gl.uniform1f(this.location('uStumpRadius'), m.model.stumpRadius);
+      gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
+      gl.uniform2fv(this.location('uHub'), m.model.hub);
+      this.draw(lod > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[lod - 1] : m.mesh, offset, m.list.length);
+    };
+    // Erst alles außer den Figuren, dann die Figuren - dazwischen ihr Umriss,
+    // wo etwas vor ihnen steht (wie in AoE2). Die Figuren sind dann noch nicht
+    // im Tiefenpuffer und verdecken sich nicht selbst.
+    const figures: [(typeof this.models)[number], number][] = [];
     for (const m of this.models) {
       if (m.list.length > 0) {
-        gl.uniform1f(this.location('uModelScale'), m.scale);
-        gl.uniform1f(this.location('uHip'), m.model.hip);
-        gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
-        gl.uniform1f(this.location('uKnee'), m.model.knee);
-        gl.uniform1f(this.location('uElbow'), m.model.elbow);
-        gl.uniform1f(this.location('uStride'), m.stride ?? 1);
-        gl.uniform1f(this.location('uModelTop'), m.model.top);
-        gl.uniform1f(this.location('uStump'), m.model.stump);
-        gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
-        gl.uniform2fv(this.location('uHub'), m.model.hub);
-        this.draw(lod > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[lod - 1] : m.mesh, first, m.list.length);
+        if (FIGURES.includes(m.shape)) figures.push([m, first]);
+        else drawModel(m, first);
       }
       first += m.list.length;
+    }
+    if (figures.length > 0) {
+      gl.depthMask(false);
+      gl.depthFunc(gl.GREATER);
+      gl.uniform1i(this.location('uSilhouette'), 1);
+      for (const [m, offset] of figures) drawModel(m, offset);
+      gl.uniform1i(this.location('uSilhouette'), 0);
+      gl.depthFunc(gl.LEQUAL);
+      gl.depthMask(true);
+      for (const [m, offset] of figures) drawModel(m, offset);
     }
 
     // Staub zuletzt: halbdurchsichtig über allem, was dahinter steht, ohne

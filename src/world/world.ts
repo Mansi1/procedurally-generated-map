@@ -4,8 +4,9 @@
 // bereits abgebaute Vorkommen, Vorrat. Genau deshalb muss es gespeichert
 // werden, während das Gelände jederzeit neu berechnet werden kann.
 
+import { uniqueName } from './names';
 import type { EntityInstance } from '../gl/entityRenderer';
-import { BUILDING_HEADING, POSE, SHAPE, frozenMillMotion, millMotion } from '../gl/entityRenderer';
+import { BUILDING_HEADING, FALL_LYING, POSE, SHAPE, frozenMillMotion, millMotion } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
 import { reliefZ } from '../noise';
 import {
@@ -47,6 +48,10 @@ export type Task =
 
 export interface Villager {
   id: number;
+  /** Vorname - solange er lebt, trägt ihn kein anderer (siehe names.ts). */
+  name: string;
+  /** Dorfbewohnerin (Kleid, Schürze) oder Dorfbewohner. */
+  female: boolean;
   /** Position in Welt-Tiles (Mitte der Figur). */
   x: number;
   y: number;
@@ -135,9 +140,9 @@ const BERRY_REST = 90 * 60;
 const BERRY_REGROW_TIME = 5 * 60;
 
 /** Neue Figur an (x, y) - alle Laufzeit-Felder auf Anfang. */
-function newVillager(id: number, x: number, y: number): Villager {
+function newVillager(id: number, x: number, y: number, name: string, female: boolean): Villager {
   return {
-    id, x, y, prevX: x, prevY: y,
+    id, name, female, x, y, prevX: x, prevY: y,
     carrying: 0,
     carryType: null,
     task: { kind: 'idle' },
@@ -162,7 +167,11 @@ interface SaveData {
   version: 3;
   stock: Stock;
   buildings: { t: BuildingType; x: number; y: number; q?: number; hp?: number; r?: [number, number] }[];
-  villagers: { x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number }[];
+  villagers: {
+    x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number;
+    /** Name und Geschlecht - fehlen in älteren Speicherständen. */
+    n?: string; f?: boolean;
+  }[];
   /** "x,y" -> bereits entnommene Menge. */
   harvested: Record<string, number>;
 }
@@ -194,6 +203,11 @@ export class World {
   stock: Stock = initialStock();
   villagers: Villager[] = [];
   onEvent: ((event: WorldEvent) => void) | null = null;
+  /**
+   * Länge des Baums auf Tile (x, y) in Tiles - kennt nur die Darstellung der
+   * Vorkommen (main.ts setzt es). Damit arbeiten Holzfäller am liegenden Stamm.
+   */
+  treeLength: ((x: number, y: number) => number | undefined) | null = null;
 
   constructor(private probe: TileProbe, private seed: string) {
     this.load();
@@ -280,8 +294,7 @@ export class World {
     const t = this.time + blend * this.lastDt - f.at;
     const DURATION = 1.1;
     const BOUNCE = 0.35;
-    // Nicht ganz flach - Äste und Stumpf halten den Stamm etwas hoch.
-    const LYING = Math.PI / 2 - 0.1;
+    const LYING = FALL_LYING;
     let angle: number;
     if (t < DURATION) angle = LYING * (t / DURATION) ** 2;
     else if (t < DURATION + BOUNCE) angle = LYING - 0.14 * Math.sin((Math.PI * (t - DURATION)) / BOUNCE);
@@ -605,7 +618,9 @@ export class World {
     const spread = (this.nextId % 5) * 0.4 - 0.8;
     const x = building.x + 0.5 + r + spread * 0.5;
     const y = building.y + 0.5 + r - spread * 0.5;
-    const villager = newVillager(this.nextId++, x, y);
+    // Etwa jeder zweite ist eine Frau.
+    const female = Math.random() < 0.5;
+    const villager = newVillager(this.nextId++, x, y, this.freeName(female), female);
     this.villagers.push(villager);
     this.onEvent?.({ kind: 'trained', x: villager.x, y: villager.y });
     if (building.rally) this.command(new Set([villager.id]), building.rally.x, building.rally.y);
@@ -617,7 +632,9 @@ export class World {
     const dx = tx - v.x;
     const dy = ty - v.y;
     const d = Math.hypot(dx, dy);
-    if (d <= reach) return true;
+    // Mit etwas Spielraum - sonst bliebe nach dem letzten Schritt ein
+    // Rundungsrest, und er käme nie an.
+    if (d <= reach + 1e-4) return true;
     const step = Math.min(VILLAGER.speed * dt, d - reach);
     v.x += (dx / d) * step;
     v.y += (dy / d) * step;
@@ -625,7 +642,9 @@ export class World {
     v.stride += step;
     v.pose = POSE.walk;
     this.dirty = true;
-    return d - step <= reach + 1e-6;
+    // Angekommen ist er erst im nächsten Tick: sonst ginge ein kurzer Weg im
+    // selben Tick in die Arbeitspose über, und er rutschte statt zu gehen.
+    return false;
   }
 
   /** Nächstes Lager, das `type` annimmt. */
@@ -757,11 +776,33 @@ export class World {
         // sorgt dafür, dass derselbe Dorfbewohner nicht an jedem Baum von
         // derselben Seite kommt - sonst fielen alle seine Bäume gleich.
         const angle = v.id * 2.39996 + tileAngle(task.x, task.y);
-        const spotX = task.x + 0.5 + Math.cos(angle) * GATHER_SPREAD;
-        const spotY = task.y + 0.5 + Math.sin(angle) * GATHER_SPREAD;
+        let spotX = task.x + 0.5 + Math.cos(angle) * GATHER_SPREAD;
+        let spotY = task.y + 0.5 + Math.sin(angle) * GATHER_SPREAD;
+        // Wohin er schlägt: die Mitte des Felds - oder beim gefällten Baum der
+        // liegende Stamm, dort, wo gerade abgesägt wird (die Spitze, die mit
+        // dem Holz näher zum Stumpf wandert). Er steht seitlich daneben.
+        let aimX = task.x + 0.5;
+        let aimY = task.y + 0.5;
+        const felled = task.type === 'wood' ? this.felled.get(key(task.x, task.y)) : undefined;
+        const length = felled ? this.treeLength?.(task.x, task.y) : undefined;
+        if (felled && length) {
+          const total = this.probe.getTile(task.x, task.y).resourceAmount;
+          const share = Math.max(0, Math.min(1, found.amount / total));
+          // In Sprüngen von STEP Tiles: so geht er ab und zu ein paar Schritte
+          // weiter, statt dem kürzer werdenden Stamm hinterherzurutschen.
+          const STEP = 0.8;
+          const along = Math.max(0.35, Math.floor((length * share * 0.8) / STEP) * STEP);
+          const [dx, dy] = [Math.cos(felled.dir), Math.sin(felled.dir)];
+          aimX += dx * along;
+          aimY += dy * along;
+          // Links oder rechts vom Stamm, mehrere Holzfäller verteilt.
+          const side = (v.id % 2 ? 1 : -1) * (0.3 + (v.id % 3) * 0.08);
+          spotX = aimX - dy * side - dx * (v.id % 3) * 0.15;
+          spotY = aimY + dx * side - dy * (v.id % 3) * 0.15;
+        }
         if (!this.walk(v, spotX, spotY, 0.05, dt)) return;
         // Am Platz: zum Vorkommen drehen und arbeiten - Beeren kniend pflücken.
-        v.heading = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
+        v.heading = Math.atan2(aimY - v.y, aimX - v.x);
         v.pose = task.type === 'berries' ? POSE.pick : POSE.work;
         // Der Arm schlägt zu, wenn sin(Phase) sein Minimum durchläuft (siehe
         // Shader) - genau dann soll man den Hieb hören. Pflücken ist im
@@ -878,8 +919,8 @@ export class World {
         y: y - 0.5,
         size: VILLAGER.size,
         color: VILLAGER.color.toRGB(),
-        // Jede zweite Figur ist eine Frau - fest je Dorfbewohner.
-        shape: v.id % 2 ? SHAPE.villagerFemale : SHAPE.villager,
+        // Frau oder Mann - steht beim Dorfbewohner fest (siehe Villager.female).
+        shape: v.female ? SHAPE.villagerFemale : SHAPE.villager,
         alpha: 1,
         motion: [v.heading, phase, v.pose, load],
         health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,
@@ -976,7 +1017,7 @@ export class World {
         ...(b.rally ? { r: [b.rally.x, b.rally.y] as [number, number] } : {}),
       })),
       villagers: this.villagers.map((v) => ({
-        x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp,
+        x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp, n: v.name, f: v.female,
       })),
       harvested: Object.fromEntries(this.harvested),
     };
@@ -1049,7 +1090,9 @@ export class World {
 
     if (data.version !== 1) {
       for (const s of data.villagers ?? []) {
-        const v = newVillager(this.nextId++, s.x * scale, s.y * scale);
+        // Ältere Speicherstände kennen weder Namen noch Geschlecht.
+        const female = s.f ?? this.nextId % 2 === 1;
+        const v = newVillager(this.nextId++, s.x * scale, s.y * scale, s.n ?? this.freeName(female), female);
         v.carrying = s.c;
         v.carryType = s.ct && GATHER_TYPES.includes(s.ct) ? s.ct : null;
         v.task = scale === 1 ? s.task ?? { kind: 'idle' } : { kind: 'idle' };
@@ -1057,6 +1100,11 @@ export class World {
         this.villagers.push(v);
       }
     }
+  }
+
+  /** Ein Vorname, den gerade kein lebender Dorfbewohner trägt. */
+  private freeName(female: boolean): string {
+    return uniqueName(female, new Set(this.villagers.map((v) => v.name)));
   }
 
   /**

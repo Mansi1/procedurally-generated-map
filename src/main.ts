@@ -133,6 +133,8 @@ const { seed, x: startX, y: startY, zoom: startZoom } = parseURL();
 const mapGen = new MapGenerator(seed);
 const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
+// Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
+world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 const resources = new ResourceField(probe, mapGen);
 const sound = new Sound();
 
@@ -830,9 +832,16 @@ function updateSelectionUI() {
       counts.set(text, (counts.get(text) ?? 0) + 1);
     }
     const hp = chosen.reduce((sum, v) => sum + v.hp, 0);
-    html = `<div class="title">${chosen.length} ${VILLAGER.label}</div>` +
+    // Einer: sein Name als Titel. Mehrere: Anzahl und darunter die Namen.
+    const single = chosen.length === 1 ? chosen[0] : undefined;
+    const names = chosen.slice(0, 6).map((v) => v.name).join(', ') + (chosen.length > 6 ? ` +${chosen.length - 6}` : '');
+    html = (single
+      ? `<div class="title">${single.name} <span class="muted">${single.female ? 'Dorfbewohnerin' : VILLAGER.label}</span></div>`
+      : `<div class="title">${chosen.length} ${VILLAGER.label}</div><div class="muted">${names}</div>`) +
       `<div>Trefferpunkte <b>${Math.ceil(hp)}/${chosen.length * VILLAGER.hp}</b></div>` +
-      [...counts].map(([text, n]) => `<div>${n}× ${text}</div>`).join('') +
+      (single
+        ? `<div>${world.describe(single)}</div>`
+        : [...counts].map(([text, n]) => `<div>${n}× ${text}</div>`).join('')) +
       `<div class="muted">Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · ` +
       `auf ein Lager: abliefern · sonst: hingehen</div>`;
   } else if (!world.hasTownCenter()) {

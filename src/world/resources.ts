@@ -6,7 +6,7 @@
 // Tausende Tiles; je Bild neu zu rechnen wäre viel zu teuer.
 
 import type { EntityInstance } from '../gl/entityRenderer';
-import { SHAPE, TREES } from '../gl/entityRenderer';
+import { SHAPE, TREES, modelSize } from '../gl/entityRenderer';
 import type { TileProbe } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
 import type { GatherType } from './buildings';
@@ -148,6 +148,14 @@ export class ResourceField {
       }
     }
     return best;
+  }
+
+  /** Länge des Baums auf Tile (x, y) in Tiles - für die Holzfäller am liegenden Stamm. */
+  treeLengthAt(x: number, y: number): number | undefined {
+    const node = this.chunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`)?.find((n) => n.x === x && n.y === y);
+    if (!node || !TREES.includes(node.shape)) return undefined;
+    const dims = modelSize(node.shape);
+    return dims && dims.height * node.size;
   }
 
   /** Baum- oder Strauchart auf Tile (x, y), z. B. "Eiche" - sonst undefined. */

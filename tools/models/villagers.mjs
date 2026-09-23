@@ -92,12 +92,14 @@ function hand({ pair }, [x0, x1], top) {
 
 /** Hatchet in the right hand, held forward - it swings along with the chop. */
 function hatchet({ box }, [x0, x1], gy) {
+  // Eine richtige Holzfälleraxt: gut 70 cm Stiel, breites Blatt - klein wäre
+  // sie auf dem Bildschirm nicht zu erkennen.
   const hc = -(x0 + x1) / 2;
-  box('Arm.R.Lower.Tool.Handle', 'Wood', [hc - 0.015, hc + 0.015], [gy - 0.017, gy + 0.017], [-0.08, 0.35], { r: 0.25 });
-  box('Arm.R.Lower.Tool.Grip', 'Leather', [hc - 0.02, hc + 0.02], [gy - 0.022, gy + 0.022], [-0.08, 0.05], { r: 0.25 });
-  box('Arm.R.Lower.Tool.Wedge', 'Iron', [hc - 0.02, hc + 0.02], [gy - 0.03, gy + 0.03], [0.28, 0.33]);
-  box('Arm.R.Lower.Tool.Head', 'Iron', [hc - 0.012, hc + 0.012], [gy - 0.09, gy + 0.03], [0.27, 0.34], { z: [0.29, 0.34] });
-  box('Arm.R.Lower.Tool.Edge', 'Steel', [hc - 0.007, hc + 0.007], [gy - 0.115, gy + 0.02], [0.24, 0.272], { z: [0.265, 0.292] });
+  box('Arm.R.Lower.Tool.Handle', 'Wood', [hc - 0.02, hc + 0.02], [gy - 0.022, gy + 0.022], [-0.1, 0.62], { r: 0.25 });
+  box('Arm.R.Lower.Tool.Grip', 'Leather', [hc - 0.026, hc + 0.026], [gy - 0.028, gy + 0.028], [-0.1, 0.08], { r: 0.25 });
+  box('Arm.R.Lower.Tool.Wedge', 'Iron', [hc - 0.03, hc + 0.03], [gy - 0.045, gy + 0.045], [0.5, 0.6]);
+  box('Arm.R.Lower.Tool.Head', 'Iron', [hc - 0.02, hc + 0.02], [gy - 0.2, gy + 0.05], [0.48, 0.62], { z: [0.52, 0.62] });
+  box('Arm.R.Lower.Tool.Edge', 'Steel', [hc - 0.011, hc + 0.011], [gy - 0.24, gy + 0.03], [0.42, 0.49], { z: [0.47, 0.53] });
 }
 
 /** Sack on the back - grows out of the back with the load, tinted by resource. */
