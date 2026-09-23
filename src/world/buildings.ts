@@ -176,5 +176,11 @@ export const VILLAGER = {
   searchRadius: 16,
 } as const;
 
+/**
+ * Höchstens so viele Dorfbewohner arbeiten an einem Vorkommen. Wer
+ * darüber hinaus hingeschickt wird, nimmt das nächste freie derselben Art.
+ */
+export const MAX_GATHERERS = 6;
+
 /** Höchstens so viele Dorfbewohner stehen gleichzeitig in der Warteschlange eines Hauptgebäudes. */
 export const MAX_TRAINING_QUEUE = 5;

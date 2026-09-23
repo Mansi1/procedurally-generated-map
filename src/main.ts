@@ -24,6 +24,7 @@ import { SHAPE } from './gl/entityRenderer';
 import {
   BUILDINGS,
   BUILDING_ORDER,
+  MAX_GATHERERS,
   VILLAGER,
   type BuildingType,
   type Stock,
@@ -692,9 +693,11 @@ function updateSelectionUI() {
       html = `<div class="title">${RESOURCE_TYPE_LABEL[info.type]}</div>` +
         `<div>Übrig <b>${left}/${info.total}</b></div>` +
         `<div class="bar"><i style="width:${percent}%"></i></div>` +
-        `<div class="muted">${info.gatherers > 0
-          ? `${info.gatherers} ${VILLAGER.label} sammeln hier`
-          : 'Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.'}</div>`;
+        `<div>Sammler <b>${info.gatherers}/${MAX_GATHERERS}</b>` +
+        `${info.gatherers >= MAX_GATHERERS ? ' <span class="muted">- voll besetzt</span>' : ''}</div>` +
+        (info.gatherers === 0
+          ? `<div class="muted">Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.</div>`
+          : '');
     } else {
       // Leer gesammelt, während es ausgewählt war.
       selectedResource = null;

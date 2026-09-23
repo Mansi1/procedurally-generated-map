@@ -12,6 +12,7 @@ import {
   BUILDINGS,
   GATHER_TYPES,
   MAX_BUILD_SLOPE,
+  MAX_GATHERERS,
   MAX_TRAINING_QUEUE,
   VILLAGER,
   initialStock,
@@ -459,9 +460,21 @@ export class World {
 
     const found = this.remainingAt(x, y);
     if (found.type && found.amount > 0) {
+      // Die Ausgewählten zählen nicht mit - sie werden gerade neu verteilt.
+      for (const v of selected) v.task = { kind: 'idle' };
+      const occupancy = this.occupancy();
+      const full = (k: string) => (occupancy.get(k) ?? 0) >= MAX_GATHERERS;
       for (const v of selected) {
-        v.task = { kind: 'gather', type: found.type, x, y, delivering: false };
+        // Ist das Ziel voll, das nächste Vorkommen derselben Art mit Platz.
+        const spot = !full(key(x, y)) ? { x, y } : this.nextDeposit(found.type, x, y, occupancy);
+        if (!spot) {
+          v.problem = 'Alle Vorkommen in der Nähe sind voll besetzt';
+          continue;
+        }
+        v.task = { kind: 'gather', type: found.type, x: spot.x, y: spot.y, delivering: false };
         v.problem = null;
+        const k = key(spot.x, spot.y);
+        occupancy.set(k, (occupancy.get(k) ?? 0) + 1);
       }
       return null;
     }
@@ -571,7 +584,25 @@ export class World {
   }
 
   /** Nächstes nicht leeres Feld derselben Art um (x, y) - wenn eins leer ist, macht er dort weiter. */
-  private nextDeposit(type: GatherType, x: number, y: number): { x: number; y: number } | null {
+  /** Wie viele Dorfbewohner je Feld sammeln - Schlüssel "x,y". */
+  private occupancy(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const v of this.villagers) {
+      if (v.task.kind !== 'gather') continue;
+      const k = key(v.task.x, v.task.y);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  /**
+   * Nächstes nicht leeres Feld derselben Art um (x, y), auf dem noch Platz
+   * ist (höchstens MAX_GATHERERS).
+   */
+  private nextDeposit(
+      type: GatherType, x: number, y: number,
+      occupancy: Map<string, number> = this.occupancy(),
+  ): { x: number; y: number } | null {
     let best: { x: number; y: number } | null = null;
     let bestDistance = Infinity;
     const r = VILLAGER.searchRadius;
@@ -579,6 +610,7 @@ export class World {
       for (let dx = -r; dx <= r; dx++) {
         const d = dx * dx + dy * dy;
         if (d >= bestDistance || d > r * r) continue;
+        if ((occupancy.get(key(x + dx, y + dy)) ?? 0) >= MAX_GATHERERS) continue;
         const found = this.remainingAt(x + dx, y + dy);
         if (found.type === type && found.amount > 0) {
           best = { x: x + dx, y: y + dy };
@@ -624,7 +656,11 @@ export class World {
         const found = this.remainingAt(task.x, task.y);
         if (found.type !== task.type || found.amount <= 0) {
           // Feld leer: im Umkreis weitermachen, sonst Rest abliefern und aufhören.
-          const next = this.nextDeposit(task.type, task.x, task.y);
+          // Er selbst zählt am leeren Feld nicht mehr mit.
+          const occupancy = this.occupancy();
+          const own = key(task.x, task.y);
+          occupancy.set(own, (occupancy.get(own) ?? 1) - 1);
+          const next = this.nextDeposit(task.type, task.x, task.y, occupancy);
           if (next) {
             task.x = next.x;
             task.y = next.y;
