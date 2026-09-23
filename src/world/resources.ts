@@ -23,8 +23,14 @@ const MAX_CHUNKS = 6400;
  */
 const LOOK: Record<GatherType, { shape: number; size: number; color: [number, number, number]; variants?: number[] }> = {
   wood: { shape: SHAPE.tree, size: 0.6, color: [42, 97, 52] },
-  stone: { shape: SHAPE.stoneRock, size: 0.6, color: [158, 158, 164] },
-  gold: { shape: SHAPE.goldRock, size: 0.56, color: [242, 194, 51] },
+  stone: {
+    shape: SHAPE.stoneRock, size: 0.6, color: [158, 158, 164],
+    variants: [SHAPE.stoneRock, SHAPE.stoneRock2, SHAPE.stoneRock3],
+  },
+  gold: {
+    shape: SHAPE.goldRock, size: 0.56, color: [242, 194, 51],
+    variants: [SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3],
+  },
   berries: {
     shape: SHAPE.berryBush, size: 0.45, color: [62, 115, 52],
     variants: [SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4],
@@ -65,9 +71,8 @@ function treeAt(x: number, y: number, height: number): number {
   return kind === SHAPE.treeOak ? OAKS[Math.floor(hash(x, y, 10) * OAKS.length)] : kind;
 }
 
-/** Welcher Strauch auf Tile (x, y) wächst - fest je Tile. */
-function bushAt(x: number, y: number): number {
-  const kinds = LOOK.berries.variants!;
+/** Welche Form eines Vorkommens mit mehreren Varianten auf Tile (x, y) steht - fest je Tile. */
+function variantAt(x: number, y: number, kinds: number[]): number {
   return kinds[Math.floor(hash(x, y, 6) * kinds.length)];
 }
 
@@ -90,8 +95,8 @@ const KIND_LABEL: Record<number, string> = {
 /** Form des Vorkommens auf einem Tile - dieselbe Wahl für Bild und Anzeige. */
 function shapeAt(x: number, y: number, type: GatherType, height: number): number {
   if (type === 'wood') return treeAt(x, y, height);
-  if (type === 'berries') return bushAt(x, y);
-  return LOOK[type].shape;
+  const look = LOOK[type];
+  return look.variants ? variantAt(x, y, look.variants) : look.shape;
 }
 
 interface ResourceNode {

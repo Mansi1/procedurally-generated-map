@@ -42,10 +42,18 @@ import treeOakOldObj from '../models/tree_oak_old.obj?raw';
 import treeOakOldMtl from '../models/tree_oak_old.mtl?raw';
 import treeOakYoungObj from '../models/tree_oak_young.obj?raw';
 import treeOakYoungMtl from '../models/tree_oak_young.mtl?raw';
-import stoneObj from '../models/stone.obj?raw';
-import stoneMtl from '../models/stone.mtl?raw';
-import goldObj from '../models/gold.obj?raw';
-import goldMtl from '../models/gold.mtl?raw';
+import stone1Obj from '../models/stone_1.obj?raw';
+import stone1Mtl from '../models/stone_1.mtl?raw';
+import stone2Obj from '../models/stone_2.obj?raw';
+import stone2Mtl from '../models/stone_2.mtl?raw';
+import stone3Obj from '../models/stone_3.obj?raw';
+import stone3Mtl from '../models/stone_3.mtl?raw';
+import gold1Obj from '../models/gold_1.obj?raw';
+import gold1Mtl from '../models/gold_1.mtl?raw';
+import gold2Obj from '../models/gold_2.obj?raw';
+import gold2Mtl from '../models/gold_2.mtl?raw';
+import gold3Obj from '../models/gold_3.obj?raw';
+import gold3Mtl from '../models/gold_3.mtl?raw';
 import berryBush1Obj from '../models/berry_bush_1.obj?raw';
 import berryBush1Mtl from '../models/berry_bush_1.mtl?raw';
 import berryBush2Obj from '../models/berry_bush_2.obj?raw';
@@ -83,9 +91,9 @@ export const SHAPE = {
   // Drehung je Instanz, keine Mindestgröße, keine Sortierung (undurchsichtig).
   /** Fichte auf Holz-Tiles (models/tree_spruce.obj) - weitere Bäume ab 22. */
   tree: 12,
-  /** Felsen auf Stein-Tiles (models/stone.obj). */
+  /** Felsbrocken auf Stein-Tiles (models/stone_1.obj) - weitere ab 29. */
   stoneRock: 13,
-  /** Fels mit Goldnuggets (models/gold.obj). */
+  /** Erzfels mit Goldadern und Nuggets (models/gold_1.obj) - weitere ab 31. */
   goldRock: 14,
   /** Johannisbeerstrauch (models/berry_bush_1.obj) - weitere Sträucher ab 19. */
   berryBush: 15,
@@ -118,6 +126,14 @@ export const SHAPE = {
   treeOakOld: 27,
   /** Junge Eiche mit schlankem Stamm (models/tree_oak_young.obj). */
   treeOakYoung: 28,
+  /** Flacher Haufen Felsbrocken (models/stone_2.obj). */
+  stoneRock2: 29,
+  /** Zwei hohe, gespaltene Felsen (models/stone_3.obj). */
+  stoneRock3: 30,
+  /** Erzhaufen mit Goldadern (models/gold_2.obj). */
+  goldRock2: 31,
+  /** Hoher Erzfels mit Goldadern (models/gold_3.obj). */
+  goldRock3: 32,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -156,7 +172,8 @@ export const TREES: number[] = [
 
 /** Diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
 const NATURAL: number[] = [
-  ...TREES, SHAPE.stoneRock, SHAPE.goldRock,
+  ...TREES,
+  SHAPE.stoneRock, SHAPE.stoneRock2, SHAPE.stoneRock3, SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3,
   SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4,
 ];
 
@@ -829,6 +846,8 @@ const LOD_ZOOM = [32, 12];
  */
 const TREE_METERS = 3;
 const BUSH_METERS = 2.25;
+const STONE_METERS = 3;
+const GOLD_METERS = 2.8;
 
 /** Ein Vorkommen: mit vereinfachten Fassungen, in seiner echten Breite. */
 function natural(shape: number, obj: string, mtl: string, meters: number) {
@@ -857,8 +876,12 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   ...natural(SHAPE.treeMaple, treeMapleObj, treeMapleMtl, TREE_METERS),
   ...natural(SHAPE.treeOakOld, treeOakOldObj, treeOakOldMtl, TREE_METERS),
   ...natural(SHAPE.treeOakYoung, treeOakYoungObj, treeOakYoungMtl, TREE_METERS),
-  { shape: SHAPE.stoneRock, model: loadModel(stoneObj, stoneMtl, 'width'), scale: 1 },
-  { shape: SHAPE.goldRock, model: loadModel(goldObj, goldMtl, 'width'), scale: 1 },
+  ...natural(SHAPE.stoneRock, stone1Obj, stone1Mtl, STONE_METERS),
+  ...natural(SHAPE.stoneRock2, stone2Obj, stone2Mtl, STONE_METERS),
+  ...natural(SHAPE.stoneRock3, stone3Obj, stone3Mtl, STONE_METERS),
+  ...natural(SHAPE.goldRock, gold1Obj, gold1Mtl, GOLD_METERS),
+  ...natural(SHAPE.goldRock2, gold2Obj, gold2Mtl, GOLD_METERS),
+  ...natural(SHAPE.goldRock3, gold3Obj, gold3Mtl, GOLD_METERS),
   ...natural(SHAPE.berryBush, berryBush1Obj, berryBush1Mtl, BUSH_METERS),
   ...natural(SHAPE.berryBush2, berryBush2Obj, berryBush2Mtl, BUSH_METERS),
   ...natural(SHAPE.berryBush3, berryBush3Obj, berryBush3Mtl, BUSH_METERS),
