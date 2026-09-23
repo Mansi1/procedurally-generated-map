@@ -147,159 +147,252 @@ function house() {
   write(dir, 'house', header('house', 'Haus', '# Material Paint (das Dach) bekommt die Gebaeudefarbe aus dem Spiel.\n'), m, '0.840 0.620 0.380');
 }
 
-// --- Town center: stone hall with timbered upper floor, porch and bell
-// tower, 10 m wide (size 2) ------------------------------------------------
+// --- Town center: timber-framed house on stilts with a cross-gabled shingle
+// roof and four open lean-to canopies, one on each side - seen at the game's
+// oblique angle the plan reads as an X, like the AoE2 town center. 10 m wide
+// (size 2).
 function townCenter() {
   const m = model();
-  const { box, pair, beam } = m;
-  const W = 3.8, Z0 = -3.2, Z1 = 2.4, P = 0.5, G = 3.4;
-  const D = (Z1 - Z0) / 2, ZC = (Z0 + Z1) / 2;
-  // walls() works around the origin - shift everything by ZC in z.
-  const wall = (face, name, mtl, u, y, w, o) => {
-    const mm = { box: (n, mt, x, yy, z, oo) => box(n, mt, x, yy, [z[0] + ZC, z[1] + ZC], oo && oo.z ? { ...oo, z: [oo.z[0] + ZC, oo.z[1] + ZC] } : oo) };
-    walls(mm, W, D)(face, name, mtl, face === 'left' || face === 'right' ? [u[0] - ZC * (face === 'left' ? 1 : -1), u[1] - ZC * (face === 'left' ? 1 : -1)] : u, y, w, o);
+  const { box, beam } = m;
+  const C = 2.2;   // half width of the house
+  const F = 1.5;   // floor of the upper storey (on stilts)
+  const E = 4.3;   // eaves
+  const R = 6.7;   // ridge
+  const WING = 5.0; // outer end of the canopies
+
+  // Quarter turns about the vertical axis - one canopy is built for +z and
+  // turned for the other sides. k = 0: +z, 1: +x, 2: -z, 3: -x.
+  const turn = (k, x, z) => [[x, z], [z, -x], [-x, -z], [-z, x]][k];
+  const range = (a, b) => [Math.min(a, b), Math.max(a, b)];
+  /** Axis-aligned box of the +z canopy, turned by k quarters. */
+  const rbox = (k, name, mtl, [x0, x1], y, [z0, z1], o = {}) => {
+    const [ax, az] = turn(k, x0, z0), [bx, bz] = turn(k, x1, z1);
+    const opts = { ...o };
+    if (o.x || o.z) {
+      const [tx0, tz0] = turn(k, (o.x ?? [x0, x1])[0], (o.z ?? [z0, z1])[0]);
+      const [tx1, tz1] = turn(k, (o.x ?? [x0, x1])[1], (o.z ?? [z0, z1])[1]);
+      opts.x = range(tx0, tx1);
+      opts.z = range(tz0, tz1);
+    }
+    box(name, mtl, range(ax, bx), y, range(az, bz), opts);
   };
-  const upper = (face, name, mtl, u, y, w, o) => {
-    const mm = { box: (n, mt, x, yy, z, oo) => box(n, mt, x, yy, [z[0] + ZC, z[1] + ZC], oo) };
-    walls(mm, W + 0.15, D + 0.15)(face, name, mtl, face === 'left' || face === 'right' ? [u[0] - ZC * (face === 'left' ? 1 : -1), u[1] - ZC * (face === 'left' ? 1 : -1)] : u, y, w, o);
+  const rbeam = (k, name, mtl, p0, p1, w, o) => {
+    const [ax, az] = turn(k, p0[0], p0[2]), [bx, bz] = turn(k, p1[0], p1[2]);
+    beam(name, mtl, [ax, p0[1], az], [bx, p1[1], bz], w, o);
   };
 
-  // Platform with trim and steps.
-  box('Platform', 'Stone', [-5, 5], [0, P - 0.08], [-5, 5]);
-  box('Platform.Trim', 'StoneDark', [-5.05, 5.05], [P - 0.08, P], [-5.05, 5.05]);
-  for (let i = 0; i < 9; i++) box('Platform.Slab', 'StoneLight', [-4.6 + i * 1.05, -4.1 + i * 1.05], [P, P + 0.01], [3.3, 4.8]);
-  for (const [y, z] of [[0.17, 5.6], [0.34, 5.35]]) box('Steps', 'StoneLight', [-1.7, 1.7], [0, y], [5.0, z]);
+  // Trampled ground under the whole building.
+  box('Ground', 'Dirt', [-5, 5], [0, 0.03], [-5, 5], { r: 0.25 });
 
-  // Ground floor: stone with quoins and a plinth course.
-  box('Hall', 'Stone', [-W, W], [P, G], [Z0, Z1]);
-  box('Hall.Plinth', 'StoneDark', [-W - 0.1, W + 0.1], [P, P + 0.3], [Z0 - 0.1, Z1 + 0.1]);
-  for (const sx of [-1, 1]) for (const z of [Z0, Z1]) {
-    for (let i = 0; i < 7; i++) {
-      const y = P + 0.3 + i * 0.4;
-      const long = i % 2 === 0;
-      const xr = sx > 0 ? [W - (long ? 0.5 : 0.3), W + 0.04] : [-W - 0.04, -W + (long ? 0.5 : 0.3)];
-      const zr = z > 0 ? [Z1 - (long ? 0.3 : 0.5), Z1 + 0.04] : [Z0 - 0.04, Z0 + (long ? 0.3 : 0.5)];
-      box('Hall.Quoin', 'StoneLight', xr, [y, Math.min(y + 0.36, G)], zr);
+  // --- Stilts, floor and the band in the player's colour -------------------
+  for (const x of [-C + 0.15, 0, C - 0.15]) {
+    for (const z of [-C + 0.15, 0, C - 0.15]) {
+      if (x === 0 && z === 0) continue;
+      box('Stilt', 'Timber', [x - 0.14, x + 0.14], [0, F], [z - 0.14, z + 0.14]);
+      box('Stilt.Foot', 'Stone', [x - 0.22, x + 0.22], [0, 0.18], [z - 0.22, z + 0.22], { r: 0.2 });
     }
   }
-  // Upper floor juts out over a beam, plastered and timber-framed.
-  box('Upper.Beam', 'Timber', [-W - 0.2, W + 0.2], [G, G + 0.22], [Z0 - 0.2, Z1 + 0.2]);
-  const U0 = G + 0.22, U1 = 6.0;
-  box('Upper', 'Plaster', [-W - 0.15, W + 0.15], [U0, U1], [Z0 - 0.15, Z1 + 0.15]);
-  for (const face of ['front', 'back']) {
-    upper(face, 'Upper.Plate', 'Timber', [-W - 0.15, W + 0.15], [U1 - 0.18, U1], [0, 0.05]);
-    for (let i = 0; i <= 6; i++) {
-      const u = -W - 0.1 + (i * (2 * W + 0.2)) / 6;
-      upper(face, 'Upper.Post', 'Timber', [u - 0.07, u + 0.07], [U0, U1], [0, 0.05]);
+  box('Floor', 'Wood', [-C - 0.1, C + 0.1], [F - 0.12, F + 0.02], [-C - 0.1, C + 0.1]);
+  box('Band', 'Paint', [-C - 0.16, C + 0.16], [F + 0.02, F + 0.26], [-C - 0.16, C + 0.16]);
+  box('Band.Edge', 'Timber', [-C - 0.18, C + 0.18], [F + 0.26, F + 0.32], [-C - 0.18, C + 0.18]);
+
+  // --- Upper storey: grey plaster in a timber frame ----------------------
+  const U0 = F + 0.32;
+  box('Walls', 'PlasterGrey', [-C, C], [U0, E], [-C, C]);
+  const wall = walls(m, C, C);
+  for (const face of ['front', 'back', 'left', 'right']) {
+    for (const u of [-C, -0.75, 0.75, C]) {
+      wall(face, 'Timber.Post', 'Timber', [u - 0.09, u + 0.09], [U0, E], [0, 0.06]);
+    }
+    wall(face, 'Timber.Rail', 'Timber', [-C, C], [2.85, 2.97], [0, 0.06]);
+    wall(face, 'Timber.Plate', 'Timber', [-C - 0.05, C + 0.05], [E - 0.16, E], [0, 0.07]);
+  }
+  // Braces in the outer panels, like in the picture.
+  for (const [z, sgn] of [[C + 0.03, 1], [-C - 0.03, -1]]) {
+    for (const s of [-1, 1]) {
+      beam('Timber.Brace', 'Timber', [s * (C - 0.1), U0, z], [s * 0.85, 2.85, z], 0.11);
+      beam('Timber.Brace', 'Timber', [s * 0.85, 2.97, z], [s * (C - 0.1), E - 0.16, z], 0.11);
+    }
+    void sgn;
+  }
+  for (const x of [C + 0.03, -C - 0.03]) {
+    for (const s of [-1, 1]) {
+      beam('Timber.Brace', 'Timber', [x, U0, s * (C - 0.1)], [x, 2.85, s * 0.85], 0.11);
+      beam('Timber.Brace', 'Timber', [x, 2.97, s * 0.85], [x, E - 0.16, s * (C - 0.1)], 0.11);
     }
   }
-  for (const face of ['left', 'right']) {
-    upper(face, 'Upper.Plate', 'Timber', [Z0 - 0.15, Z1 + 0.15], [U1 - 0.18, U1], [0, 0.05]);
-    for (let i = 0; i <= 4; i++) {
-      const u = Z0 - 0.1 + (i * (Z1 - Z0 + 0.2)) / 4;
-      upper(face, 'Upper.Post', 'Timber', [u - 0.07, u + 0.07], [U0, U1], [0, 0.05]);
+  // Windows with light behind them and open shutters; the door at the top
+  // of the stairs on the front.
+  const lit = (face, u, y0, y1, w) => {
+    const h = w / 2;
+    wall(face, 'Window.Light', 'WindowLit', [u - h, u + h], [y0, y1], [0, 0.03]);
+    wall(face, 'Window.Bar', 'Timber', [u - 0.02, u + 0.02], [y0, y1], [0.03, 0.06]);
+    wall(face, 'Window.Frame', 'Timber', [u - h - 0.07, u + h + 0.07], [y0 - 0.07, y0], [0, 0.12]);
+    wall(face, 'Window.Frame', 'Timber', [u - h - 0.07, u + h + 0.07], [y1, y1 + 0.07], [0, 0.08]);
+    for (const s of [-1, 1]) {
+      const a = s < 0 ? [u - h - 0.07 - h, u - h - 0.07] : [u + h + 0.07, u + h + 0.07 + h];
+      wall(face, 'Window.Shutter', 'Wood', a, [y0, y1], [0, 0.04]);
+      for (const y of [y0 + 0.12, y1 - 0.16]) wall(face, 'Window.Shutter.Band', 'Timber', a, [y, y + 0.04], [0.04, 0.055]);
+    }
+  };
+  lit('front', -0.95, 3.15, 3.95, 0.55);
+  lit('left', 0, 3.15, 3.95, 0.6);
+  lit('right', 0, 3.15, 3.95, 0.6);
+  lit('back', 0, 3.15, 3.95, 0.6);
+  lit('front', -0.95, 1.95, 2.6, 0.5);
+  wall('front', 'Door', 'Wood', [0.45, 1.35], [U0, 2.75], [0, 0.05]);
+  for (let i = 1; i < 4; i++) wall('front', 'Door.Seam', 'WoodDark', [0.45 + i * 0.225 - 0.01, 0.45 + i * 0.225 + 0.01], [U0 + 0.05, 2.7], [0.05, 0.06]);
+  wall('front', 'Door.Frame', 'Timber', [0.33, 1.47], [2.75, 2.87], [0, 0.08]);
+  // Shields in the player's colour with a white stripe, on the front and side.
+  const shield = (face, u, y) => {
+    const pts = [[-0.24, 0.3], [0.24, 0.3], [0.24, 0.02], [0, -0.3], [-0.24, 0.02]];
+    const place = { front: (a, b, w) => [u + a, y + b, C + w], right: (a, b, w) => [C + w, y + b, -(u + a)] }[face];
+    const [x0, , z0] = place(0, 0, 0.07), [x1, , z1] = place(0, 0, 0.12);
+    const axis = face === 'front' ? 'z' : 'x';
+    const span = axis === 'z' ? [z0, z1] : [x0, x1];
+    m.extrude('Shield', 'Paint', axis, span, pts.map(([a, b]) => axis === 'z' ? [u + a, y + b] : [-(u + a), y + b]));
+    beam('Shield.Stripe', 'Canvas', place(-0.2, 0.26, 0.125), place(0.2, -0.12, 0.125), 0.09);
+    beam('Shield.Rim', 'Iron', place(-0.24, 0.3, 0.11), place(0.24, 0.3, 0.11), 0.04);
+  };
+  shield('front', -0.95, 3.0 - 0.45);
+  shield('right', 1.35, 3.55);
+
+  // Stairs up to the door, with a handrail.
+  const steps = 7;
+  for (let i = 0; i < steps; i++) {
+    const y = ((i + 1) / steps) * F;
+    const z = C + 0.1 + (steps - 1 - i) * 0.3;
+    box('Stairs.Step', 'Wood', [0.4, 1.4], [y - 0.07, y], [z, z + 0.32]);
+  }
+  for (const x of [0.36, 1.44]) {
+    beam('Stairs.String', 'Timber', [x, 0, C + 2.25], [x, F, C + 0.1], 0.1);
+    beam('Stairs.Rail', 'Timber', [x, 0.9, C + 2.25], [x, F + 0.9, C + 0.1], 0.07);
+    box('Stairs.Post', 'Timber', [x - 0.05, x + 0.05], [0, 0.95], [C + 2.2, C + 2.3]);
+  }
+
+  // --- Cross-gabled shingle roof -----------------------------------------
+  const RC = C + 0.55;
+  for (const s of [1, -1]) {
+    slope(m, 'Roof', 'Shingle', 'x', [-RC + 0.1, RC - 0.1], [s * RC, E - 0.12], [0, R], 0.13, 9);
+    slope(m, 'Roof', 'Shingle', 'z', [-RC + 0.1, RC - 0.1], [s * RC, E - 0.12], [0, R], 0.13, 9);
+  }
+  box('Roof.Ridge', 'ShingleDark', [-RC + 0.05, RC - 0.05], [R - 0.02, R + 0.16], [-0.14, 0.14], { axis: 'x', n: 6 });
+  box('Roof.Ridge', 'ShingleDark', [-0.14, 0.14], [R - 0.02, R + 0.16], [-RC + 0.05, RC - 0.05], { axis: 'z', n: 6 });
+  m.extrude('Gable', 'PlasterGrey', 'x', [-C, C], [[-C, E], [C, E], [0, R - 0.1]]);
+  m.extrude('Gable', 'PlasterGrey', 'z', [-C, C], [[-C, E], [C, E], [0, R - 0.1]]);
+  for (const s of [-1, 1]) {
+    // Gable framing and bargeboards on all four gables.
+    beam('Gable.KingPost', 'Timber', [0, E, s * (C + 0.03)], [0, R - 0.2, s * (C + 0.03)], 0.1);
+    beam('Gable.KingPost', 'Timber', [s * (C + 0.03), E, 0], [s * (C + 0.03), R - 0.2, 0], 0.1);
+    beam('Gable.Collar', 'Timber', [-1.1, 5.5, s * (C + 0.03)], [1.1, 5.5, s * (C + 0.03)], 0.1);
+    beam('Gable.Collar', 'Timber', [s * (C + 0.03), 5.5, -1.1], [s * (C + 0.03), 5.5, 1.1], 0.1);
+    for (const t of [-1, 1]) {
+      beam('Gable.Barge', 'Timber', [t * (RC - 0.05), E - 0.05, s * (RC - 0.08)], [0, R + 0.1, s * (RC - 0.08)], 0.14);
+      beam('Gable.Barge', 'Timber', [s * (RC - 0.08), E - 0.05, t * (RC - 0.05)], [s * (RC - 0.08), R + 0.1, 0], 0.14);
     }
   }
-  // Braces between the posts next to the banners.
-  for (const s of [-1, 1]) {
-    for (const [a, b] of [[1.33, 2.6], [3.87, 2.6]]) {
-      beam('Upper.Brace', 'Timber', [s * a, U0, Z1 + 0.2], [s * b, U1 - 0.18, Z1 + 0.2], 0.1);
+  box('Gable.Window', 'WindowLit', [-0.22, 0.22], [4.75, 5.25], [C + 0.02, C + 0.05]);
+  box('Gable.Window', 'WindowLit', [C + 0.02, C + 0.05], [4.75, 5.25], [-0.22, 0.22]);
+  // Chimney through the back roof.
+  box('Chimney', 'Stone', [-1.45, -0.9], [4.6, 7.4], [-1.6, -1.05], { r: 0.06 });
+  box('Chimney.Cap', 'StoneDark', [-1.52, -0.83], [7.4, 7.52], [-1.67, -0.98]);
+  box('Chimney.Flue', 'Soot', [-1.35, -1.0], [7.52, 7.53], [-1.5, -1.15]);
+  // Flag on the crossing of the ridges (object Cloth waves in the game).
+  box('Flag.Mast', 'Wood', [-0.045, 0.045], [R, R + 2.3], [-0.045, 0.045], { n: 6 });
+  box('Flag.Knob', 'Gold', [-0.07, 0.07], [R + 2.3, R + 2.42], [-0.07, 0.07], { n: 6 });
+  box('Cloth', 'Paint', [0.045, 1.35], [R + 1.45, R + 2.25], [-0.025, 0.025]);
+
+  // --- Four open canopies, one per side ------------------------------------
+  const W2 = 1.85; // half width of a canopy
+  const EAVE = 2.35, RIDGE = 3.35;
+  for (let k = 0; k < 4; k++) {
+    // Posts at the outer end and against the house, with knee braces.
+    for (const x of [-W2 + 0.2, W2 - 0.2]) {
+      for (const z of [C + 0.2, WING - 0.25]) {
+        rbox(k, 'Canopy.Post', 'Timber', [x - 0.12, x + 0.12], [0, EAVE], [z - 0.12, z + 0.12]);
+      }
+      rbox(k, 'Canopy.Beam', 'Timber', [x - 0.1, x + 0.1], [EAVE - 0.2, EAVE], [C, WING - 0.1]);
+      rbeam(k, 'Canopy.Brace', 'Timber', [x, EAVE - 0.8, WING - 0.25], [x, EAVE - 0.2, WING - 0.85], 0.09);
+    }
+    rbox(k, 'Canopy.Beam', 'Timber', [-W2, W2], [EAVE - 0.22, EAVE], [WING - 0.36, WING - 0.14]);
+    for (const s of [-1, 1]) rbeam(k, 'Canopy.Brace', 'Timber', [s * (W2 - 0.2), EAVE - 0.8, WING - 0.25], [s * (W2 - 0.8), EAVE - 0.22, WING - 0.25], 0.09);
+    // Gable roof along the canopy, shingles like the house.
+    const along = k % 2 === 0 ? 'z' : 'x';
+    const sgn = k < 2 ? 1 : -1;
+    const span = range(sgn * (C - 0.3), sgn * (WING + 0.15));
+    for (const s of [1, -1]) {
+      // In the plane across the roof axis the "u" coordinate is x for a
+      // z-axis roof and z for an x-axis roof (see lib.slope); the roof is
+      // symmetric, so turning only swaps the axis.
+      slope(m, 'Canopy.Roof', 'Shingle', along, span, [s * (W2 + 0.3), EAVE - 0.05], [0, RIDGE], 0.12, 5);
+    }
+    rbox(k, 'Canopy.Ridge', 'ShingleDark', [-0.12, 0.12], [RIDGE - 0.02, RIDGE + 0.14], [C - 0.3, WING + 0.15], { axis: 'z', n: 6 });
+    // Planked gable at the open end.
+    const gable = [[-W2, EAVE], [W2, EAVE], [0, RIDGE - 0.1]].map(([u, y]) => [turn(k, u, 0), y]);
+    const zEnd = WING - 0.05;
+    const [gx, gz] = turn(k, 0, zEnd);
+    if (along === 'z') m.extrude('Canopy.Gable', 'WoodLight', 'z', range(gz - 0.04, gz + 0.04), gable.map(([[u], y]) => [u, y]));
+    else m.extrude('Canopy.Gable', 'WoodLight', 'x', range(gx - 0.04, gx + 0.04), gable.map(([[, v], y]) => [v, y]));
+    // Ivy climbing the outer posts.
+    for (const x of k % 2 ? [-W2 + 0.2] : [W2 - 0.2]) {
+      for (let i = 0; i < 14; i++) {
+        const y = 0.1 + i * 0.16;
+        const a = i * 1.9;
+        const [dx, dz] = [Math.cos(a) * 0.16, Math.sin(a) * 0.16];
+        const s = 0.09 + (i % 3) * 0.025;
+        rbox(k, 'Ivy', i % 2 ? 'Ivy' : 'IvyDark', [x + dx - s, x + dx + s], [y, y + s * 1.4], [WING - 0.25 + dz - s, WING - 0.25 + dz + s], { r: 0.3 });
+      }
     }
   }
 
-  // Double door in a stone arch, iron studs and rings.
-  box('Door.Arch', 'StoneLight', [-1.25, 1.25], [P, 3.35], [Z1, Z1 + 0.14]);
-  box('Door.Arch.Top', 'StoneLight', [-1.25, 1.25], [3.0, 3.35], [Z1, Z1 + 0.2]);
-  for (const s of [-1, 1]) {
-    const x = s > 0 ? [0.02, 0.95] : [-0.95, -0.02];
-    box('Door', 'Wood', x, [P, 3.0], [Z1 + 0.1, Z1 + 0.18]);
-    for (let i = 1; i < 4; i++) {
-      const u = x[0] + (i * (x[1] - x[0])) / 4;
-      box('Door.Seam', 'WoodDark', [u - 0.012, u + 0.012], [P + 0.05, 2.95], [Z1 + 0.18, Z1 + 0.19]);
+  // --- Things under the canopies and the house ------------------------------
+  // Front: crates stacked by the stairs, a barrel, sacks.
+  crate(m, [-1.55, -0.95], 0.03, [3.4, 4.0]);
+  crate(m, [-1.5, -1.0], 0.63, [3.45, 3.95]);
+  crate(m, [-0.9, -0.35], 0.03, [3.6, 4.15]);
+  barrel(m, -1.3, 4.5, 0.8, 0.28);
+  // Right: cart wheel leaning against a post, barrels.
+  const wheel = (x, z) => {
+    box('Wheel', 'Wood', [x - 0.05, x + 0.05], [0.05, 1.05], [z - 0.5, z + 0.5], { axis: 'x', n: 12 });
+    box('Wheel.Hub', 'WoodDark', [x - 0.09, x + 0.09], [0.47, 0.63], [z - 0.08, z + 0.08], { axis: 'x', n: 8 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      beam('Wheel.Spoke', 'WoodDark', [x + 0.06, 0.55, z], [x + 0.06, 0.55 + Math.sin(a) * 0.44, z + Math.cos(a) * 0.44], 0.05);
     }
-    for (const y of [P + 0.45, 1.7, 2.6]) box('Door.Band', 'Iron', x, [y, y + 0.08], [Z1 + 0.18, Z1 + 0.2]);
-    box('Door.Ring', 'Iron', [s * 0.18 - 0.05, s * 0.18 + 0.05], [1.5, 1.62], [Z1 + 0.18, Z1 + 0.23], { r: 0.3 });
+  };
+  wheel(4.35, 1.2);
+  barrel(m, 3.4, -1.1, 0.85, 0.3);
+  barrel(m, 3.95, -0.6, 0.85, 0.3);
+  // Back: a pile of firewood and a barrel.
+  for (let row = 0; row < 3; row++) {
+    for (let c = 0; c < 4 - row; c++) {
+      const x = -1.2 + c * 0.3 + row * 0.15, y = 0.15 + row * 0.26;
+      box('Firewood', 'Bark', [x - 0.13, x + 0.13], [y - 0.13, y + 0.13], [-4.4, -3.4], { axis: 'z', n: 7 });
+      box('Firewood.End', 'LogEnd', [x - 0.11, x + 0.11], [y - 0.11, y + 0.11], [-3.4, -3.39], { axis: 'z', n: 7 });
+    }
   }
-  box('Door.Gap', 'Soot', [-0.02, 0.02], [P, 3.0], [Z1 + 0.1, Z1 + 0.17]);
+  barrel(m, 1.2, -3.9, 0.85, 0.3);
+  // Left: sacks of grain and a barrel.
+  for (const [x, z, h] of [[-3.4, 1.0, 0.55], [-3.8, 1.3, 0.5], [-3.5, 1.6, 0.5], [-3.9, 0.8, 0.45]]) {
+    box('Sack', 'Sack', [x - 0.22, x + 0.22], [0.03, h], [z - 0.2, z + 0.2], { r: 0.3, x: [x - 0.15, x + 0.15], z: [z - 0.13, z + 0.13] });
+  }
+  barrel(m, -4.1, -1.0, 0.85, 0.3);
+  // Under the house: barrels and a crate between the stilts.
+  barrel(m, 1.2, 0.9, 0.85, 0.32);
+  barrel(m, -1.1, -0.9, 0.85, 0.32);
+  crate(m, [-1.4, -0.8], 0.03, [0.5, 1.1]);
+  // Plants at the foot of posts.
+  for (const [x, z] of [[1.9, 4.9], [-4.9, -1.7], [4.9, -1.7], [-1.7, -4.9], [0.2, 4.95]]) {
+    for (let i = 0; i < 4; i++) {
+      const a = i * 1.6;
+      beam('Plant', 'Ivy', [x, 0, z], [x + Math.cos(a) * 0.3, 0.35 + (i % 2) * 0.15, z + Math.sin(a) * 0.3], 0.14, { w1: 0.02 });
+    }
+  }
+  lantern(m, 0.9, 3.05, C + 0.35);
+  box('Lantern.Bracket', 'Iron', [0.88, 0.92], [3.23, 3.27], [C, C + 0.37]);
 
-  // Windows: stone frames below, timber above with shutters.
-  for (const s of [-1, 1]) {
-    windowOn(wall, 'front', s * 2.6, [1.3, 2.5], 0.7, { frame: 'StoneLight', sill: 'StoneLight' });
-    for (const u of [-1.5, 0.5]) windowOn(wall, s > 0 ? 'right' : 'left', u, [1.3, 2.5], 0.7, { frame: 'StoneLight', sill: 'StoneLight' });
-    for (const u of [0.95, 3.25]) windowOn(upper, 'front', s * u, [4.2, 5.2], 0.6, { shutters: true });
-    windowOn(upper, s > 0 ? 'right' : 'left', -0.4, [4.2, 5.2], 0.6, { shutters: true });
-  }
-  for (const u of [-2.4, 0, 2.4]) {
-    windowOn(wall, 'back', u, [1.3, 2.5], 0.7, { frame: 'StoneLight', sill: 'StoneLight' });
-    windowOn(upper, 'back', u, [4.2, 5.2], 0.6, { shutters: true });
-  }
-  // Banners in the player's colour hang from poles on the upper floor.
-  for (const s of [-1, 1]) {
-    const x = s * 2.1;
-    box('Banner.Pole', 'Wood', [x - 0.42, x + 0.42], [5.6, 5.68], [Z1 + 0.2, Z1 + 0.3], { axis: 'x', n: 6 });
-    box('Banner', 'Paint', [x - 0.35, x + 0.35], [4.0, 5.6], [Z1 + 0.22, Z1 + 0.27]);
-    m.extrude('Banner.Tail', 'Paint', 'z', [Z1 + 0.22, Z1 + 0.27], [[x - 0.35, 4.0], [x + 0.35, 4.0], [x, 3.7]]);
-    box('Banner.Emblem', 'Gold', [x - 0.14, x + 0.14], [4.6, 5.1], [Z1 + 0.27, Z1 + 0.29], { r: 0.3 });
-    box('Banner.Stripe', 'Gold', [x - 0.35, x + 0.35], [5.4, 5.46], [Z1 + 0.27, Z1 + 0.28]);
-  }
-
-  // Porch: columns on bases, beam, sloping tiled roof, torches.
-  for (const x of [-2.9, -1.3, 1.3, 2.9]) {
-    box('Porch.Base', 'StoneDark', [x - 0.22, x + 0.22], [P, P + 0.22], [4.0, 4.44]);
-    box('Porch.Column', 'Wood', [x - 0.14, x + 0.14], [P + 0.22, 3.25], [4.08, 4.36], { n: 8, x: [x - 0.12, x + 0.12], z: [4.1, 4.34] });
-    box('Porch.Capital', 'Timber', [x - 0.2, x + 0.2], [3.25, 3.35], [4.02, 4.42]);
-  }
-  box('Porch.Beam', 'Timber', [-3.2, 3.2], [3.35, 3.55], [4.05, 4.4]);
-  for (let i = 0; i < 7; i++) {
-    const x = -3.0 + i;
-    beam('Porch.Rafter', 'Timber', [x, 3.95, Z1 + 0.15], [x, 3.52, 4.6], 0.1);
-  }
-  slope(m, 'Porch.Roof', 'Tiles', 'x', [-3.35, 3.35], [4.75, 3.45], [Z1 + 0.15, 4.0], 0.12, 3);
-  for (const x of [-2.9, 2.9]) {
-    box('Torch.Bracket', 'Iron', [x - 0.03, x + 0.03], [2.3, 2.36], [4.36, 4.56]);
-    box('Torch', 'Wood', [x - 0.04, x + 0.04], [2.2, 2.55], [4.52, 4.6]);
-    box('Torch.Flame', 'Flame', [x - 0.06, x + 0.06], [2.55, 2.75], [4.5, 4.62], { x: [x - 0.02, x + 0.02], z: [4.54, 4.58] });
-  }
-
-  // Hip roof in tile courses, ridge cap, two chimneys.
-  hipRoof(m, 'Roof', 'Tiles', [-W - 0.7, W + 0.7], [Z0 - 0.7, Z1 + 0.7], U1 - 0.1, [-1.8, 1.8], [ZC, ZC], 8.4, 4);
-  box('Roof.Ridge', 'RoofDark', [-1.95, 1.95], [8.32, 8.5], [ZC - 0.12, ZC + 0.12], { axis: 'x', n: 6 });
-  for (const s of [-1, 1]) {
-    box('Chimney', 'Stone', [s * 2.8 - 0.3, s * 2.8 + 0.3], [6.5, 8.6], [Z0 + 0.6, Z0 + 1.1], { r: 0.05 });
-    box('Chimney.Cap', 'StoneDark', [s * 2.8 - 0.36, s * 2.8 + 0.36], [8.6, 8.72], [Z0 + 0.54, Z0 + 1.16]);
-    box('Chimney.Flue', 'Soot', [s * 2.8 - 0.2, s * 2.8 + 0.2], [8.72, 8.73], [Z0 + 0.7, Z0 + 1.0]);
-  }
-
-  // Bell tower on the ridge: timbered, open belfry with a bell, pyramid roof,
-  // flag in the player's colour that waves (object Cloth).
-  const T = 1.25, TZ0 = ZC - T, TZ1 = ZC + T;
-  box('Tower', 'Plaster', [-T, T], [7.0, 9.4], [TZ0, TZ1]);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    box('Tower.Post', 'Timber', sx > 0 ? [T - 0.12, T + 0.04] : [-T - 0.04, -T + 0.12], [7.0, 10.9], sz > 0 ? [TZ1 - 0.12, TZ1 + 0.04] : [TZ0 - 0.04, TZ0 + 0.12]);
-  }
-  box('Tower.Floor', 'Timber', [-T - 0.1, T + 0.1], [9.4, 9.55], [TZ0 - 0.1, TZ1 + 0.1]);
-  box('Tower.Belfry', 'Soot', [-T + 0.12, T - 0.12], [9.55, 10.75], [TZ0 + 0.12, TZ1 - 0.12]);
-  for (const s of [-1, 1]) {
-    box('Tower.Rail', 'Timber', [-T, T], [9.9, 9.98], s > 0 ? [TZ1 - 0.08, TZ1 + 0.02] : [TZ0 - 0.02, TZ0 + 0.08]);
-    box('Tower.Rail', 'Timber', s > 0 ? [T - 0.08, T + 0.02] : [-T - 0.02, -T + 0.08], [9.9, 9.98], [TZ0, TZ1]);
-  }
-  box('Tower.Bell', 'Gold', [-0.42, 0.42], [9.75, 10.5], [ZC - 0.42, ZC + 0.42], { n: 10, x: [-0.2, 0.2], z: [ZC - 0.2, ZC + 0.2] });
-  box('Tower.Yoke', 'Timber', [-T, T], [10.5, 10.62], [ZC - 0.07, ZC + 0.07]);
-  box('Tower.Cornice', 'Timber', [-T - 0.2, T + 0.2], [10.75, 10.95], [TZ0 - 0.2, TZ1 + 0.2]);
-  hipRoof(m, 'Tower.Roof', 'Tiles', [-T - 0.45, T + 0.45], [TZ0 - 0.45, TZ1 + 0.45], 10.95, [0, 0], [ZC, ZC], 13.4, 3);
-  box('Tower.Finial', 'Gold', [-0.1, 0.1], [13.3, 13.65], [ZC - 0.1, ZC + 0.1], { n: 6, x: [0, 0], z: [ZC, ZC] });
-  box('Flag.Mast', 'Wood', [-0.04, 0.04], [13.3, 15.4], [ZC - 0.04, ZC + 0.04], { n: 6 });
-  box('Cloth', 'Paint', [0.04, 1.5], [14.45, 15.3], [ZC - 0.025, ZC + 0.025]);
-
-  // Supplies by the walls: crates, barrels, sacks.
-  crate(m, [-4.6, -4.0], P, [3.3, 3.9]);
-  crate(m, [-4.55, -4.05], P + 0.6, [3.35, 3.85]);
-  crate(m, [-4.0, -3.45], P, [3.6, 4.15]);
-  barrel(m, 4.3, 3.9, 0.85, 0.3);
-  barrel(m, 4.3, 3.2, 0.85, 0.3);
-  m.box('Sack', 'Sack', [3.55, 3.95], [P, P + 0.45], [4.2, 4.6], { r: 0.3, x: [3.62, 3.88], z: [4.27, 4.53] });
   write(dir, 'town_center', header('town_center', 'Hauptgebaeude',
-    '# Material Paint (Banner und Fahne) bekommt die Gebaeudefarbe aus dem Spiel,\n# das Objekt Cloth (Fahnentuch am Mast bei x = 0) weht.\n'), m, '0.200 0.350 0.750');
+    '# Material Paint (Band, Wappen und Fahne) bekommt die Gebaeudefarbe aus dem Spiel,\n# das Objekt Cloth (Fahnentuch am Mast bei x = 0) weht.\n'), m, '0.200 0.350 0.750');
 }
 
 // --- Mill: tapered tower with a conical cap and four lattice sails, 4.3 m

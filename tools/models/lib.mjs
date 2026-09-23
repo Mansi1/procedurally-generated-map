@@ -171,6 +171,9 @@ export const PALETTE = {
   Tiles: '0.620 0.270 0.200', RoofDark: '0.380 0.200 0.150', Canvas: '0.930 0.900 0.820',
   Sack: '0.800 0.720 0.560', Bark: '0.330 0.220 0.120', LogEnd: '0.850 0.700 0.470',
   Gold: '0.930 0.740 0.220', GoldDark: '0.700 0.520 0.120', Ore: '0.350 0.330 0.320',
+  Dirt: '0.450 0.380 0.280', PlasterGrey: '0.760 0.760 0.740', WindowLit: '1.000 0.820 0.420',
+  Shingle: '0.520 0.410 0.290', ShingleDark: '0.380 0.290 0.200', Ivy: '0.300 0.520 0.200',
+  IvyDark: '0.190 0.380 0.140',
 };
 
 export function write(dir, file, header, m, paint) {

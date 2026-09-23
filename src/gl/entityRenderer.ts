@@ -712,7 +712,7 @@ void main() {
     vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
-    vTex = !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
+    vTex = role == 6 ? 6 : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
     vLocal = aCorner.xyz * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
@@ -785,6 +785,24 @@ vec3 treeTexture(vec3 base) {
     float crack = smoothstep(0.86, 0.9, texNoise(uv * vec2(9.0, 2.2)));
     vec3 c = base * (0.9 + 0.1 * texNoise(uv * vec2(30.0, 10.0)));
     return mix(c, vec3(0.12, 0.11, 0.1), max(dash * 0.85, crack));
+  }
+  if (vTex == 6) {
+    // Holzschindeln: versetzte Reihen (Reihe = Höhe), jede Schindel etwas
+    // anders getönt, dunkle Fugen dazwischen, die untere Kante unregelmäßig
+    // und im Schatten der Reihe darüber. Waagerecht zählt die Richtung, in
+    // der das Dach verläuft - x + y deckt beide ab.
+    vec2 q = vec2((vLocal.x + vLocal.y) * 3.2, vLocal.z * 5.0);
+    float row = floor(q.y);
+    q.x += mod(row, 2.0) * 0.5;
+    vec2 cell = vec2(floor(q.x), row);
+    vec2 f = fract(q);
+    float tone = texHash(cell);
+    float ragged = texHash(cell + 11.0) * 0.18;
+    float gapX = smoothstep(0.0, 0.06, f.x) * smoothstep(1.0, 0.94, f.x);
+    float shade = smoothstep(0.0, 0.3 + ragged, f.y);
+    vec3 c = base * (0.78 + 0.4 * tone) * (0.62 + 0.38 * shade);
+    c *= 0.9 + 0.2 * texNoise(vec2(q.x * 7.0, q.y * 1.5));
+    return mix(base * 0.35, c, gapX);
   }
   // Schnittfläche: helles Holz mit Jahresringen, zum Rand dunkler.
   float rings = 0.5 + 0.5 * sin(r * 70.0 + texNoise(vLocal.xy * 6.0) * 3.0);
@@ -955,6 +973,9 @@ const MATERIAL_ROLE: Record<string, number> = {
   BarkDark: 3,
   PineBark: 3,
   Birch: 4,
+  // Gebäude: Holzschindeln als Textur (siehe treeTexture, vTex 6)
+  Shingle: 6,
+  ShingleDark: 6,
 };
 
 interface Model {
