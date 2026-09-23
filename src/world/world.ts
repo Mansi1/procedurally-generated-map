@@ -4,6 +4,7 @@
 // bereits abgebaute Vorkommen, Vorrat. Genau deshalb muss es gespeichert
 // werden, während das Gelände jederzeit neu berechnet werden kann.
 
+import { findPath, lineOfSight } from './pathfinding';
 import { uniqueName } from './names';
 import type { EntityInstance } from '../gl/entityRenderer';
 import { BUILDING_HEADING, FALL_LYING, POSE, SHAPE, frozenMillMotion, millMotion } from '../gl/entityRenderer';
@@ -75,6 +76,12 @@ export interface Villager {
   /** Sekunden bei der Arbeit - Takt der Arm-Animation. */
   workTime: number;
   prevWorkTime: number;
+  /**
+   * Weg zum aktuellen Ziel: die noch offenen Wegpunkte und für welches Ziel
+   * er berechnet ist. Nicht gespeichert - nach dem Laden neu gesucht.
+   */
+  path: { x: number; y: number }[] | null;
+  pathTarget: { x: number; y: number } | null;
 }
 
 /**
@@ -130,6 +137,15 @@ export interface ViewRect {
   height: number;
 }
 
+/** Häuser gibt es in vier Varianten - welche, hängt fest am Bauplatz. */
+const HOUSES = [SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4];
+
+function buildingShape(type: BuildingType, x: number, y: number): number {
+  if (type !== 'house') return BUILDINGS[type].shape;
+  const h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663);
+  return HOUSES[((h >>> 0) % HOUSES.length)];
+}
+
 const key = (x: number, y: number) => `${x},${y}`;
 
 /**
@@ -155,6 +171,8 @@ function newVillager(id: number, x: number, y: number, name: string, female: boo
     prevStride: 0,
     workTime: 0,
     prevWorkTime: 0,
+    path: null,
+    pathTarget: null,
   };
 }
 
@@ -193,6 +211,12 @@ export class World {
    * liegender Stamm abgebaut - wie in AoE2.
    */
   private felled = new Map<string, { at: number; dir: number }>();
+  /**
+   * Was ein Tile vom Gelände her versperrt, gemerkt: 0 frei, 1 Wasser,
+   * 2 Baum/Fels (frei, sobald abgebaut oder gefällt). Gebäude kommen dazu
+   * (siehe blockedAt).
+   */
+  private terrainBlock = new Map<string, number>();
   private ruins: Ruin[] = [];
   /** Weltzeit in Sekunden, läuft mit den Ticks. */
   private time = 0;
@@ -232,6 +256,11 @@ export class World {
 
   building(anchor: string): Building | undefined {
     return this.buildings.get(anchor);
+  }
+
+  /** Alle Gebäude - für das Auswählen mehrerer gleichartiger. */
+  allBuildings(): IterableIterator<Building> {
+    return this.buildings.values();
   }
 
   anchorOf(building: Building): string {
@@ -634,16 +663,62 @@ export class World {
   }
 
   /** Schritt Richtung Ziel. true, sobald er bis auf `reach` heran ist. */
+  /** Kann man Tile (x, y) nicht betreten? Wasser, Gebäude, stehende Bäume, Felsen. */
+  private blockedAt(x: number, y: number): boolean {
+    const k = key(x, y);
+    if (this.occupied.has(k)) return true;
+    let t = this.terrainBlock.get(k);
+    if (t === undefined) {
+      const found = this.probe.resourceAt(x, y);
+      t = found.tileType === 'water' || found.tileType === 'deep_water' ? 1
+        : found.type === 'wood' || found.type === 'stone' || found.type === 'gold' ? 2 : 0;
+      if (this.terrainBlock.size > 200_000) this.terrainBlock.clear();
+      this.terrainBlock.set(k, t);
+    }
+    if (t === 2) return !this.exhausted.has(k) && !this.felled.has(k);
+    return t === 1;
+  }
+
+  /**
+   * Nächster Punkt, den er ansteuert: der erste offene Wegpunkt zum Ziel -
+   * gesucht, wenn das Ziel neu ist oder der Weg inzwischen versperrt ist.
+   * Gibt es keinen Weg, geht er geradeaus (wie früher), statt stehen zu bleiben.
+   */
+  private waypoint(v: Villager, tx: number, ty: number, reach: number): { x: number; y: number } {
+    const blocked = (x: number, y: number) => this.blockedAt(x, y);
+    // Neu suchen: neues Ziel, oder die Strecke zum nächsten Wegpunkt ist
+    // inzwischen versperrt (z. B. ein neues Gebäude).
+    const stale = !v.pathTarget || Math.hypot(v.pathTarget.x - tx, v.pathTarget.y - ty) > 0.3
+      || (v.path?.[0] && !lineOfSight(v.x, v.y, v.path[0].x, v.path[0].y,
+          (x, y) => blocked(x, y) && !(x === Math.floor(v.x) && y === Math.floor(v.y))));
+    if (stale) {
+      v.pathTarget = { x: tx, y: ty };
+      v.path = lineOfSight(v.x, v.y, tx, ty, (x, y) => blocked(x, y) && !(x === Math.floor(tx) && y === Math.floor(ty)))
+        ? []
+        : findPath(v.x, v.y, tx, ty, reach, blocked) ?? [];
+    }
+    while (v.path && v.path.length > 0 && Math.hypot(v.path[0].x - v.x, v.path[0].y - v.y) < 0.12) v.path.shift();
+    return v.path && v.path.length > 0 ? v.path[0] : { x: tx, y: ty };
+  }
+
   private walk(v: Villager, tx: number, ty: number, reach: number, dt: number): boolean {
-    const dx = tx - v.x;
-    const dy = ty - v.y;
-    const d = Math.hypot(dx, dy);
+    const d = Math.hypot(tx - v.x, ty - v.y);
     // Mit etwas Spielraum - sonst bliebe nach dem letzten Schritt ein
     // Rundungsrest, und er käme nie an.
-    if (d <= reach + 1e-4) return true;
-    const step = Math.min(VILLAGER.speed * dt, d - reach);
-    v.x += (dx / d) * step;
-    v.y += (dy / d) * step;
+    if (d <= reach + 1e-4) {
+      v.path = null;
+      v.pathTarget = null;
+      return true;
+    }
+    // Um Hindernisse herum: zum nächsten Wegpunkt, zuletzt aufs Ziel zu.
+    const next = this.waypoint(v, tx, ty, reach);
+    const final = next.x === tx && next.y === ty;
+    const dx = next.x - v.x;
+    const dy = next.y - v.y;
+    const dn = Math.hypot(dx, dy) || 1e-6;
+    const step = Math.min(VILLAGER.speed * dt, final ? d - reach : dn);
+    v.x += (dx / dn) * step;
+    v.y += (dy / dn) * step;
     v.heading = Math.atan2(dy, dx);
     v.stride += step;
     v.pose = POSE.walk;
@@ -881,7 +956,7 @@ export class World {
       view: ViewRect,
       out: EntityInstance[] = [],
       blend = 1,
-      selection?: { villagers: ReadonlySet<number>; building: string | null },
+      selection?: { villagers: ReadonlySet<number>; buildings: ReadonlySet<string> },
   ): EntityInstance[] {
     const margin = 4;
     const x0 = view.x - margin;
@@ -899,11 +974,11 @@ export class World {
         y: building.y,
         size: def.size,
         color: def.color.toRGB(),
-        shape: def.shape,
+        shape: buildingShape(building.type, building.x, building.y),
         alpha: 1,
         // Jede Mühle dreht in ihrem eigenen Takt.
         motion: def.shape === SHAPE.mill ? millMotion(building.x, building.y) : undefined,
-        health: selection?.building === key(building.x, building.y) ? building.hp / def.hp : undefined,
+        health: selection?.buildings.has(key(building.x, building.y)) ? building.hp / def.hp : undefined,
       });
     }
 
@@ -959,7 +1034,7 @@ export class World {
         y: ruin.y - shake,
         size: def.size,
         color: def.color.toRGB(),
-        shape: def.shape,
+        shape: buildingShape(ruin.type, ruin.x, ruin.y),
         // Knapp unter 1: bleibt so vorn in der Sortierung für Halbdurchsichtiges.
         alpha: Math.max(0.01, fade * 0.999),
         motion,

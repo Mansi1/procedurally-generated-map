@@ -24,6 +24,7 @@ import {
   BUILDINGS,
   BUILDING_ORDER,
   MAX_GATHERERS,
+  MAX_TRAINING_QUEUE,
   VILLAGER,
   type BuildingType,
   type Stock,
@@ -450,12 +451,38 @@ compassEl.addEventListener('click', (e) => {
  * ausgewähltes Vorkommen - immer nur eine der drei Arten.
  */
 const selectedVillagers = new Set<number>();
+/**
+ * Ausgewählte Gebäude (Anker). `selectedBuilding` ist das zuletzt angeklickte
+ * - dessen Einzelheiten zeigt das Panel, wenn nur eines ausgewählt ist.
+ */
+const selectedBuildings = new Set<string>();
 let selectedBuilding: string | null = null;
 let selectedResource: { x: number; y: number } | null = null;
 
+/** Keine Gebäude mehr ausgewählt. */
+function clearBuildingSelection() {
+  selectedBuildings.clear();
+  selectedBuilding = null;
+}
+
+/** Genau diese Gebäude auswählen, `primary` als Hauptgebäude der Auswahl. */
+function selectBuildings(anchors: Iterable<string>, primary: string | null) {
+  selectedBuildings.clear();
+  for (const a of anchors) selectedBuildings.add(a);
+  selectedBuilding = primary && selectedBuildings.has(primary) ? primary : ([...selectedBuildings][0] ?? null);
+}
+
+/** Die ausgewählten Gebäude, die es noch gibt. */
+function chosenBuildings() {
+  return [...selectedBuildings].map((a) => world.building(a)).filter((b) => b !== undefined);
+}
+
+/** Doppelklick: alle gleichartigen Gebäude in diesem Umkreis (Tiles). */
+const SAME_TYPE_RADIUS = 15;
+
 function clearSelection() {
   selectedVillagers.clear();
-  selectedBuilding = null;
+  clearBuildingSelection();
   selectedResource = null;
   updateSelectionUI();
 }
@@ -538,12 +565,16 @@ function targetTileAt(px: number, py: number): { x: number; y: number } {
   return resourceObjectAt(px, py) ?? tile;
 }
 
-/** Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst Vorkommen, sonst nichts. */
-function clickSelect(px: number, py: number, add: boolean) {
+/**
+ * Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst Vorkommen, sonst
+ * nichts. Mit Umschalt (`add`) kommt es zur Auswahl dazu oder fällt heraus;
+ * ein Doppelklick (`same`) auf ein Gebäude wählt alle gleichartigen in der Nähe.
+ */
+function clickSelect(px: number, py: number, add: boolean, same = false) {
   const villager = villagerAt(px, py);
   selectedResource = null;
   if (villager) {
-    selectedBuilding = null;
+    clearBuildingSelection();
     if (!add) selectedVillagers.clear();
     if (add && selectedVillagers.has(villager.id)) selectedVillagers.delete(villager.id);
     else selectedVillagers.add(villager.id);
@@ -551,8 +582,24 @@ function clickSelect(px: number, py: number, add: boolean) {
     const { x, y } = targetTileAt(px, py);
     const building = world.at(x, y);
     selectedVillagers.clear();
-    selectedBuilding = building ? world.anchorOf(building) : null;
-    if (!building && world.resourceInfo(x, y)) selectedResource = { x, y };
+    if (building) {
+      const anchor = world.anchorOf(building);
+      if (same) {
+        const near = [...world.allBuildings()].filter((b) => b.type === building.type
+          && Math.hypot(b.x - building.x, b.y - building.y) <= SAME_TYPE_RADIUS);
+        selectBuildings([...(add ? selectedBuildings : []), ...near.map((b) => world.anchorOf(b))], anchor);
+      } else if (add) {
+        const set = new Set(selectedBuildings);
+        if (set.has(anchor)) set.delete(anchor);
+        else set.add(anchor);
+        selectBuildings(set, set.has(anchor) ? anchor : selectedBuilding);
+      } else {
+        selectBuildings([anchor], anchor);
+      }
+    } else if (!add) {
+      clearBuildingSelection();
+      if (world.resourceInfo(x, y)) selectedResource = { x, y };
+    }
   }
   updateSelectionUI();
 }
@@ -562,7 +609,7 @@ function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean)
   const [left, right] = x0 < x1 ? [x0, x1] : [x1, x0];
   const [top, bottom] = y0 < y1 ? [y0, y1] : [y1, y0];
   if (!add) selectedVillagers.clear();
-  selectedBuilding = null;
+  clearBuildingSelection();
   selectedResource = null;
   for (const v of world.villagers) {
     const s = villagerScreen(v);
@@ -620,7 +667,8 @@ window.addEventListener('mouseup', (e) => {
   if (e.button !== 0 || !drag) return;
   const p = canvasPoint(e);
   if (drag.active) boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
-  else clickSelect(p.x, p.y, e.shiftKey);
+  // e.detail zählt die Klicks kurz hintereinander - 2 ist ein Doppelklick.
+  else clickSelect(p.x, p.y, e.shiftKey, e.detail >= 2);
   drag = null;
   boxEl.hidden = true;
 });
@@ -636,10 +684,12 @@ canvas.addEventListener('contextmenu', (e) => {
   // Auf das Objekt gezielt (Baumkrone, Fels) zählt dessen Feld.
   const { x, y } = targetTileAt(p.x, p.y);
 
-  // Ausbildendes Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt.
-  const trainer = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  if (trainer && BUILDINGS[trainer.type].trains) {
-    const reason = world.setRally(trainer, x, y);
+  // Ausbildende Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt - bei
+  // mehreren für alle.
+  const trainers = chosenBuildings().filter((b) => BUILDINGS[b.type].trains);
+  if (trainers.length > 0) {
+    let reason: string | null = null;
+    for (const t of trainers) reason = world.setRally(t, x, y) ?? reason;
     if (reason) hint(reason);
     else sound.play('click');
     updateSelectionUI();
@@ -654,17 +704,28 @@ canvas.addEventListener('contextmenu', (e) => {
 });
 
 /** Einen Dorfbewohner ausbilden: im ausgewählten Hauptgebäude, sonst im nächstgelegenen. */
-function trainVillager() {
-  const chosen = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  const building = chosen && BUILDINGS[chosen.type].trains
-    ? chosen
-    : world.nearestTownCenter(camX, camY);
-  if (!building) {
+/** Dorfbewohner einreihen - `count` auf einmal (Umschalt: 5, wie in AoE2). */
+function trainVillager(count = 1) {
+  // Ausgewählte Hauptgebäude, sonst das nächstgelegene. Bei mehreren kommt
+  // jeder Dorfbewohner in die kürzeste Warteschlange.
+  const selectedTrainers = chosenBuildings().filter((b) => BUILDINGS[b.type].trains);
+  const nearest = world.nearestTownCenter(camX, camY);
+  const trainers = selectedTrainers.length > 0 ? selectedTrainers : nearest ? [nearest] : [];
+  if (trainers.length === 0) {
     hint('Baue zuerst ein Hauptgebäude');
     return;
   }
-  const reason = world.train(building);
-  if (reason) hint(reason);
+  let reason: string | null = null;
+  let queued = 0;
+  for (let i = 0; i < count; i++) {
+    const open = trainers.filter((b) => b.queue < MAX_TRAINING_QUEUE);
+    const building = (open.length > 0 ? open : trainers).reduce((a, b) => (b.queue < a.queue ? b : a));
+    reason = world.train(building);
+    if (reason) break;
+    queued++;
+  }
+  // Ein Teil ging: kein Fehler, nur wenn gar keiner in die Schlange kam.
+  if (queued === 0 && reason) hint(reason);
   else sound.play('click', 0.5);
   updateResourceUI();
 }
@@ -684,7 +745,7 @@ function selectIdleVillager(all = true) {
     hint('Kein Dorfbewohner ist untätig');
     return;
   }
-  selectedBuilding = null;
+  clearBuildingSelection();
   selectedResource = null;
   let target: Villager;
   if (all) {
@@ -739,7 +800,7 @@ function cycleTownCenter() {
 
   selectedVillagers.clear();
   selectedResource = null;
-  selectedBuilding = world.anchorOf(next);
+  selectBuildings([world.anchorOf(next)], world.anchorOf(next));
   // Mitte des Gebäudes in die Bildmitte - mit seiner Geländehöhe, sonst
   // säße es auf einem Hügel ein gutes Stück über der Mitte.
   const x = next.x + 0.5;
@@ -754,10 +815,10 @@ function cycleTownCenter() {
 }
 
 function demolishSelected() {
-  const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  if (!building) return;
-  world.remove(building);
-  selectedBuilding = null;
+  const buildings = chosenBuildings();
+  if (buildings.length === 0) return;
+  for (const b of buildings) world.remove(b);
+  clearBuildingSelection();
   invalidatePlacementCheck();
   updateResourceUI();
 }
@@ -771,7 +832,7 @@ function demolishSelected() {
 selectionEl.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const action = (e.target as HTMLElement).closest('button')?.dataset.action;
-  if (action === 'train') trainVillager();
+  if (action === 'train') trainVillager(e.shiftKey ? 5 : 1);
   if (action === 'demolish') demolishSelected();
 });
 
@@ -781,11 +842,38 @@ function updateSelectionUI() {
   for (const id of selectedVillagers) {
     if (!world.villagers.some((v) => v.id === id)) selectedVillagers.delete(id);
   }
+  for (const a of [...selectedBuildings]) if (!world.building(a)) selectedBuildings.delete(a);
+  if (selectedBuilding && !selectedBuildings.has(selectedBuilding)) selectedBuilding = [...selectedBuildings][0] ?? null;
   const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  if (selectedBuilding && !building) selectedBuilding = null;
+  const many = chosenBuildings();
 
   let html: string;
-  if (building) {
+  if (many.length > 1) {
+    // Mehrere Gebäude: Anzahl je Art, Trefferpunkte zusammen, Ausbildung und Abriss für alle.
+    const kinds = new Map<string, number>();
+    for (const b of many) kinds.set(BUILDINGS[b.type].label, (kinds.get(BUILDINGS[b.type].label) ?? 0) + 1);
+    const hp = many.reduce((sum, b) => sum + b.hp, 0);
+    const max = many.reduce((sum, b) => sum + BUILDINGS[b.type].hp, 0);
+    const title = kinds.size === 1 ? `${many.length} × ${[...kinds.keys()][0]}` : `${many.length} Gebäude`;
+    html = `<div class="title">${title}</div>` +
+      (kinds.size > 1 ? `<div class="muted">${[...kinds].map(([l, n]) => `${n}× ${l}`).join(', ')}</div>` : '') +
+      `<div>Trefferpunkte <b>${Math.ceil(hp)}/${max}</b></div>`;
+    const trainers = many.filter((b) => BUILDINGS[b.type].trains);
+    const actions: string[] = [];
+    if (trainers.length > 0) {
+      const queued = trainers.reduce((sum, b) => sum + b.queue, 0);
+      html += `<div>In Ausbildung <b>${queued}/${trainers.length * MAX_TRAINING_QUEUE}</b></div>` +
+        `<div class="muted">Neue Dorfbewohner kommen in die kürzeste Warteschlange; Rechtsklick setzt den Sammelpunkt für alle.</div>`;
+      const cost = Object.entries(VILLAGER.cost)
+          .map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', ');
+      actions.push(
+          `<button class="build-btn" data-action="train" title="Mit Umschalt: 5 auf einmal"${world.canAffordVillager() ? '' : ' disabled'}>` +
+          `<span class="name">V ${VILLAGER.label}</span><span class="cost">${cost}</span></button>`);
+    }
+    actions.push(`<button class="build-btn" data-action="demolish">` +
+        `<span class="name">Entf Alle abreißen</span><span class="cost">50 % zurück</span></button>`);
+    html += `<div class="actions">${actions.join('')}</div>`;
+  } else if (building) {
     const def = BUILDINGS[building.type];
     html = `<div class="title">${def.label}</div>` +
       `<div>Trefferpunkte <b>${Math.ceil(building.hp)}/${def.hp}</b></div>`;
@@ -799,7 +887,7 @@ function updateSelectionUI() {
       if (building.queue > 0) {
         const full = pop.used >= pop.cap;
         const percent = Math.floor((building.progress / VILLAGER.trainTime) * 100);
-        html += `<div>In Ausbildung <b>${building.queue}</b>` +
+        html += `<div>In Ausbildung <b>${building.queue}/${MAX_TRAINING_QUEUE}</b>` +
           `${full ? ' - <span class="muted">Bevölkerung voll, baue ein Haus</span>' : ''}</div>` +
           `<div class="bar"><i style="width:${percent}%"></i></div>`;
       }
@@ -809,7 +897,7 @@ function updateSelectionUI() {
       const cost = Object.entries(VILLAGER.cost)
           .map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', ');
       actions.push(
-          `<button class="build-btn" data-action="train"${world.canAffordVillager() ? '' : ' disabled'}>` +
+          `<button class="build-btn" data-action="train" title="Mit Umschalt: 5 auf einmal"${world.canAffordVillager() ? '' : ' disabled'}>` +
           `<span class="name">V ${VILLAGER.label}</span><span class="cost">${cost}</span></button>`);
     }
     actions.push(
@@ -1012,7 +1100,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur();
   }
-  if (e.key.toLowerCase() === VILLAGER.key) trainVillager();
+  if (e.key.toLowerCase() === VILLAGER.key) trainVillager(e.shiftKey ? 5 : 1);
 
   const byKey = BUILDING_ORDER.find((type) => BUILDINGS[type].key === e.key);
   if (byKey) select(selected === byKey ? null : byKey);
@@ -1148,7 +1236,7 @@ function collectOverlay(blend: number) {
     resources.instances(visible, world, overlay, selectedResource, blend);
   }
   world.instances(visible, overlay, blend,
-      { villagers: selectedVillagers, building: selectedBuilding });
+      { villagers: selectedVillagers, buildings: selectedBuildings });
 
   // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.
   for (const v of world.villagers) {
@@ -1160,8 +1248,7 @@ function collectOverlay(blend: number) {
       ground: world.groundAt!(p.x, p.y),
     });
   }
-  const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  if (building) {
+  for (const building of chosenBuildings()) {
     overlay.push({
       x: building.x, y: building.y, size: BUILDINGS[building.type].footprint + 0.4,
       color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,

@@ -22,6 +22,12 @@ import lumberCampObj from '../models/lumber_camp.obj?raw';
 import lumberCampMtl from '../models/lumber_camp.mtl?raw';
 import houseObj from '../models/house.obj?raw';
 import houseMtl from '../models/house.mtl?raw';
+import house2Obj from '../models/house_2.obj?raw';
+import house2Mtl from '../models/house_2.mtl?raw';
+import house3Obj from '../models/house_3.obj?raw';
+import house3Mtl from '../models/house_3.mtl?raw';
+import house4Obj from '../models/house_4.obj?raw';
+import house4Mtl from '../models/house_4.mtl?raw';
 import townCenterObj from '../models/town_center.obj?raw';
 import townCenterMtl from '../models/town_center.mtl?raw';
 import miningCampObj from '../models/mining_camp.obj?raw';
@@ -136,6 +142,10 @@ export const SHAPE = {
   goldRock3: 32,
   /** Auswahlring unter einer Figur: flach aufs Gelände gelegt wie `flat`. */
   ring: 33,
+  /** Weitere Häuser (models/house_2..4.obj) - je Bauplatz fest eines davon. */
+  house2: 34,
+  house3: 35,
+  house4: 36,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -1200,6 +1210,9 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
   { shape: SHAPE.lumberCamp, model: loadModel(lumberCampObj, lumberCampMtl, 'width'), scale: 1 },
   { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
+  { shape: SHAPE.house2, model: loadModel(house2Obj, house2Mtl, 'width'), scale: 1 },
+  { shape: SHAPE.house3, model: loadModel(house3Obj, house3Mtl, 'width'), scale: 1 },
+  { shape: SHAPE.house4, model: loadModel(house4Obj, house4Mtl, 'width'), scale: 1 },
   { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
   { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
   ...natural(SHAPE.tree, treeSpruceObj, treeSpruceMtl, TREE_METERS),

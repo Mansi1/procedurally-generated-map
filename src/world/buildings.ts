@@ -187,4 +187,4 @@ export const VILLAGER = {
 export const MAX_GATHERERS = 6;
 
 /** Höchstens so viele Dorfbewohner stehen gleichzeitig in der Warteschlange eines Hauptgebäudes. */
-export const MAX_TRAINING_QUEUE = 5;
+export const MAX_TRAINING_QUEUE = 25;
