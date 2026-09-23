@@ -256,10 +256,30 @@ void main() {
         swing = sin(phase) * 0.6;
         bob = abs(cos(phase)) * 0.03;
       }
+      if (pose == 0) {
+        // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
+        // eine Gruppe nicht im Gleichtakt atmet.
+        float t = phase;
+        // Atmen: Oberkörper hebt und senkt sich.
+        if (p.z > uHip) p.z += sin(t * 1.7) * 0.008 * (p.z - uHip) / (1.0 - uHip);
+        // Arme pendeln locker, leicht gegeneinander.
+        if (part == P_ARM_L) p = swingAround(p, uShoulder, sin(t * 0.9) * 0.08 - 0.05);
+        if (part == P_ARM_R) p = swingAround(p, uShoulder, sin(t * 0.9 + 1.3) * 0.08 - 0.05);
+        // Umschauen: der Kopf dreht sich ab und zu nach links oder rechts,
+        // bleibt dort kurz und kommt zurück.
+        if (part == P_HEAD) {
+          float yaw = 0.6 * clamp(sin(t * 0.37) * 2.5 - sign(sin(t * 0.37)) * 1.2, -1.0, 1.0);
+          float c = cos(yaw);
+          float s = sin(yaw);
+          p.xy = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+        }
+        // Gewicht verlagern: der ganze Körper neigt sich leicht zur Seite.
+        p.y += sin(t * 0.55) * 0.02 * p.z;
+      }
       if (part == P_LEG_L) p = swingAround(p, uHip, swing);
       if (part == P_LEG_R) p = swingAround(p, uHip, -swing);
-      if (part == P_ARM_L) p = swingAround(p, uShoulder, pose == 2 ? 0.9 : -swing * 0.8);
-      if (part == P_ARM_R) {
+      if (part == P_ARM_L && pose != 0) p = swingAround(p, uShoulder, pose == 2 ? 0.9 : -swing * 0.8);
+      if (part == P_ARM_R && pose != 0) {
         // Arbeiten: der rechte Arm holt nach oben aus und schlaegt nach vorn -
         // Axt, Spitzhacke oder Pfluecken sehen auf diese Groesse gleich aus.
         float chop = 0.6 + 1.9 * (0.5 + 0.5 * sin(phase));

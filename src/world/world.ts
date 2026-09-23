@@ -757,7 +757,8 @@ export class World {
         ? lerp(v.prevStride, v.stride, blend) * (Math.PI * 2 / STRIDE_LENGTH)
         : v.pose === POSE.work
           ? lerp(v.prevWorkTime, v.workTime, blend) * WORK_TEMPO
-          : 0;
+          // Stehen: Weltzeit in Sekunden, je Figur versetzt (Leerlauf-Animation).
+          : this.time + blend * this.lastDt + v.id * 7.3;
       // Die Last auf dem Rücken wächst mit der Ladung und trägt die Farbe
       // der Ressource - man sieht, wer was trägt und wie viel.
       const load = v.carryType ? Math.min(1, v.carrying / VILLAGER.capacity) : 0;
