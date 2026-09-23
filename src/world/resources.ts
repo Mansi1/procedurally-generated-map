@@ -15,14 +15,14 @@ import type { ViewRect, World } from './world';
 /** Klein genug, dass ein Stück das Zeitbudget eines Bildes nicht sprengt. */
 const CHUNK = 16;
 /** So viele Stücke bleiben im Speicher - grob das Zehnfache eines Bildschirms. */
-const MAX_CHUNKS = 3200;
+const MAX_CHUNKS = 6400;
 
 /** Modell und Grundgröße (Tiles) je Ressource. */
 const LOOK: Record<GatherType, { shape: number; size: number; color: [number, number, number] }> = {
-  wood: { shape: SHAPE.tree, size: 0.45, color: [42, 97, 52] },
-  stone: { shape: SHAPE.stoneRock, size: 0.45, color: [158, 158, 164] },
-  gold: { shape: SHAPE.goldRock, size: 0.42, color: [242, 194, 51] },
-  berries: { shape: SHAPE.berryBush, size: 0.32, color: [62, 115, 52] },
+  wood: { shape: SHAPE.tree, size: 0.6, color: [42, 97, 52] },
+  stone: { shape: SHAPE.stoneRock, size: 0.6, color: [158, 158, 164] },
+  gold: { shape: SHAPE.goldRock, size: 0.56, color: [242, 194, 51] },
+  berries: { shape: SHAPE.berryBush, size: 0.45, color: [62, 115, 52] },
 };
 
 interface ResourceNode {

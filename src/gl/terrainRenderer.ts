@@ -320,7 +320,7 @@ export class TerrainRenderer {
    */
   private cellSize(camera: GpuCamera): number {
     const ppt = camera.pixelsPerTile;
-    return Math.min(Math.max(this.cellPixels / ppt, 1 / 8), Math.max(16, this.cellPixels) / ppt);
+    return Math.min(Math.max(this.cellPixels / ppt, 1 / 4), Math.max(16, this.cellPixels) / ppt);
   }
 
   /** Derselbe Context wird vom EntityRenderer mitbenutzt. */

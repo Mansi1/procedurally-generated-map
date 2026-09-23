@@ -76,7 +76,7 @@ export interface Villager {
  * rutschen die Füße - aber nicht unter 0.3 Tiles: so kleine Figuren laufen
  * sonst so schnell, dass die Beine nur noch flimmern.
  */
-const STRIDE_LENGTH = Math.max(VILLAGER.size * 1.1, 0.3);
+const STRIDE_LENGTH = Math.max(VILLAGER.size * 1.1, 0.6);
 /** Arbeitsschläge je Sekunde, in Radiant. */
 const WORK_TEMPO = 6;
 
@@ -114,10 +114,10 @@ function newVillager(id: number, x: number, y: number): Villager {
 /** Abstand der Sammelplätze von der Feldmitte, in Tiles. */
 const GATHER_SPREAD = 0.4;
 /** Abstand zur Gebäudekante, ab dem er abliefern kann. */
-const DELIVER_REACH = 0.3;
+const DELIVER_REACH = 0.6;
 
 interface SaveData {
-  version: 2;
+  version: 3;
   stock: Stock;
   buildings: { t: BuildingType; x: number; y: number; q?: number; hp?: number; r?: [number, number] }[];
   villagers: { x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number }[];
@@ -761,7 +761,7 @@ export class World {
   save() {
     if (!this.dirty) return;
     const data: SaveData = {
-      version: 2,
+      version: 3,
       stock: this.stock,
       buildings: [...this.buildings.values()].map((b) => ({
         t: b.type, x: b.x, y: b.y, q: b.queue, hp: b.hp,
@@ -790,20 +790,28 @@ export class World {
     }
     if (!raw) return;
 
-    let data: SaveData | { version: 1 } & Omit<SaveData, 'version' | 'villagers'>;
+    let data:
+      | SaveData
+      | { version: 2 } & Omit<SaveData, 'version'>
+      | { version: 1 } & Omit<SaveData, 'version' | 'villagers'>;
     try {
       data = JSON.parse(raw);
     } catch {
       return;
     }
     // Version 1 kannte noch keine Dorfbewohner - Gebäude und Vorrat bleiben.
-    if (data.version !== 1 && data.version !== 2) return;
+    if (data.version !== 1 && data.version !== 2 && data.version !== 3) return;
+    // Bis Version 2 war ein Tile doppelt so lang: Koordinaten verdoppeln sich,
+    // damit alles auf demselben Gelände steht. Was abgebaut war, lässt sich
+    // nicht übertragen - aus einem Tile sind vier geworden -, und laufende
+    // Aufträge zeigen auf alte Felder; beides beginnt von vorn.
+    const scale = data.version < 3 ? 2 : 1;
 
     this.stock = { ...initialStock(), ...data.stock };
     // Welche Felder leer sind, steht nicht im Speicherstand - es ergibt sich
     // aus der entnommenen Menge und dem, was der Generator dort hergibt. So
     // bleibt die Datei klein und übersteht eine Änderung an den Vorkommen.
-    for (const [k, amount] of Object.entries(data.harvested ?? {})) {
+    for (const [k, amount] of Object.entries(scale === 1 ? data.harvested ?? {} : {})) {
       this.harvested.set(k, amount);
       const comma = k.indexOf(',');
       const tile = this.probe.getTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1)));
@@ -820,19 +828,20 @@ export class World {
       if (!BUILDINGS[b.t]) continue;
       // Ältere Speicherstände kennen keine Trefferpunkte - dann unbeschädigt.
       const hp = Math.min(b.hp ?? BUILDINGS[b.t].hp, BUILDINGS[b.t].hp);
-      const rally = b.r ? { x: b.r[0], y: b.r[1] } : null;
-      this.buildings.set(key(b.x, b.y), { type: b.t, x: b.x, y: b.y, queue: b.q ?? 0, progress: 0, hp, rally });
-      for (const [tx, ty] of this.footprintTiles(b.x, b.y, b.t)) {
-        this.occupied.set(key(tx, ty), key(b.x, b.y));
+      const rally = b.r ? { x: b.r[0] * scale, y: b.r[1] * scale } : null;
+      const [x, y] = [b.x * scale, b.y * scale];
+      this.buildings.set(key(x, y), { type: b.t, x, y, queue: b.q ?? 0, progress: 0, hp, rally });
+      for (const [tx, ty] of this.footprintTiles(x, y, b.t)) {
+        this.occupied.set(key(tx, ty), key(x, y));
       }
     }
 
-    if (data.version === 2) {
+    if (data.version !== 1) {
       for (const s of data.villagers ?? []) {
-        const v = newVillager(this.nextId++, s.x, s.y);
+        const v = newVillager(this.nextId++, s.x * scale, s.y * scale);
         v.carrying = s.c;
         v.carryType = s.ct && GATHER_TYPES.includes(s.ct) ? s.ct : null;
-        v.task = s.task ?? { kind: 'idle' };
+        v.task = scale === 1 ? s.task ?? { kind: 'idle' } : { kind: 'idle' };
         v.hp = Math.min(s.hp ?? VILLAGER.hp, VILLAGER.hp);
         this.villagers.push(v);
       }

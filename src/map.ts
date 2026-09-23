@@ -142,7 +142,7 @@ const WATER_RAMP: RGB[] = [
 const SURF: RGB = [178, 216, 224];
 
 /** Weltmaßstab der Ressourcen-Vorkommen (1/RESOURCE_SCALE Tiles pro Einheit). */
-const RESOURCE_SCALE = 0.018;
+const RESOURCE_SCALE = 0.009;
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -359,7 +359,7 @@ export class MiniMap {
   /** Wie viel breiter als der Viewport die Minimap zeigt. */
   private static readonly OVERVIEW = 1.7;
   /** So viel Welt (in u-Einheiten) zeigt sie mindestens, damit sie beim Hineinzoomen nützlich bleibt. */
-  private static readonly MIN_COVERAGE = 300;
+  private static readonly MIN_COVERAGE = 600;
 
   constructor(
       private canvas: HTMLCanvasElement,

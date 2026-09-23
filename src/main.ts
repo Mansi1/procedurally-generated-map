@@ -95,7 +95,7 @@ function parseURL(): { seed: string; x: number; y: number; zoom: number } {
   let seed = 'AoE2Factorio1337';
   let x = 0;
   let y = 0;
-  let zoom = 8;
+  let zoom = 4;
 
   if (path.length >= 2) {
     seed = path[0];
@@ -137,7 +137,7 @@ const resources = new ResourceField(probe, mapGen);
  * als Objekte in der Landschaft. Weiter draußen wären sie ein, zwei Pixel
  * groß - dort zeigt die Einfärbung des Geländes die Vorkommen.
  */
-const RESOURCE_OBJECTS_MIN_ZOOM = 8;
+const RESOURCE_OBJECTS_MIN_ZOOM = 4;
 
 /** Aktuell zum Bauen ausgewählter Typ, oder null im Ansichtsmodus. */
 let selected: BuildingType | null = null;
@@ -618,7 +618,7 @@ window.addEventListener('beforeunload', () => world.save());
  * der Abtastung ist damit immer eine Zweierpotenz, und von einem Ende zum
  * anderen sind es fünf Rasten statt Dutzender Ein-Pixel-Schritte.
  */
-const ZOOM_LEVELS = [2, 4, 8, 16, 32, 64, 128];
+const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32, 64];
 
 function nearestZoomIndex(pixelsPerTile: number): number {
   let best = 0;
@@ -869,7 +869,7 @@ function collectOverlay(blend: number) {
       overlay.push({
         // Etwas zur Kamera hin versetzt: auf einem Vorkommen steht sie so vor
         // dem Baum oder Fels statt dahinter.
-        x: building.rally.x + 0.3, y: building.rally.y + 0.3, size: 0.27,
+        x: building.rally.x + 0.3, y: building.rally.y + 0.3, size: 0.54,
         color: BUILDINGS.town_center.color.toRGB(), shape: SHAPE.rallyFlag, alpha: 1,
       });
       overlay.push({

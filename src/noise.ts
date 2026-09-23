@@ -244,11 +244,12 @@ const TUNDRA_TEMPERATURE = -0.92;
 const LAPSE_RATE = 0.8;
 
 /**
- * Weltmaßstab: 1 Noise-Einheit entspricht 1/MAP_SCALE Tiles. Bei 0.0025 sind
- * Kontinente ein paar hundert Tiles groß - bei einem Viewport von ~240 Tiles
- * sieht man also Küste und Hinterland statt eines Flickenteppichs.
+ * Weltmaßstab: 1 Noise-Einheit entspricht 1/MAP_SCALE Tiles. Bei 0.00125 sind
+ * Kontinente ein paar hundert Meter bzw. um die tausend Tiles groß. Das Raster
+ * ist bewusst fein - ein Tile ist etwa so groß wie ein Haus -, die Landschaft
+ * hat dieselben Maße wie mit dem früheren, doppelt so groben Raster.
  */
-export const MAP_SCALE = 0.0025;
+export const MAP_SCALE = 0.00125;
 
 /** Wie stark das Domain Warping die Küstenlinien verzerrt (in Noise-Einheiten). */
 const WARP_STRENGTH = 0.09;
@@ -287,7 +288,7 @@ const RIDGE_START = 0.35;
 /** Wie stark Grate ins Hochland eingeblendet werden. */
 const RIDGE_STRENGTH = 0.32;
 /** Verstärkung der Hangneigung vor dem Weichbegrenzen. */
-const SHADE_GAIN = 26;
+const SHADE_GAIN = 52;
 
 /**
  * Relief der 3D-Ansicht, in zwei Stücken wie in AoE2: Flachland ist fast eben
@@ -296,11 +297,11 @@ const SHADE_GAIN = 26;
  * Wiesen zu mehrere Tiles hohen Buckeln an.
  */
 /** So viele Tiles steigt das gesamte Flachland von der Küste bis zum Gebirgsfuß. */
-const LOWLAND_RELIEF = 2;
+const LOWLAND_RELIEF = 4;
 /** Ab dieser Höhe beginnt der Anstieg - etwas unter HILL_LEVEL, damit das Gebirge einen Fuß hat. */
 const MOUNTAIN_FOOT = 0.55;
 /** Höchster Gipfel über dem Meer, in Tiles. */
-const RELIEF_HEIGHT = 20;
+const RELIEF_HEIGHT = 40;
 /** Krümmung des Anstiegs: > 1 macht den Fuß flach und die Gipfel steil. */
 const RELIEF_EXPONENT = 1.5;
 

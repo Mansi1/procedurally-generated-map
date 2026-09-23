@@ -67,8 +67,8 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     // Bannern des Modells (Material Paint).
     color: Color.rgb(70, 110, 190),
     shape: SHAPE.townCenter,
-    size: 1,
-    footprint: 1,
+    size: 2,
+    footprint: 3,
     terrain: BUILDABLE,
     cost: { wood: 200, stone: 100 },
     provides: 10,
@@ -82,7 +82,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '2',
     color: Color.rgb(214, 158, 96),
     shape: SHAPE.house,
-    size: 0.4,
+    size: 0.8,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 30 },
@@ -96,7 +96,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '3',
     color: Color.rgb(126, 92, 48),
     shape: SHAPE.lumberCamp,
-    size: 0.5,
+    size: 1,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 50 },
@@ -110,7 +110,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '4',
     color: Color.rgb(150, 152, 162),
     shape: SHAPE.miningCamp,
-    size: 0.5,
+    size: 1,
     footprint: 1,
     // Minenlager stehen am Fuß des Gebirges, nicht darauf - auf Fels selbst
     // lässt sich nicht bauen, Stein und Gold liegen aber gleich daneben.
@@ -126,7 +126,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '5',
     color: Color.rgb(198, 74, 84),
     shape: SHAPE.mill,
-    size: 0.43,
+    size: 0.86,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 40 },
@@ -164,16 +164,16 @@ export const VILLAGER = {
   /** Trefferpunkte, wenn er unverletzt ist - wie in AoE2. */
   hp: 25,
   /** Tiles je Sekunde. */
-  speed: 1.6,
+  speed: 3.2,
   /** So viel trägt er, bevor er zum Lager geht. */
   capacity: 10,
   color: Color.rgb(70, 110, 190),
   /** Figurgröße in Tiles - nur fürs Bild; die Figur ist 1.7-mal so hoch. */
-  size: 0.15,
+  size: 0.3,
   /** Sammeltempo je Sekunde, solange er am Vorkommen steht. */
   gatherRate: { wood: 0.8, stone: 0.6, gold: 0.5, berries: 0.9 } as Record<GatherType, number>,
   /** Wie weit er nach einem leeren Feld nach dem nächsten derselben Art sucht. */
-  searchRadius: 8,
+  searchRadius: 16,
 } as const;
 
 /** Höchstens so viele Dorfbewohner stehen gleichzeitig in der Warteschlange eines Hauptgebäudes. */
