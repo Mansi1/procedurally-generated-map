@@ -30,6 +30,7 @@ import {
 } from './world/buildings';
 import { World, type Villager } from './world/world';
 import { ResourceField } from './world/resources';
+import { Sound, type SoundName } from './audio';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -131,6 +132,7 @@ const mapGen = new MapGenerator(seed);
 const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
 const resources = new ResourceField(probe, mapGen);
+const sound = new Sound();
 
 /**
  * Ab dieser Zoomstufe (CSS-Pixel je Tile) stehen Bäume, Felsen und Sträucher
@@ -205,6 +207,7 @@ function updateCursor() {
 
 let hintTimer = 0;
 function hint(text: string) {
+  sound.play('error', 0.6);
   hintEl.textContent = text;
   hintEl.classList.add('show');
   clearTimeout(hintTimer);
@@ -244,6 +247,61 @@ function updateResourceUI() {
   // vielleicht nicht mehr - die gemerkte Bauplatz-Prüfung muss also mit.
   invalidatePlacementCheck();
 }
+
+// --- Ton -------------------------------------------------------------------
+
+const soundButton = document.getElementById('sound')!;
+
+function updateSoundButton() {
+  soundButton.classList.toggle('muted', !sound.enabled);
+  soundButton.title = sound.enabled ? 'Ton aus (M)' : 'Ton an (M)';
+}
+
+function toggleSound() {
+  sound.toggle();
+  updateSoundButton();
+}
+
+soundButton.addEventListener('click', toggleSound);
+updateSoundButton();
+
+const GATHER_SOUND: Record<string, SoundName> = {
+  wood: 'chop',
+  stone: 'pick',
+  gold: 'pick',
+  berries: 'rustle',
+};
+
+/**
+ * Geräusche aus der Welt: nur, was man sieht - leiser zum Bildrand hin und
+ * nach links oder rechts verteilt, je nachdem, wo es passiert. Weit
+ * herausgezoomt ist alles leiser, sonst klingt ein ganzes Dorf wie eines.
+ */
+world.onEvent = (event) => {
+  const s = worldToScreen(view(), event.x, event.y, zAt(event.x, event.y));
+  const nx = (s.x - viewWidth / 2) / (viewWidth / 2);
+  const ny = (s.y - viewHeight / 2) / (viewHeight / 2);
+  const offscreen = Math.abs(nx) > 1.15 || Math.abs(ny) > 1.15;
+  const distance = Math.min(1, Math.hypot(nx, ny) / 1.4);
+  const zoom = Math.min(1, tileSize / 8);
+  const volume = (1 - distance * 0.7) * (0.35 + 0.65 * zoom);
+
+  switch (event.kind) {
+    case 'strike':
+      if (!offscreen) sound.play(GATHER_SOUND[event.resource], volume * 0.55, nx * 0.8);
+      break;
+    case 'treeFall':
+      if (!offscreen) sound.play('treeFall', volume, nx * 0.8);
+      break;
+    case 'deliver':
+      if (!offscreen) sound.play('deliver', volume * 0.6, nx * 0.8);
+      break;
+    case 'trained':
+      // Wichtige Rückmeldung - auch wenn das Hauptgebäude nicht im Bild ist.
+      sound.play('trained', 0.7);
+      break;
+  }
+};
 
 // --- Kompass ---------------------------------------------------------------
 
@@ -403,6 +461,7 @@ canvas.addEventListener('mousedown', (e) => {
       hint(reason);
       return;
     }
+    sound.play('place');
     updateResourceUI();
     // Reicht der Vorrat nicht für ein weiteres, zurück in den Ansichtsmodus -
     // sonst klickt man ins Leere und bekommt nur Fehlermeldungen.
@@ -450,6 +509,7 @@ canvas.addEventListener('contextmenu', (e) => {
   if (trainer && BUILDINGS[trainer.type].trains) {
     const reason = world.setRally(trainer, x, y);
     if (reason) hint(reason);
+    else sound.play('click');
     updateSelectionUI();
     return;
   }
@@ -457,6 +517,7 @@ canvas.addEventListener('contextmenu', (e) => {
   if (selectedVillagers.size === 0) return;
   const reason = world.command(selectedVillagers, x, y);
   if (reason) hint(reason);
+  else sound.play('click', 0.7);
   updateSelectionUI();
 });
 
@@ -472,6 +533,7 @@ function trainVillager() {
   }
   const reason = world.train(building);
   if (reason) hint(reason);
+  else sound.play('click', 0.5);
   updateResourceUI();
 }
 
@@ -775,6 +837,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
   // H wie in AoE2 - "Home".
   if (e.key.toLowerCase() === 'h') cycleTownCenter();
+  if (e.key.toLowerCase() === 'm') toggleSound();
   // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
   if (e.key === '.' || e.key === ':') selectIdleVillager(!e.shiftKey);
   if (e.key === ' ') {

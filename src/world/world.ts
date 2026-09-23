@@ -80,6 +80,18 @@ const STRIDE_LENGTH = Math.max(VILLAGER.size * 1.1, 0.6);
 /** Arbeitsschläge je Sekunde, in Radiant. */
 const WORK_TEMPO = 6;
 
+/**
+ * Was in der Welt passiert und man hören (oder sonst mitbekommen) soll. Die
+ * Welt kennt keinen Ton - main.ts hängt sich an `onEvent` und entscheidet,
+ * was davon zu hören ist.
+ */
+export type WorldEvent =
+  /** Ein Arbeitsschlag - zeitgleich mit dem Arm in der Animation. */
+  | { kind: 'strike'; resource: GatherType; x: number; y: number }
+  | { kind: 'treeFall'; x: number; y: number }
+  | { kind: 'deliver'; x: number; y: number }
+  | { kind: 'trained'; x: number; y: number };
+
 export interface ViewRect {
   x: number;
   y: number;
@@ -145,6 +157,7 @@ export class World {
 
   stock: Stock = initialStock();
   villagers: Villager[] = [];
+  onEvent: ((event: WorldEvent) => void) | null = null;
 
   constructor(private probe: TileProbe, private seed: string) {
     this.load();
@@ -505,6 +518,7 @@ export class World {
     const y = building.y + 0.5 + r - spread * 0.5;
     const villager = newVillager(this.nextId++, x, y);
     this.villagers.push(villager);
+    this.onEvent?.({ kind: 'trained', x: villager.x, y: villager.y });
     if (building.rally) this.command(new Set([villager.id]), building.rally.x, building.rally.y);
     this.dirty = true;
   }
@@ -546,7 +560,10 @@ export class World {
     const def = BUILDINGS[building.type];
     const reach = Math.max(def.footprint, def.size) / 2 + DELIVER_REACH;
     if (!this.walk(v, building.x + 0.5, building.y + 0.5, reach, dt)) return false;
-    if (v.carryType && v.carrying > 0) this.stock[v.carryType] += v.carrying;
+    if (v.carryType && v.carrying > 0) {
+      this.stock[v.carryType] += v.carrying;
+      this.onEvent?.({ kind: 'deliver', x: v.x, y: v.y });
+    }
     v.carrying = 0;
     v.carryType = null;
     this.dirty = true;
@@ -634,7 +651,14 @@ export class World {
         // Am Platz: zum Vorkommen drehen und arbeiten.
         v.heading = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
         v.pose = POSE.work;
+        // Der Arm schlägt zu, wenn sin(Phase) sein Minimum durchläuft (siehe
+        // Shader) - genau dann soll man den Hieb hören.
+        const strikes = (time: number) => Math.floor((time * WORK_TEMPO - Math.PI * 1.5) / (Math.PI * 2));
+        const before = strikes(v.workTime);
         v.workTime += dt;
+        if (strikes(v.workTime) > before) {
+          this.onEvent?.({ kind: 'strike', resource: task.type, x: v.x, y: v.y });
+        }
 
         // Wechselt er die Ressource, lässt er die alte Ladung fallen - wie in AoE2.
         if (v.carryType !== task.type) {
@@ -652,6 +676,7 @@ export class World {
           const away = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
           const jitter = (tileAngle(task.x + 17, task.y - 31) / Math.PI - 1) * 0.6;
           this.felled.set(k, { at: this.time, dir: away + jitter });
+          this.onEvent?.({ kind: 'treeFall', x: task.x + 0.5, y: task.y + 0.5 });
         }
         const taken = (this.harvested.get(k) ?? 0) + take;
         this.harvested.set(k, taken);
