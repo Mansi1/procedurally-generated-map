@@ -72,6 +72,24 @@ export const SHAPE = {
   rallyFlag: 16,
 } as const;
 
+/** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
+const SAIL_SPEED = 0.8;
+/** Böen: so weit (Radiant) eilen die Flügel vor oder zurück, und so schnell wechselt es. */
+const GUST_AMOUNT = 0.6;
+const GUST_RATE = 0.35;
+
+/**
+ * Drehung einer Mühle für `motion`: [Blickrichtung, Startstellung, Drehzahl, 0].
+ * Jede Mühle dreht so in ihrem eigenen Takt, dazu mit Böen, die sie mal
+ * schneller, mal langsamer drehen lassen (siehe Shader, P_SAILS).
+ */
+export function millMotion(x: number, y: number): [number, number, number, number] {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  const r = ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  return [BUILDING_HEADING, r * Math.PI * 2, 0.8 + 0.4 * ((r * 7.13) % 1), 0];
+}
+
 /** Von bis: diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
 const FIRST_NATURAL = SHAPE.tree;
 const LAST_NATURAL = SHAPE.berryBush;
@@ -260,7 +278,10 @@ void main() {
 
     if (part == P_SAILS) {
       // Muehlenfluegel drehen sich um die Nabe, die Achse zeigt nach vorn.
-      float a = -uTime * 0.8;
+      // aMotion.y = Startstellung, aMotion.z = Drehzahl (millMotion), dazu Böen.
+      float speed = aMotion.z > 0.0 ? aMotion.z : 1.0;
+      float a = -(uTime * ${SAIL_SPEED.toFixed(3)} * speed + aMotion.y
+          + ${GUST_AMOUNT.toFixed(3)} * sin(uTime * ${GUST_RATE.toFixed(3)} * speed + aMotion.y * 3.1));
       vec2 q = p.yz - uHub;
       p.yz = uHub + vec2(q.x * cos(a) - q.y * sin(a), q.x * sin(a) + q.y * cos(a));
     }

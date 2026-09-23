@@ -5,7 +5,7 @@
 // werden, während das Gelände jederzeit neu berechnet werden kann.
 
 import type { EntityInstance } from '../gl/entityRenderer';
-import { POSE, SHAPE } from '../gl/entityRenderer';
+import { POSE, SHAPE, millMotion } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
 import { reliefZ } from '../noise';
 import {
@@ -744,6 +744,8 @@ export class World {
         color: def.color.toRGB(),
         shape: def.shape,
         alpha: 1,
+        // Jede Mühle dreht in ihrem eigenen Takt.
+        motion: def.shape === SHAPE.mill ? millMotion(building.x, building.y) : undefined,
         health: selection?.building === key(building.x, building.y) ? building.hp / def.hp : undefined,
       });
     }
