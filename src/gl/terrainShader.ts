@@ -54,6 +54,7 @@ const int L_WARP = 6;
 const int L_RIDGE = 7;
 const int L_DETAIL = 8;
 const int L_RESOURCE = 9;
+const int L_CLUSTER = 10;
 
 
 const float F2 = 0.3660254037844386;
@@ -272,7 +273,10 @@ uniform int   uResourceRuleCount;
 uniform int   uResourceRuleBiome[8];
 uniform int   uResourceRuleType[8];
 uniform float uResourceRuleThreshold[8];
+uniform float uResourceRuleCluster[8];
 uniform float uResourceRuleYield[8];
+uniform float uResourceClusterScale;
+uniform vec2  uResourceClusterOffset;
 /**
  * Bezugsgröße für Feindetail und Farbtextur, in Geräte-Pixeln. Abgetastet wird
  * je Pixel, aber Mikro-Oktaven und Farbrauschen richten sich bewusst nach einer
@@ -340,7 +344,11 @@ vec2 resourceAt(vec2 tile, int biome) {
   float r = fbm(L_RESOURCE, tile * uResourceScale, 2, 0.5);
   for (int i = 0; i < 8; i++) {
     if (i >= uResourceRuleCount) break;
-    if (uResourceRuleBiome[i] == biome && r > uResourceRuleThreshold[i]) {
+    if (uResourceRuleBiome[i] != biome || r <= uResourceRuleThreshold[i]) continue;
+    // Häufchen: kleine Vorkommen statt ganzer Gegenden, je Regel woanders.
+    if (uResourceRuleCluster[i] >= -1.0 &&
+        snoise(L_CLUSTER, tile * uResourceClusterScale + float(i) * uResourceClusterOffset) <= uResourceRuleCluster[i]) continue;
+    {
       return vec2(float(uResourceRuleType[i]), floor((r + 1.0) * uResourceRuleYield[i]));
     }
   }

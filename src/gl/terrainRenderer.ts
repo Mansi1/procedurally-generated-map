@@ -29,8 +29,11 @@ export interface TerrainPalette {
   surf: [number, number, number];
   resourceColors: Color[];
   resourceScale: number;
+  /** Maßstab und Versatz je Regel für das Häufchen-Rauschen (siehe RESOURCE_RULES). */
+  resourceClusterScale: number;
+  resourceClusterOffset: readonly [number, number];
   /** Aus RESOURCE_RULES, bereits auf Indizes abgebildet. Erste passende gewinnt. */
-  resourceRules: { biome: number; type: number; threshold: number; yield: number }[];
+  resourceRules: { biome: number; type: number; threshold: number; cluster: number; yield: number }[];
 }
 
 /** Platz für Ressourcen-Regeln im Shader - muss zu den Array-Längen dort passen. */
@@ -275,6 +278,8 @@ export class TerrainRenderer {
     gl.uniform3fv(this.fillLocation('uResourceColor[0]'),
         flat(palette.resourceColors.map((c) => c.toRGB())));
     gl.uniform1f(this.fillLocation('uResourceScale'), palette.resourceScale);
+    gl.uniform1f(this.fillLocation('uResourceClusterScale'), palette.resourceClusterScale);
+    gl.uniform2fv(this.fillLocation('uResourceClusterOffset'), palette.resourceClusterOffset);
 
     const rules = palette.resourceRules;
     if (rules.length > MAX_RESOURCE_RULES) {
@@ -288,6 +293,8 @@ export class TerrainRenderer {
         new Int32Array(rules.map((r) => r.type)));
     gl.uniform1fv(this.fillLocation('uResourceRuleThreshold[0]'),
         new Float32Array(rules.map((r) => r.threshold)));
+    gl.uniform1fv(this.fillLocation('uResourceRuleCluster[0]'),
+        new Float32Array(rules.map((r) => r.cluster)));
     gl.uniform1fv(this.fillLocation('uResourceRuleYield[0]'),
         new Float32Array(rules.map((r) => r.yield)));
   }

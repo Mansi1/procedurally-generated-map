@@ -355,6 +355,7 @@ export const NOISE_LAYERS = [
   "_ridge",
   "_detail",
   "_resources",
+  "_resource_clusters",
 ] as const;
 
 /** Höhen-Bänder, damit der Renderer innerhalb eines Bioms interpolieren kann. */

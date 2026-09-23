@@ -73,7 +73,11 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, Color> = {
 
 /**
  * Eine Regel: auf `biome` entsteht `type`, sobald das Ressourcen-Rauschen über
- * `threshold` liegt. Die Menge ist (r + 1) * yield, abgerundet.
+ * `threshold` liegt und das feinere Häufchen-Rauschen über `cluster`. Das
+ * erste legt grob fest, in welcher Gegend etwas vorkommt, das zweite teilt die
+ * Gegend in kleine Vorkommen von einigen Tiles - wie in AoE2 ein paar
+ * Beerensträucher oder ein Häufchen Stein statt einer ganzen Wiese voll.
+ * Die Menge ist (r + 1) * yield, abgerundet.
  *
  * Die Reihenfolge ist Teil der Regel - die erste passende gewinnt. Gold steht
  * deshalb vor Stein: beide liegen im Gebirge, Gold nur in der oberen Spitze
@@ -88,15 +92,26 @@ export interface ResourceRule {
   biome: TileType;
   type: Exclude<ResourceType, "none">;
   threshold: number;
+  /** Schwelle fürs Häufchen-Rauschen (-1..1); unter -1 zählt es nicht (Wälder). */
+  cluster: number;
   yield: number;
 }
 
 export const RESOURCE_RULES: readonly ResourceRule[] = [
-  { biome: "forest", type: "wood", threshold: 0.15, yield: 50 },
-  { biome: "mountain", type: "gold", threshold: 0.86, yield: 40 },
-  { biome: "mountain", type: "stone", threshold: 0.25, yield: 40 },
-  { biome: "grass", type: "berries", threshold: 0.62, yield: 30 },
+  { biome: "forest", type: "wood", threshold: 0.15, cluster: -2, yield: 50 },
+  { biome: "mountain", type: "gold", threshold: 0.4, cluster: 0.75, yield: 40 },
+  { biome: "mountain", type: "stone", threshold: 0.1, cluster: 0.72, yield: 40 },
+  { biome: "grass", type: "berries", threshold: 0.3, cluster: 0.7, yield: 30 },
 ];
+
+/**
+ * Maßstab des Häufchen-Rauschens: ein Vorkommen misst einige Tiles. Jede
+ * Regel liest es an einer eigenen Stelle (RESOURCE_CLUSTER_OFFSET * Index),
+ * damit Stein und Gold nicht in denselben Häufchen liegen. Der Shader rechnet
+ * genauso (resourceAt in terrainShader.ts).
+ */
+const RESOURCE_CLUSTER_SCALE = 0.075;
+const RESOURCE_CLUSTER_OFFSET = [40, 68] as const;
 
 /** Position eines Bioms in TILE_TYPE_GRADIENT - entspricht den B_*-Konstanten im Shader. */
 const BIOME_INDEX = Object.fromEntries(
@@ -108,13 +123,18 @@ const RESOURCE_INDEX = Object.fromEntries(
   (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map((t, i) => [t, i]),
 ) as Record<ResourceType, number>;
 
-/** Wertet RESOURCE_RULES aus - erste passende Regel gewinnt. */
+/**
+ * Wertet RESOURCE_RULES aus - erste passende Regel gewinnt. `cluster(i)` ist
+ * das Häufchen-Rauschen für Regel i an diesem Tile.
+ */
 export function resourceFromNoise(
   tileType: TileType,
   r: number,
+  cluster: (rule: number) => number,
 ): { type: ResourceType; amount: number } {
-  for (const rule of RESOURCE_RULES) {
-    if (rule.biome === tileType && r > rule.threshold) {
+  for (let i = 0; i < RESOURCE_RULES.length; i++) {
+    const rule = RESOURCE_RULES[i];
+    if (rule.biome === tileType && r > rule.threshold && (rule.cluster < -1 || cluster(i) > rule.cluster)) {
       return { type: rule.type, amount: Math.floor((r + 1) * rule.yield) };
     }
   }
@@ -244,11 +264,14 @@ export const TERRAIN_PALETTE = {
   resourceColors: (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map(
       (t) => RESOURCE_TYPE_COLORS[t]),
   resourceScale: RESOURCE_SCALE,
+  resourceClusterScale: RESOURCE_CLUSTER_SCALE,
+  resourceClusterOffset: RESOURCE_CLUSTER_OFFSET,
   // Als Indizes, damit der Shader sie ohne Namenszuordnung vergleichen kann.
   resourceRules: RESOURCE_RULES.map((rule) => ({
     biome: BIOME_INDEX[rule.biome],
     type: RESOURCE_INDEX[rule.type],
     threshold: rule.threshold,
+    cluster: rule.cluster,
     yield: rule.yield,
   })),
 };
@@ -261,25 +284,34 @@ export const TERRAIN_PALETTE = {
  */
 export class TileProbe {
   private resourceNoise: FractalNoise;
+  private clusterNoise: SimplexNoise;
 
   constructor(private mapGen: MapGenerator, seed: string) {
     // Wenige Oktaven + niedrige Frequenz: Ressourcen sollen zusammenhängende
     // Vorkommen bilden, kein Konfetti über die ganze Karte.
     this.resourceNoise = new FractalNoise(new SimplexNoise(seed + "_resources"), 2, 0.5, 2);
+    this.clusterNoise = new SimplexNoise(seed + "_resource_clusters");
+  }
+
+  /** Häufchen-Rauschen für Regel `rule` an Tile (x, y). */
+  private cluster(x: number, y: number) {
+    return (rule: number) => this.clusterNoise.noise2D(
+        x * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[0],
+        y * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[1]);
   }
 
   private generateResources(tile: MapTile): { type: ResourceType; amount: number } {
     // Ressourcen spawnen nur auf passendem Terrain. Die Schwellen in
     // RESOURCE_RULES passen zur Verteilung von noise2D (sd ~0.6, -1..1).
     const r = this.resourceNoise.noise2D(tile.x * RESOURCE_SCALE, tile.y * RESOURCE_SCALE);
-    return resourceFromNoise(tile.tileType, r);
+    return resourceFromNoise(tile.tileType, r, this.cluster(tile.x, tile.y));
   }
 
   /** Nur das Vorkommen und die Höhe eines Tiles - billiger als getTile(). */
   resourceAt(x: number, y: number): { height: number; type: ResourceType; amount: number } {
     const terrain = this.mapGen.terrainAt(x, y);
     const r = this.resourceNoise.noise2D(x * RESOURCE_SCALE, y * RESOURCE_SCALE);
-    const res = resourceFromNoise(terrain.tileType, r);
+    const res = resourceFromNoise(terrain.tileType, r, this.cluster(x, y));
     return { height: terrain.height, type: res.type, amount: res.amount };
   }
 
