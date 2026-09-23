@@ -1,0 +1,345 @@
+// Generates src/models/tree_*.obj - six kinds of tree, in metres.
+// Built in three sizes of part so the game's simplified versions still work:
+// trunk and core crown (kept even far out), leaf masses (kept at medium
+// zoom), and small tufts, cones and bark marks (only close up).
+// Usage: node tools/models/trees.mjs [outDir] (default src/models)
+import { writeFileSync } from 'node:fs';
+import { model } from './lib.mjs';
+
+const dir = process.argv[2] ?? new URL('../../src/models', import.meta.url).pathname;
+
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s ^ (s >>> 15), 2246822519) + 0x9e3779b9) >>> 0;
+    s = Math.imul(s ^ (s >>> 13), 3266489917) >>> 0;
+    return ((s ^ (s >>> 16)) >>> 0) / 4294967296;
+  };
+}
+
+/** Leaf mass: two frustums, widest in the middle. Returns it for tufts. */
+function mass(m, rnd, c, r, h, mtl = 'Paint', n = 7) {
+  const rot = rnd() * Math.PI;
+  const rz = r * (0.85 + rnd() * 0.3);
+  const ring = (k) => [[c[0] - r * k, c[0] + r * k], [c[2] - rz * k, c[2] + rz * k]];
+  const [x0, z0] = ring(0.6), [x1, z1] = ring(1), [x2, z2] = ring(0.3);
+  m.box('Crown', mtl, x0, [c[1] - h / 2, c[1]], z0, { n, rot, x: x1, z: z1 });
+  m.box('Crown', mtl, x1, [c[1], c[1] + h / 2], z1, { n, rot: rot + 0.25, x: x2, z: z2 });
+  return { c, r, rz, h };
+}
+
+/** Point on the surface of a mass, `minUp`..1 from bottom to top. */
+function onMass(rnd, L, minUp = -0.3) {
+  const a = rnd() * Math.PI * 2;
+  const up = minUp + rnd() * (0.95 - minUp);
+  const ring = Math.sqrt(1 - up * up) * 0.95;
+  return [L.c[0] + Math.cos(a) * ring * L.r, L.c[1] + up * L.h * 0.45, L.c[2] + Math.sin(a) * ring * L.rz];
+}
+
+/** Small leaf clusters on the masses - close-up detail. */
+function clumps(m, rnd, masses, count, r, mtls) {
+  for (let i = 0; i < count; i++) {
+    const L = masses[Math.floor(rnd() * masses.length)];
+    const p = onMass(rnd, L);
+    const mtl = mtls[i % mtls.length];
+    const rr = r * (0.7 + rnd() * 0.5);
+    m.box('Clump', mtl, [p[0] - rr, p[0] + rr], [p[1] - rr * 0.7, p[1] + rr * 0.7], [p[2] - rr, p[2] + rr], { n: 5, rot: rnd() * 3, x: [p[0] - rr * 0.4, p[0] + rr * 0.4], z: [p[2] - rr * 0.4, p[2] + rr * 0.4] });
+  }
+}
+
+/** Pointed needle or leaf tufts sticking out of the masses. */
+function tufts(m, rnd, masses, count, len, mtls, droop = 0) {
+  for (let i = 0; i < count; i++) {
+    const L = masses[Math.floor(rnd() * masses.length)];
+    const p = onMass(rnd, L, -0.2);
+    const d = [p[0] - L.c[0], p[1] - L.c[1] - droop, p[2] - L.c[2]];
+    const l = Math.hypot(...d) || 1;
+    const q = p.map((v, j) => v + (d[j] / l) * len * (0.7 + rnd() * 0.6));
+    m.beam('Tuft', mtls[i % mtls.length], p, q, len * 0.45, { w1: len * 0.06 });
+  }
+}
+
+/** Trunk as beam segments through `pts` with radius going from r0 to r1. */
+function trunk(m, pts, r0, r1, mtl, n = 7) {
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const f0 = i / (pts.length - 1), f1 = (i + 1) / (pts.length - 1);
+    const w0 = 2 * (r0 + (r1 - r0) * f0), w1 = 2 * (r0 + (r1 - r0) * f1);
+    m.beam('Trunk', typeof mtl === 'function' ? mtl(i) : mtl, pts[i], pts[i + 1], w0, { w1, n });
+  }
+}
+
+/** Roots flaring out at the foot. */
+function roots(m, rnd, r, count, len, mtl = 'Bark') {
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + rnd() * 0.5;
+    m.beam('Root', mtl, [Math.cos(a) * r * 0.4, r * 1.3, Math.sin(a) * r * 0.4], [Math.cos(a) * (r + len), 0, Math.sin(a) * (r + len)], r * 0.9, { w1: r * 0.25, n: 5 });
+  }
+}
+
+/** Grass and fallen leaves or needles round the foot - close-up detail. */
+function litter(m, rnd, radius, count, mtls) {
+  for (let i = 0; i < count; i++) {
+    const a = rnd() * Math.PI * 2, d = radius * (0.4 + rnd() * 0.7);
+    const p = [Math.cos(a) * d, 0, Math.sin(a) * d];
+    const mtl = mtls[i % mtls.length];
+    if (mtl === 'Grass') {
+      for (let k = 0; k < 3; k++) m.beam('Grass', 'Grass', p, [p[0] + (rnd() - 0.5) * 0.12, 0.2 + rnd() * 0.12, p[2] + (rnd() - 0.5) * 0.12], 0.05, { w1: 0.005, n: 3 });
+    } else {
+      m.box('Litter', mtl, [p[0] - 0.08, p[0] + 0.08], [0, 0.02], [p[2] - 0.06, p[2] + 0.06], { n: 5, rot: a });
+    }
+  }
+}
+
+/**
+ * Real size of each kind in metres (height, crown width). The models are drawn
+ * small and stretched here: the full height, but the crown only as wide as
+ * fits a forest where every tile holds a tree.
+ */
+const SIZE = {
+  tree_spruce: [18, 5], tree_pine: [17, 5.5], tree_oak: [15, 7.5],
+  tree_birch: [14, 4.5], tree_poplar: [20, 3], tree_maple: [13, 6.5],
+  tree_oak_old: [16, 9], tree_oak_young: [9, 4],
+};
+
+function stretch(file, m) {
+  const pts = m.out.filter((l) => l.startsWith('v ')).map((l) => l.split(' ').slice(1).map(Number));
+  const w = Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0]));
+  const h = Math.max(...pts.map((p) => p[1]));
+  const [H, Wd] = SIZE[file];
+  const fy = H / h, fxz = Wd / w;
+  m.out = m.out.map((l) => {
+    if (!l.startsWith('v ')) return l;
+    const [x, y, z] = l.split(' ').slice(1).map(Number);
+    return `v ${+(x * fxz).toFixed(3)} ${+(y * fy).toFixed(3)} ${+(z * fxz).toFixed(3)}`;
+  });
+}
+
+function write(file, what, m, note) {
+  stretch(file, m);
+  const colours = {
+    Paint: '0.160 0.380 0.200', LeafDark: '0.110 0.260 0.140', LeafLight: '0.360 0.560 0.250',
+    Needle: '0.120 0.300 0.170', NeedleDark: '0.080 0.200 0.120',
+    Bark: '0.360 0.240 0.140', BarkDark: '0.240 0.160 0.100', PineBark: '0.620 0.360 0.220',
+    Birch: '0.920 0.910 0.860', BirchMark: '0.150 0.140 0.130', Moss: '0.360 0.460 0.200',
+    Cone: '0.460 0.300 0.170', Soot: '0.100 0.080 0.070', Grass: '0.340 0.560 0.220',
+    Autumn: '0.900 0.460 0.140', AutumnDark: '0.740 0.260 0.100', AutumnLight: '0.960 0.700 0.220',
+    LeafDry: '0.620 0.480 0.240', Acorn: '0.550 0.380 0.180', AcornCap: '0.380 0.280 0.160',
+  };
+  const header = `# ${file}.obj - ${what} (Holz) fuer procedurally-generated-map
+# Einheiten: Meter, Y oben, Vorderseite nach +Z - so wie Blender ein Modell
+# exportiert, das in der Vorderansicht zum Betrachter schaut.
+# ${note}
+mtllib ${file}.mtl
+`;
+  writeFileSync(`${dir}/${file}.obj`, header + m.out.join('\n') + '\n');
+  const names = [...m.used].sort((a, b) => (a === 'Paint' ? -1 : b === 'Paint' ? 1 : a.localeCompare(b)));
+  writeFileSync(`${dir}/${file}.mtl`, `# ${file}.mtl\n` + names.map((n) => `\nnewmtl ${n}\nKd ${colours[n]}\nKa 0 0 0\nKs 0 0 0\nd 1\nillum 1\n`).join(''));
+}
+const PAINT = 'Material Paint (das Laub) bekommt eine je Baum leicht andere Farbe.';
+
+// Spruce: tiers of drooping branches, darker underneath, cones at the tips.
+function spruce() {
+  const m = model(), rnd = rng(3);
+  roots(m, rnd, 0.2, 5, 0.35);
+  trunk(m, [[0, 0, 0], [0, 7.2, 0]], 0.2, 0.05, 'BarkDark', 6);
+  const tiers = 6;
+  for (let i = 0; i < tiers; i++) {
+    const f = i / tiers;
+    const y = 0.9 + i * 1.05;
+    const R = 1.5 * (1 - f * 0.82);
+    const rot = i * 0.4;
+    m.box('Tier', 'NeedleDark', [-R * 0.92, R * 0.92], [y - 0.1, y + 0.35], [-R * 0.92, R * 0.92], { n: 8, rot, x: [-R * 0.6, R * 0.6], z: [-R * 0.6, R * 0.6] });
+    m.box('Tier', 'Paint', [-R, R], [y, y + 1.75], [-R, R], { n: 8, rot: rot + 0.2, x: [-R * 0.12, R * 0.12], z: [-R * 0.12, R * 0.12] });
+    // Branch tips hang down over the tier's rim; cones under some of them.
+    for (let k = 0; k < 8; k++) {
+      const a = rot + 0.2 + Math.PI / 8 + (k * Math.PI) / 4;
+      const p = [Math.cos(a) * R * 0.8, y + 0.2, Math.sin(a) * R * 0.8];
+      const q = [Math.cos(a) * R * 1.08, y - 0.12, Math.sin(a) * R * 1.08];
+      m.beam('Tip', k % 2 ? 'Needle' : 'Paint', p, q, 0.28 * (1 - f * 0.5), { w1: 0.04, n: 4 });
+      if ((k + i) % 3 === 0 && i < tiers - 1) m.box('Cone', 'Cone', [q[0] - 0.05, q[0] + 0.05], [y - 0.3, y - 0.08], [q[2] - 0.05, q[2] + 0.05], { n: 5, x: [q[0] - 0.02, q[0] + 0.02], z: [q[2] - 0.02, q[2] + 0.02] });
+    }
+  }
+  m.box('Top', 'Paint', [-0.15, 0.15], [7.1, 7.7], [-0.15, 0.15], { n: 6, x: [0, 0], z: [0, 0] });
+  litter(m, rnd, 1.2, 10, ['Cone', 'LeafDry', 'Grass', 'Grass']);
+  write('tree_spruce', 'Fichte', m, PAINT);
+}
+
+// Scots pine: tall slightly bent trunk, red-orange above, flat needle clumps on top.
+function pine() {
+  const m = model(), rnd = rng(7);
+  roots(m, rnd, 0.22, 5, 0.3);
+  const pts = [[0, 0, 0], [0.12, 2.2, 0.04], [0.2, 4.2, 0.0], [0.1, 6.3, -0.1]];
+  trunk(m, pts, 0.22, 0.09, (i) => (i === 0 ? 'Bark' : 'PineBark'), 7);
+  const spots = [[0.1, 6.9, -0.1, 1.0, 0.8], [-0.85, 6.1, 0.3, 0.75, 0.6], [0.95, 6.3, -0.4, 0.7, 0.55], [0.3, 5.7, 0.8, 0.65, 0.5], [-0.3, 7.4, -0.5, 0.6, 0.5], [0.8, 7.3, 0.4, 0.55, 0.45]];
+  const masses = [];
+  spots.forEach(([x, y, z, r, h], i) => {
+    masses.push(mass(m, rnd, [x, y, z], r, h, i % 3 === 1 ? 'Needle' : 'Paint', 7));
+    m.beam('Branch', 'PineBark', [pts[2][0] * 0.5 + pts[3][0] * 0.5, y - 1.0, 0], [x * 0.8, y - h * 0.3, z * 0.8], 0.12, { w1: 0.06, n: 5 });
+  });
+  m.box('Crown.Core', 'Paint', [-0.9, 1.0], [6.0, 7.0], [-0.7, 0.8], { n: 7, x: [-0.6, 0.7], z: [-0.5, 0.5] });
+  tufts(m, rnd, masses, 40, 0.3, ['Paint', 'Needle', 'NeedleDark']);
+  for (let i = 0; i < 6; i++) {
+    const p = onMass(rnd, masses[i % masses.length], -0.9);
+    m.box('Cone', 'Cone', [p[0] - 0.05, p[0] + 0.05], [p[1] - 0.18, p[1]], [p[2] - 0.05, p[2] + 0.05], { n: 5, x: [p[0] - 0.02, p[0] + 0.02], z: [p[2] - 0.02, p[2] + 0.02] });
+  }
+  litter(m, rnd, 1.1, 10, ['LeafDry', 'Cone', 'Grass', 'Grass']);
+  write('tree_pine', 'Kiefer', m, PAINT);
+}
+
+// Oak: thick trunk with root flare, branches, a broad crown of leaf masses.
+function oak() {
+  const m = model(), rnd = rng(13);
+  roots(m, rnd, 0.35, 6, 0.45, 'Bark');
+  trunk(m, [[0, 0, 0], [0.05, 1.4, 0], [0, 2.5, 0.05]], 0.36, 0.26, 'Bark', 8);
+  m.box('Trunk.Knot', 'Soot', [0.28, 0.34], [1.1, 1.28], [-0.07, 0.07], { r: 0.3 });
+  m.box('Trunk.Moss', 'Moss', [-0.37, -0.2], [0.1, 0.9], [-0.2, 0.2], { n: 5 });
+  for (let i = 0; i < 7; i++) {
+    const y = 0.3 + i * 0.3, a = i * 2.1;
+    m.box('Bark.Ridge', 'BarkDark', [Math.cos(a) * 0.3 - 0.05, Math.cos(a) * 0.3 + 0.05], [y, y + 0.28], [Math.sin(a) * 0.3 - 0.05, Math.sin(a) * 0.3 + 0.05]);
+  }
+  const branchTo = [[-1.1, 3.9, 0.4], [1.2, 4.0, -0.3], [0.2, 4.4, -1.0], [0.1, 4.2, 1.1]];
+  for (const b of branchTo) m.beam('Branch', 'Bark', [0, 2.4, 0], b, 0.28, { w1: 0.12, n: 6 });
+  const masses = [mass(m, rnd, [0, 4.5, 0], 1.45, 2.6, 'Paint', 8)];
+  m.box('Crown.Under', 'LeafDark', [-1.3, 1.3], [3.3, 4.1], [-1.2, 1.2], { n: 8, x: [-1.5, 1.5], z: [-1.4, 1.4] });
+  for (const [x, y, z, r] of [[-1.15, 4.0, 0.5, 0.75], [1.2, 4.1, -0.4, 0.8], [0.3, 4.3, 1.2, 0.72], [-0.2, 4.2, -1.2, 0.72], [0.6, 5.5, 0.4, 0.7], [-0.6, 5.4, -0.3, 0.7], [1.3, 4.9, 0.7, 0.55], [-1.3, 4.8, -0.8, 0.55]]) {
+    masses.push(mass(m, rnd, [x, y, z], r, r * 1.5, 'Paint', 7));
+  }
+  clumps(m, rnd, masses.slice(1), 36, 0.16, ['Paint', 'LeafLight', 'LeafDark']);
+  litter(m, rnd, 1.5, 12, ['LeafDry', 'Grass', 'Grass', 'Moss']);
+  write('tree_oak', 'Eiche', m, PAINT);
+}
+
+// Birch: two slender white trunks with black marks, airy weeping crown.
+function birch() {
+  const m = model(), rnd = rng(19);
+  const stems = [[[0, 0, 0], [0.15, 2.5, 0.05], [0.35, 4.8, 0.1], [0.4, 6.6, 0.1]], [[0.05, 0, 0.05], [-0.2, 2.2, -0.05], [-0.45, 4.2, -0.1], [-0.55, 5.8, -0.15]]];
+  stems.forEach((pts, s) => {
+    trunk(m, pts, s ? 0.11 : 0.14, 0.05, 'Birch', 6);
+    // Black marks round the white bark.
+    for (let i = 0; i < 12; i++) {
+      const f = 0.05 + (i / 12) * 0.85;
+      const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
+      const p = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
+      const r = (s ? 0.11 : 0.14) * (1 - f * 0.6) + 0.008;
+      const a = rnd() * Math.PI * 2;
+      m.box('Bark.Mark', 'BirchMark', [p[0] + Math.cos(a) * r * 0.6 - 0.04, p[0] + Math.cos(a) * r * 0.6 + 0.04], [p[1], p[1] + 0.04 + rnd() * 0.04], [p[2] + Math.sin(a) * r * 0.6 - 0.04, p[2] + Math.sin(a) * r * 0.6 + 0.04]);
+    }
+  });
+  const masses = [mass(m, rnd, [0, 5.4, 0], 0.95, 2.4, 'Paint', 7)];
+  for (const [x, y, z, r] of [[0.7, 5.9, 0.3, 0.55], [-0.8, 5.0, -0.2, 0.55], [0.4, 4.6, -0.6, 0.5], [-0.3, 6.3, 0.4, 0.45], [0.8, 4.8, 0.5, 0.45], [-0.6, 4.3, 0.5, 0.4]]) {
+    masses.push(mass(m, rnd, [x, y, z], r, r * 1.6, rnd() < 0.3 ? 'LeafLight' : 'Paint', 6));
+  }
+  tufts(m, rnd, masses, 45, 0.45, ['Paint', 'LeafLight', 'Paint'], 0.9);
+  litter(m, rnd, 1.0, 10, ['Grass', 'Grass', 'LeafDry']);
+  write('tree_birch', 'Birke', m, PAINT);
+}
+
+// Poplar: tall, narrow column of leaves on a short trunk.
+function poplar() {
+  const m = model(), rnd = rng(29);
+  roots(m, rnd, 0.18, 4, 0.25);
+  trunk(m, [[0, 0, 0], [0, 2.0, 0]], 0.18, 0.13, 'Bark', 6);
+  const core = [[1.3, 0.5], [2.6, 0.78], [5.2, 0.72], [7.6, 0.4], [9.0, 0.05]];
+  for (let i = 0; i + 1 < core.length; i++) {
+    const [y0, r0] = core[i], [y1, r1] = core[i + 1];
+    m.box('Crown.Core', 'Paint', [-r0, r0], [y0, y1], [-r0, r0], { n: 8, rot: i * 0.3, x: [-r1, r1], z: [-r1, r1] });
+  }
+  const masses = [];
+  for (let i = 0; i < 9; i++) {
+    const y = 2.0 + i * 0.72, a = i * 2.4;
+    const R = 0.62 - Math.abs(i - 3) * 0.06;
+    masses.push(mass(m, rnd, [Math.cos(a) * R * 0.85, y, Math.sin(a) * R * 0.85], 0.38, 0.85, i % 3 === 0 ? 'LeafDark' : 'Paint', 6));
+  }
+  tufts(m, rnd, masses, 40, 0.22, ['Paint', 'LeafLight', 'LeafDark'], -0.4);
+  litter(m, rnd, 0.8, 8, ['Grass', 'Grass', 'LeafDry']);
+  write('tree_poplar', 'Pappel', m, PAINT);
+}
+
+// Maple: round, dense crown on a dark trunk, lighter leaves on top.
+function maple() {
+  const m = model(), rnd = rng(41);
+  roots(m, rnd, 0.28, 5, 0.35);
+  trunk(m, [[0, 0, 0], [-0.05, 1.6, 0.05], [0.05, 2.6, 0]], 0.28, 0.2, 'BarkDark', 7);
+  for (const b of [[-1.0, 3.6, 0.3], [1.0, 3.8, -0.2], [0.1, 4.2, 0.9], [0, 4.0, -0.9]]) m.beam('Branch', 'BarkDark', [0, 2.5, 0], b, 0.22, { w1: 0.1, n: 6 });
+  const masses = [mass(m, rnd, [0, 4.3, 0], 1.35, 2.5, 'Paint', 8)];
+  m.box('Crown.Under', 'LeafDark', [-1.2, 1.2], [3.2, 3.9], [-1.1, 1.1], { n: 8, x: [-1.4, 1.4], z: [-1.3, 1.3] });
+  for (const [x, y, z, r, mtl] of [[-1.05, 3.9, 0.4, 0.72, 'LeafDark'], [1.1, 4.0, -0.3, 0.75, 'Paint'], [0.2, 4.2, 1.1, 0.7, 'LeafLight'], [-0.2, 4.1, -1.1, 0.7, 'Paint'], [0.5, 5.3, 0.3, 0.68, 'LeafLight'], [-0.5, 5.2, -0.3, 0.66, 'Paint']]) {
+    masses.push(mass(m, rnd, [x, y, z], r, r * 1.5, mtl, 7));
+  }
+  clumps(m, rnd, masses.slice(1), 34, 0.16, ['Paint', 'LeafLight', 'LeafDark']);
+  litter(m, rnd, 1.6, 12, ['LeafDry', 'Grass', 'Grass', 'Moss']);
+  write('tree_maple', 'Ahorn', m, PAINT);
+}
+
+/** Acorns lying round the foot - close-up detail. */
+function acorns(m, rnd, radius, count) {
+  for (let i = 0; i < count; i++) {
+    const a = rnd() * Math.PI * 2, d = radius * (0.5 + rnd() * 0.6);
+    const [x, z] = [Math.cos(a) * d, Math.sin(a) * d];
+    m.box('Acorn', 'Acorn', [x - 0.05, x + 0.05], [0, 0.1], [z - 0.05, z + 0.05], { n: 6, x: [x - 0.03, x + 0.03], z: [z - 0.03, z + 0.03] });
+    m.box('Acorn.Cap', 'AcornCap', [x - 0.055, x + 0.055], [0.07, 0.11], [z - 0.055, z + 0.055], { n: 6 });
+  }
+}
+
+// Old oak: massive gnarled trunk with burls and a hollow, heavy roots, wide
+// bent branches under a broad crown. Drawn in metres at full size.
+function oldOak() {
+  const m = model(), rnd = rng(61);
+  roots(m, rnd, 0.9, 7, 1.3, 'Bark');
+  const top = [0.1, 4.6, 0.05];
+  trunk(m, [[0, 0, 0], [0.25, 2.4, 0.1], top], 1.0, 0.72, 'Bark', 9);
+  for (let i = 0; i < 9; i++) {
+    const y = 0.4 + i * 0.45, a = i * 2.3;
+    m.box('Bark.Ridge', 'BarkDark', [Math.cos(a) * 0.85 - 0.12, Math.cos(a) * 0.85 + 0.12], [y, y + 0.42], [Math.sin(a) * 0.85 - 0.12, Math.sin(a) * 0.85 + 0.12]);
+  }
+  for (const [a, y] of [[0.8, 1.6], [2.9, 2.8], [4.6, 1.1]]) {
+    const r = 0.95;
+    m.box('Burl', 'Bark', [Math.cos(a) * r - 0.3, Math.cos(a) * r + 0.3], [y - 0.3, y + 0.3], [Math.sin(a) * r - 0.3, Math.sin(a) * r + 0.3], { n: 7, r: 0.3 });
+  }
+  m.box('Hollow', 'Soot', [-0.35, 0.35], [0.9, 2.0], [0.88, 1.02], { n: 8, x: [-0.22, 0.22] });
+  m.box('Hollow.Rim', 'BarkDark', [-0.45, 0.45], [0.8, 2.1], [0.84, 0.94], { n: 8, x: [-0.3, 0.3] });
+  m.box('Moss', 'Moss', [-1.05, -0.6], [0.1, 1.6], [-0.5, 0.3], { n: 5 });
+  // Five main branches, each bent in two, reaching out wide.
+  const ends = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.3 + rnd() * 0.4;
+    const mid = [Math.cos(a) * 2.4, 6.0 + rnd() * 0.8, Math.sin(a) * 2.4];
+    const end = [Math.cos(a + 0.25) * 3.6, 7.8 + rnd() * 1.0, Math.sin(a + 0.25) * 3.6];
+    m.beam('Branch', 'Bark', top, mid, 0.75, { w1: 0.5, n: 6 });
+    m.beam('Branch', 'Bark', mid, end, 0.5, { w1: 0.25, n: 6 });
+    ends.push(end);
+  }
+  const masses = [mass(m, rnd, [0, 10.5, 0], 3.2, 6.0, 'Paint', 9)];
+  m.box('Crown.Under', 'LeafDark', [-3.6, 3.6], [7.4, 8.6], [-3.4, 3.4], { n: 9, x: [-4.0, 4.0], z: [-3.8, 3.8] });
+  for (const e of ends) masses.push(mass(m, rnd, [e[0], e[1] + 1.2, e[2]], 1.9, 2.9, 'Paint', 7));
+  for (const [x, z] of [[1.6, 1.8], [-1.8, -1.4], [-0.4, 2.2], [2.0, -1.6]]) masses.push(mass(m, rnd, [x, 12.8, z], 1.5, 2.2, 'Paint', 7));
+  clumps(m, rnd, masses.slice(1), 44, 0.45, ['Paint', 'LeafLight', 'LeafDark']);
+  litter(m, rnd, 3.5, 14, ['LeafDry', 'Grass', 'Grass', 'Moss']);
+  acorns(m, rnd, 3.0, 12);
+  write('tree_oak_old', 'Alte Eiche', m, PAINT);
+}
+
+// Young oak: slim trunk, a few thin branches, small round crown.
+function youngOak() {
+  const m = model(), rnd = rng(67);
+  roots(m, rnd, 0.16, 4, 0.25);
+  const top = [0.05, 4.4, 0];
+  trunk(m, [[0, 0, 0], [-0.08, 2.2, 0.05], top], 0.17, 0.1, 'Bark', 6);
+  for (const b of [[-0.9, 5.6, 0.3], [0.9, 5.8, -0.2], [0.1, 6.2, 0.9]]) m.beam('Branch', 'Bark', [0, 3.8, 0], b, 0.1, { w1: 0.05, n: 5 });
+  const masses = [mass(m, rnd, [0, 6.6, 0], 1.75, 3.6, 'Paint', 8)];
+  for (const [x, y, z, r] of [[-1.2, 6.0, 0.4, 0.8], [1.2, 6.2, -0.3, 0.85], [0.2, 7.9, 0.3, 0.8], [0.3, 6.0, -1.2, 0.75]]) {
+    masses.push(mass(m, rnd, [x, y, z], r, r * 1.5, 'Paint', 6));
+  }
+  clumps(m, rnd, masses.slice(1), 24, 0.22, ['Paint', 'LeafLight', 'LeafDark']);
+  litter(m, rnd, 1.2, 8, ['Grass', 'Grass', 'LeafDry']);
+  write('tree_oak_young', 'Junge Eiche', m, PAINT);
+}
+
+spruce();
+pine();
+oak();
+birch();
+poplar();
+maple();
+oldOak();
+youngOak();

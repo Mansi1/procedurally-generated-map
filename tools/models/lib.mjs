@@ -1,0 +1,190 @@
+// Primitives for building OBJ models. File coords: metres, x = left/right,
+// y = up, z = front. Every primitive becomes one `o` object.
+
+const ranges = (axis) => (axis === 'x' ? ['z', 'y'] : axis === 'z' ? ['x', 'y'] : ['x', 'z']);
+const place = (axis, u, v, a) => (axis === 'x' ? [a, v, u] : axis === 'z' ? [u, v, a] : [u, a, v]);
+
+function ring([u0, u1], [v0, v1], o) {
+  if (o.n) {
+    const cu = (u0 + u1) / 2, cv = (v0 + v1) / 2, ru = (u1 - u0) / 2, rv = (v1 - v0) / 2;
+    const off = o.rot ?? Math.PI / o.n;
+    return Array.from({ length: o.n }, (_, i) => {
+      const a = off + (i * 2 * Math.PI) / o.n;
+      return [cu + ru * Math.cos(a), cv + rv * Math.sin(a)];
+    });
+  }
+  const r = o.r ?? 0;
+  if (r <= 0) return [[u0, v0], [u0, v1], [u1, v1], [u1, v0]];
+  const cu = r * (u1 - u0), cv = r * (v1 - v0);
+  return [
+    [u0 + cu, v0], [u0, v0 + cv], [u0, v1 - cv], [u0 + cu, v1],
+    [u1 - cu, v1], [u1, v1 - cv], [u1, v0 + cv], [u1 - cu, v0],
+  ];
+}
+
+export function model() {
+  const out = [];
+  let base = 0;
+  const used = new Set();
+
+  /** Two outlines of equal length joined by side faces, both capped. */
+  function emit(name, mtl, bottom, top) {
+    used.add(mtl);
+    const n = bottom.length;
+    out.push(`o ${name}`);
+    for (const p of [...bottom, ...top]) out.push(`v ${p.map((v) => +v.toFixed(3)).join(' ')}`);
+    out.push(`usemtl ${mtl}`, 's off');
+    const b = (i) => base + 1 + (i % n);
+    const t = (i) => base + 1 + n + (i % n);
+    out.push(`f ${bottom.map((_, i) => b(n - 1 - i)).join(' ')}`);
+    out.push(`f ${top.map((_, i) => t(i)).join(' ')}`);
+    for (let i = 0; i < n; i++) out.push(`f ${b(i)} ${b(i + 1)} ${t(i + 1)} ${t(i)}`);
+    base += 2 * n;
+  }
+
+  /**
+   * Prism along `o.axis` (default y) from the axis range; the cross-section is
+   * the rect of the other two ranges, tapering to o.x/o.y/o.z at the far end.
+   * o.r cuts the corners, o.n makes it an n-gon (cylinder, cone).
+   */
+  function box(name, mtl, x, y, z, o = {}) {
+    const axis = o.axis ?? 'y';
+    const R = { x, y, z };
+    const T = { x: o.x ?? x, y: o.y ?? y, z: o.z ?? z };
+    const [u, v] = ranges(axis);
+    const [a0, a1] = R[axis];
+    const bottom = ring(R[u], R[v], o).map(([pu, pv]) => place(axis, pu, pv, a0));
+    const top = ring(T[u], T[v], o).map(([pu, pv]) => place(axis, pu, pv, a1));
+    emit(name, mtl, bottom, top);
+  }
+
+  /** Convex outline `poly` (2D, in the plane across `axis`) extruded over [a0, a1]. */
+  function extrude(name, mtl, axis, [a0, a1], poly) {
+    emit(name, mtl, poly.map(([u, v]) => place(axis, u, v, a0)), poly.map(([u, v]) => place(axis, u, v, a1)));
+  }
+
+  /** Square (or o.n-sided round) beam of width w from point p0 to p1. */
+  function beam(name, mtl, p0, p1, w, o = {}) {
+    const d = p1.map((v, i) => v - p0[i]);
+    const len = Math.hypot(...d);
+    const dn = d.map((v) => v / len);
+    const up = Math.abs(dn[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const norm = (a) => { const l = Math.hypot(...a); return a.map((v) => v / l); };
+    const s1 = norm(cross(dn, up));
+    const s2 = cross(s1, dn);
+    const n = o.n ?? 4;
+    const w1 = o.w1 ?? w;
+    const at = (p, ww) => Array.from({ length: n }, (_, i) => {
+      const a = Math.PI / n + (i * 2 * Math.PI) / n;
+      const k = n === 4 ? Math.SQRT1_2 : 0.5;
+      const c = Math.cos(a) * ww * k, s = Math.sin(a) * ww * k;
+      return p.map((v, j) => v + s1[j] * c + s2[j] * s);
+    });
+    emit(name, mtl, at(p0, w), at(p1, w1));
+  }
+
+  /** Mirror in x: '#' in the name becomes L (x > 0) / R. */
+  const mx = ([a, b]) => [-b, -a];
+  function pair(name, mtl, x, y, z, o = {}) {
+    box(name.replace('#', 'L'), mtl, x, y, z, o);
+    box(name.replace('#', 'R'), mtl, mx(x), y, z, o.x ? { ...o, x: mx(o.x) } : o);
+  }
+
+  return { box, pair, extrude, beam, emit, out, used };
+}
+
+/**
+ * Gable roof slope made of `courses` rows, each row's lower edge lifted a
+ * little so the rows read as tiles or thatch. Slope from eave (e: [u, y]) to
+ * ridge (r: [u, y]) in the plane across `axis`, extruded over `span`.
+ */
+export function slope(m, name, mtl, axis, span, e, r, t, courses) {
+  for (let i = 0; i < courses; i++) {
+    const f0 = i / courses, f1 = (i + 1) / courses;
+    const lo = [e[0] + (r[0] - e[0]) * f0, e[1] + (r[1] - e[1]) * f0];
+    const hi = [e[0] + (r[0] - e[0]) * f1, e[1] + (r[1] - e[1]) * f1];
+    const lift = i === courses - 1 ? 0 : t * 0.6;
+    m.extrude(name, mtl, axis, span, [lo, hi, [hi[0], hi[1] + t], [lo[0], lo[1] + t + lift]]);
+  }
+}
+
+/** Hip roof as stacked frustums: from rect (x, z) at y0 to ridge rect (rx, rz) at y1. */
+export function hipRoof(m, name, mtl, x, z, y0, rx, rz, y1, courses) {
+  const lerp = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+  for (let i = 0; i < courses; i++) {
+    const f0 = i / courses, f1 = (i + 1) / courses;
+    const lip = i === 0 ? 0 : 0.1;
+    const bx = lerp(x, rx, f0), bz = lerp(z, rz, f0);
+    m.box(name, mtl, [bx[0] - lip, bx[1] + lip], [y0 + (y1 - y0) * f0 - (i ? 0.08 : 0), y0 + (y1 - y0) * f1],
+      [bz[0] - lip, bz[1] + lip], { x: lerp(x, rx, f1), z: lerp(z, rz, f1) });
+  }
+}
+
+/** Barrel standing at (x, z): staves, iron hoops, lid. */
+export function barrel(m, x, z, h = 0.85, r = 0.3) {
+  m.box('Barrel', 'Wood', [x - r * 0.85, x + r * 0.85], [0, h / 2], [z - r * 0.85, z + r * 0.85], { n: 10, x: [x - r, x + r], z: [z - r, z + r] });
+  m.box('Barrel', 'Wood', [x - r, x + r], [h / 2, h], [z - r, z + r], { n: 10, x: [x - r * 0.85, x + r * 0.85], z: [z - r * 0.85, z + r * 0.85] });
+  for (const y of [h * 0.15, h * 0.8]) {
+    const rr = r * (0.9 + 0.1 * Math.sin((y / h) * Math.PI)) + 0.012;
+    m.box('Barrel.Hoop', 'Iron', [x - rr, x + rr], [y, y + 0.05], [z - rr, z + rr], { n: 10 });
+  }
+  m.box('Barrel.Lid', 'WoodDark', [x - r * 0.78, x + r * 0.78], [h, h + 0.02], [z - r * 0.78, z + r * 0.78], { n: 10 });
+}
+
+/** Crate with dark edge boards, standing on y0. */
+export function crate(m, [x0, x1], y0, [z0, z1]) {
+  const s = x1 - x0, e = 0.05;
+  const y1 = y0 + s;
+  m.box('Crate', 'WoodLight', [x0, x1], [y0, y1], [z0, z1]);
+  for (const [a, b] of [[x0 - 0.01, x0 + e], [x1 - e, x1 + 0.01]]) {
+    for (const [c, d] of [[z0 - 0.01, z0 + e], [z1 - e, z1 + 0.01]]) m.box('Crate.Edge', 'Wood', [a, b], [y0, y1], [c, d]);
+  }
+  for (const [c, d] of [[y0 - 0.005, y0 + e], [y1 - e, y1 + 0.005]]) {
+    m.box('Crate.Edge', 'Wood', [x0 - 0.01, x1 + 0.01], [c, d], [z0 - 0.01, z0 + e]);
+    m.box('Crate.Edge', 'Wood', [x0 - 0.01, x1 + 0.01], [c, d], [z1 - e, z1 + 0.01]);
+  }
+  m.beam('Crate.Brace', 'Wood', [x0 + e, y0 + e, z1 + 0.005], [x1 - e, y1 - e, z1 + 0.005], 0.05);
+}
+
+/** Log lying along x centred at (y, z) - bark with light cut ends. */
+export function log(m, [x0, x1], y, z, r) {
+  m.box('Log', 'Bark', [x0, x1], [y - r, y + r], [z - r, z + r], { axis: 'x', n: 8 });
+  for (const [a, b] of [[x0 - 0.012, x0], [x1, x1 + 0.012]]) {
+    m.box('Log.End', 'LogEnd', [a, b], [y - r * 0.88, y + r * 0.88], [z - r * 0.88, z + r * 0.88], { axis: 'x', n: 8 });
+  }
+}
+
+/** Hanging lantern at (x, y, z) - iron frame round a flame. */
+export function lantern(m, x, y, z) {
+  m.box('Lantern', 'Iron', [x - 0.07, x + 0.07], [y - 0.02, y], [z - 0.07, z + 0.07]);
+  m.box('Lantern.Flame', 'Flame', [x - 0.05, x + 0.05], [y, y + 0.14], [z - 0.05, z + 0.05]);
+  m.box('Lantern.Cap', 'Iron', [x - 0.08, x + 0.08], [y + 0.14, y + 0.2], [z - 0.08, z + 0.08], { x: [x - 0.02, x + 0.02], z: [z - 0.02, z + 0.02] });
+}
+
+export const PALETTE = {
+  Stone: '0.600 0.585 0.560', StoneDark: '0.450 0.440 0.425', StoneLight: '0.720 0.700 0.660',
+  Plaster: '0.900 0.860 0.760', Timber: '0.270 0.180 0.110', Wood: '0.420 0.290 0.170',
+  WoodDark: '0.300 0.200 0.120', WoodLight: '0.600 0.450 0.280', Glass: '0.220 0.280 0.340',
+  Iron: '0.400 0.420 0.450', Soot: '0.100 0.090 0.090', Flame: '1.000 0.780 0.300',
+  Leaf: '0.300 0.520 0.220', Flower: '0.860 0.250 0.300', Shutter: '0.300 0.450 0.320',
+  Tiles: '0.620 0.270 0.200', RoofDark: '0.380 0.200 0.150', Canvas: '0.930 0.900 0.820',
+  Sack: '0.800 0.720 0.560', Bark: '0.330 0.220 0.120', LogEnd: '0.850 0.700 0.470',
+  Gold: '0.930 0.740 0.220', GoldDark: '0.700 0.520 0.120', Ore: '0.350 0.330 0.320',
+};
+
+export function write(dir, file, header, m, paint) {
+  const { writeFileSync } = require_fs();
+  writeFileSync(`${dir}/${file}.obj`, `${header}mtllib ${file}.mtl\n${m.out.join('\n')}\n`);
+  const names = ['Paint', ...[...m.used].filter((n) => n !== 'Paint').sort()];
+  let mtl = `# ${file}.mtl\n`;
+  for (const n of names) {
+    const kd = n === 'Paint' ? paint : PALETTE[n];
+    if (!kd) throw new Error(`no colour for ${n}`);
+    mtl += `\nnewmtl ${n}\nKd ${kd}\nKa 0 0 0\nKs 0 0 0\nd 1\nillum 1\n`;
+  }
+  writeFileSync(`${dir}/${file}.mtl`, mtl);
+}
+
+import * as fs from 'node:fs';
+const require_fs = () => fs;

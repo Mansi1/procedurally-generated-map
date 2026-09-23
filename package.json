@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && cp dist/index.html dist/404.html",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:models": "node tools/models/villagers.mjs && node tools/models/buildings.mjs && node tools/models/bushes.mjs && node tools/models/trees.mjs && node tools/models/rocks.mjs",
+    "gen:ui": "node tools/ui/icons.mjs && node tools/ui/wood-bar.mjs"
   },
   "devDependencies": {
+    "playwright-core": "^1.63.0",
     "typescript": "~6.0.2",
     "vite": "^8.0.10"
   }
