@@ -27,6 +27,7 @@ import {
   type Stock,
 } from './world/buildings';
 import { World, type Villager } from './world/world';
+import { GATHER_CURSOR } from './cursors';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
@@ -167,8 +168,25 @@ function select(type: BuildingType | null) {
   for (const [key, button] of buildButtons) {
     button.setAttribute('aria-pressed', String(key === type));
   }
-  // Im Baumodus zeigt der Zeiger auf ein Feld, nicht auf eine Stelle im Bild.
-  canvas.style.cursor = type ? 'copy' : 'crosshair';
+  updateCursor();
+}
+
+/**
+ * Zeiger je nach Lage: im Baumodus ein Feld-Zeiger, mit ausgewählten
+ * Dorfbewohnern über einem Vorkommen das passende Werkzeug - Axt für Holz,
+ * Spitzhacke für Stein und Gold, Beeren für Beeren. Sonst das Fadenkreuz.
+ */
+function updateCursor() {
+  let cursor = 'crosshair';
+  if (selected) {
+    cursor = 'copy';
+  } else if (selectedVillagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
+    const found = world.remainingAt(mouseTileX, mouseTileY);
+    if (found.type && found.amount > 0 && !world.at(mouseTileX, mouseTileY)) {
+      cursor = GATHER_CURSOR[found.type];
+    }
+  }
+  if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
 }
 
 let hintTimer = 0;
@@ -182,14 +200,24 @@ function hint(text: string) {
 /** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
 function updateResourceUI() {
   const pop = world.population();
-  stockEl.innerHTML =
+  const { counts, idle } = world.gatherers();
+  // Unter jedem Vorrat, wie viele Dorfbewohner ihn gerade sammeln - wie in
+  // AoE2 sieht man so auf einen Blick, wie die Arbeit verteilt ist.
+  const workers = (n: number, text: string) =>
+    `<span class="workers${n > 0 ? ' busy' : ''}">${text}</span>`;
+  const html =
     RESOURCE_ORDER.map(
       (r) =>
-        `<span class="res"><i style="background:${RESOURCE_TYPE_COLORS[r].toRgbString()}"></i>` +
-        `${RESOURCE_TYPE_LABEL[r]} <b>${Math.floor(world.stock[r])}</b></span>`,
+        `<span class="res"><span class="amount">` +
+        `<i style="background:${RESOURCE_TYPE_COLORS[r].toRgbString()}"></i>` +
+        `${RESOURCE_TYPE_LABEL[r]} <b>${Math.floor(world.stock[r])}</b></span>` +
+        workers(counts[r], `${counts[r]} ${VILLAGER.label}`) +
+        `</span>`,
     ).join('') +
-    `<span class="res">Bevölkerung <b>${pop.used}/${pop.cap}</b>` +
-    `${pop.training > 0 ? ` (+${pop.training})` : ''}</span>`;
+    `<span class="res"><span class="amount">Bevölkerung <b>${pop.used}/${pop.cap}</b>` +
+    `${pop.training > 0 ? ` (+${pop.training})` : ''}</span>` +
+    workers(idle, `${idle} untätig`) + `</span>`;
+  if (stockEl.innerHTML !== html) stockEl.innerHTML = html;
 
   for (const [type, button] of buildButtons) {
     button.disabled = !world.affordable(type) || (type !== 'town_center' && !world.hasTownCenter());
@@ -348,6 +376,34 @@ function trainVillager() {
   updateResourceUI();
 }
 
+/**
+ * Leertaste: zum Hauptgebäude springen und es auswählen - bei mehreren reihum,
+ * beginnend nach dem gerade ausgewählten.
+ */
+function cycleTownCenter() {
+  const centers = world.townCenters();
+  if (centers.length === 0) {
+    hint('Baue zuerst ein Hauptgebäude');
+    return;
+  }
+  const current = centers.findIndex((b) => world.anchorOf(b) === selectedBuilding);
+  const next = centers[(current + 1) % centers.length];
+
+  selectedVillagers.clear();
+  selectedBuilding = world.anchorOf(next);
+  // Mitte des Gebäudes in die Bildmitte - mit seiner Geländehöhe, sonst
+  // säße es auf einem Hügel ein gutes Stück über der Mitte.
+  const x = next.x + 0.5;
+  const y = next.y + 0.5;
+  const center = centerFor(view(), x, y, zAt(x, y), viewWidth / 2, viewHeight / 2);
+  camX = center.x;
+  camY = center.y;
+  if (mousePixelX !== undefined && mousePixelY !== undefined) {
+    updateHoveredTile(mousePixelX, mousePixelY);
+  }
+  updateSelectionUI();
+}
+
 function demolishSelected() {
   const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
   if (!building) return;
@@ -432,6 +488,9 @@ function updateSelectionUI() {
       (idle > 0 ? `<div>Untätig: <b>${idle}</b></div>` : '');
   }
   if (selectionEl.innerHTML !== html) selectionEl.innerHTML = html;
+  // Auswahl hat sich vielleicht geändert, oder das Feld unter dem Zeiger ist
+  // inzwischen leer gesammelt.
+  updateCursor();
 }
 
 // Der Speicherstand liegt im localStorage, nicht in der Adresse - anders als
@@ -443,7 +502,7 @@ window.addEventListener('beforeunload', () => world.save());
  * der Abtastung ist damit immer eine Zweierpotenz, und von einem Ende zum
  * anderen sind es fünf Rasten statt Dutzender Ein-Pixel-Schritte.
  */
-const ZOOM_LEVELS = [2, 4, 8, 16, 32, 64];
+const ZOOM_LEVELS = [2, 4, 8, 16, 32, 64, 128];
 
 function nearestZoomIndex(pixelsPerTile: number): number {
   let best = 0;
@@ -535,6 +594,13 @@ window.addEventListener('keydown', (e) => {
     else clearSelection();
   }
   if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
+  if (e.key === ' ') {
+    // Sonst scrollt die Seite oder ein fokussierter Knopf wird ausgelöst -
+    // bei Knöpfen passiert das erst beim Loslassen, darum auch der Fokus weg.
+    e.preventDefault();
+    (document.activeElement as HTMLElement | null)?.blur();
+    cycleTownCenter();
+  }
   if (e.key.toLowerCase() === VILLAGER.key) trainVillager();
 
   const byKey = BUILDING_ORDER.find((type) => BUILDINGS[type].key === e.key);
@@ -581,6 +647,7 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   if (tile.x === mouseTileX && tile.y === mouseTileY) return;
   mouseTileX = tile.x;
   mouseTileY = tile.y;
+  updateCursor();
 
   cursorCoordsEl.textContent = `${mouseTileX}, ${mouseTileY}`;
 
@@ -660,7 +727,10 @@ function collectOverlay(blend: number) {
   for (const v of world.villagers) {
     if (!selectedVillagers.has(v.id)) continue;
     const p = world.villagerPosition(v, blend);
-    overlay.push({ x: p.x - 0.5, y: p.y - 0.5, size: 0.8, color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.5 });
+    overlay.push({
+      x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 1.5,
+      color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.5,
+    });
   }
   const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
   if (building) {
@@ -710,8 +780,11 @@ function loop(now: number) {
   }
 
   // Gescrollt wird in Bildschirmrichtung, nicht entlang der Weltachsen - die
-  // liegen in der Rautenansicht diagonal.
-  const speed = 400 * dt * (tileSize / 4);
+  // liegen in der Rautenansicht diagonal. Das Tempo ist in Tiles je Sekunde
+  // gleich, aber auf 3200 Pixel je Sekunde gedeckelt: ganz nah heran zoomt
+  // man, um genau hinzusehen - dort flöge die Karte sonst in einem
+  // Zehntel einer Sekunde vorbei.
+  const speed = Math.min(400 * (tileSize / 4), 3200) * dt;
   let dx = 0;
   let dy = 0;
   if (keys['w'] || keys['arrowup']) dy -= speed;

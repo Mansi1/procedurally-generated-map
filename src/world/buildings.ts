@@ -26,7 +26,10 @@ export interface BuildingDef {
   key: string;
   color: Color;
   shape: number;
-  /** Kantenlänge in Welt-Tiles - nur fürs Bild. */
+  /**
+   * Breite des Modells in Welt-Tiles - nur fürs Bild. Höchstens so groß wie
+   * `footprint`, sonst ragt es in Nachbarfelder, auf denen gebaut werden darf.
+   */
   size: number;
   /** Belegte Felder, als Kantenlänge in Tiles. Ungerade, damit es zentriert liegt. */
   footprint: number;
@@ -47,6 +50,12 @@ export interface BuildingDef {
 export type GatherType = keyof Stock;
 export const GATHER_TYPES: readonly GatherType[] = ['wood', 'stone', 'gold', 'berries'];
 
+/**
+ * Größter erlaubter Anstieg unter einem Gebäude, in Tiles Höhe je Tile Breite
+ * (0.3 ~ 17°). Steiler würde das Modell mit einer Seite in der Luft hängen.
+ */
+export const MAX_BUILD_SLOPE = 0.3;
+
 /** Untergründe, auf denen überhaupt gebaut werden kann. */
 const BUILDABLE = ['beach', 'desert', 'grass', 'forest', 'snow'] as const;
 
@@ -58,8 +67,8 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     // Bannern des Modells (Material Paint).
     color: Color.rgb(70, 110, 190),
     shape: SHAPE.townCenter,
-    size: 3,
-    footprint: 3,
+    size: 1,
+    footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 200, stone: 100 },
     provides: 10,
@@ -73,7 +82,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '2',
     color: Color.rgb(214, 158, 96),
     shape: SHAPE.house,
-    size: 1.6,
+    size: 0.4,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 30 },
@@ -87,7 +96,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '3',
     color: Color.rgb(126, 92, 48),
     shape: SHAPE.lumberCamp,
-    size: 2,
+    size: 0.5,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 50 },
@@ -101,7 +110,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '4',
     color: Color.rgb(150, 152, 162),
     shape: SHAPE.miningCamp,
-    size: 2,
+    size: 0.5,
     footprint: 1,
     // Minenlager stehen am Fuß des Gebirges, nicht darauf - auf Fels selbst
     // lässt sich nicht bauen, Stein und Gold liegen aber gleich daneben.
@@ -117,7 +126,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     key: '5',
     color: Color.rgb(198, 74, 84),
     shape: SHAPE.mill,
-    size: 1.7,
+    size: 0.43,
     footprint: 1,
     terrain: BUILDABLE,
     cost: { wood: 40 },
@@ -159,8 +168,8 @@ export const VILLAGER = {
   /** So viel trägt er, bevor er zum Lager geht. */
   capacity: 10,
   color: Color.rgb(70, 110, 190),
-  /** Kantenlänge in Tiles - nur fürs Bild. */
-  size: 0.55,
+  /** Figurgröße in Tiles - nur fürs Bild; die Figur ist 1.7-mal so hoch. */
+  size: 0.15,
   /** Sammeltempo je Sekunde, solange er am Vorkommen steht. */
   gatherRate: { wood: 0.8, stone: 0.6, gold: 0.5, berries: 0.9 } as Record<GatherType, number>,
   /** Wie weit er nach einem leeren Feld nach dem nächsten derselben Art sucht. */

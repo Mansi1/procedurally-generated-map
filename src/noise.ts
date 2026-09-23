@@ -265,8 +265,8 @@ const DETAIL_STRENGTH = 0.16;
  */
 const MICRO_FREQUENCY = DETAIL_FREQUENCY * 16;
 const MICRO_STRENGTH = 0.009;
-/** Obergrenze für die Zahl der Feinoktaven. */
-const MICRO_OCTAVES = 6;
+/** Obergrenze für die Zahl der Feinoktaven - reicht bis zur 128px-Zoomstufe. */
+const MICRO_OCTAVES = 7;
 /** So viele Abtastzellen muss ein Merkmal breit sein, damit seine Oktave zählt. */
 const MICRO_MIN_SAMPLES = 3;
 /** Unter 0.5 gewichtet, damit die Schattierung bei vielen Oktaven nicht körnig wird. */

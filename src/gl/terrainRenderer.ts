@@ -163,6 +163,8 @@ export class TerrainRenderer {
   private pending: TexelRect[] = [];
   /** Noch zu befüllende Bereiche unter dem Bildrand. */
   private background: TexelRect[] = [];
+  /** Ob sich das Fenster in diesem Bild verschoben hat - dann wird gescrollt. */
+  private moved = false;
 
   constructor(canvas: HTMLCanvasElement, seed: string, palette: TerrainPalette) {
     const gl = canvas.getContext('webgl2', {
@@ -306,10 +308,12 @@ export class TerrainRenderer {
   /**
    * Zellgröße in u/v-Einheiten. Nie feiner als ein Achtel Tile: so kleine
    * Formen hat das Relief nicht, und bei starkem Zoom würden aus vier Pixeln
-   * sonst fast eine Million Eckpunkte.
+   * sonst fast eine Million Eckpunkte. Aber auch nie gröber als 16 Pixel -
+   * bei der stärksten Zoomstufe sähe man sonst die Kanten der Dreiecke.
    */
   private cellSize(camera: GpuCamera): number {
-    return Math.max(this.cellPixels / camera.pixelsPerTile, 1 / 8);
+    const ppt = camera.pixelsPerTile;
+    return Math.min(Math.max(this.cellPixels / ppt, 1 / 8), Math.max(16, this.cellPixels) / ppt);
   }
 
   /** Derselbe Context wird vom EntityRenderer mitbenutzt. */
@@ -428,6 +432,7 @@ export class TerrainRenderer {
       rects.sort((a, b) => distance(a, visible) - distance(b, visible));
 
     const old = this.window;
+    this.moved = !!old && (old.u !== u || old.v !== v);
     if (!old) {
       // Alles neu - von oben nach unten, der sichtbare Teil zuerst.
       const { urgent, rest } = split([next]);
@@ -482,10 +487,11 @@ export class TerrainRenderer {
     gl.uniform2f(f('uCacheSize'), W, H);
 
     const spent = this.drain(this.pending, FILL_BUDGET);
-    // Ist das Bild fertig, füllt der Rest des Budgets die Blase auf.
-    this.drain(this.background, this.pending.length > 0
-        ? BACKGROUND_BUDGET
-        : Math.max(BACKGROUND_BUDGET, FILL_BUDGET - spent));
+    // Steht die Kamera und ist das Bild fertig, füllt der Rest des Budgets die
+    // Blase auf. Beim Scrollen nicht: dann kämen sichtbarer Rand und Blase im
+    // selben Bild zusammen, und bei starkem Zoom bricht die Bildrate ein.
+    const idle = !this.moved && this.pending.length === 0;
+    this.drain(this.background, idle ? Math.max(BACKGROUND_BUDGET, FILL_BUDGET - spent) : BACKGROUND_BUDGET);
 
     gl.disable(gl.SCISSOR_TEST);
     gl.bindVertexArray(null);

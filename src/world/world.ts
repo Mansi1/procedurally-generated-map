@@ -7,9 +7,11 @@
 import type { EntityInstance } from '../gl/entityRenderer';
 import { POSE, SHAPE } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
+import { reliefZ } from '../noise';
 import {
   BUILDINGS,
   GATHER_TYPES,
+  MAX_BUILD_SLOPE,
   MAX_TRAINING_QUEUE,
   VILLAGER,
   initialStock,
@@ -67,8 +69,12 @@ export interface Villager {
   prevWorkTime: number;
 }
 
-/** Eine Schrittfolge (links + rechts) in Tiles. */
-const STRIDE_LENGTH = 0.6;
+/**
+ * Eine Schrittfolge (links + rechts) in Tiles. Sie wächst mit der Figur, sonst
+ * rutschen die Füße - aber nicht unter 0.3 Tiles: so kleine Figuren laufen
+ * sonst so schnell, dass die Beine nur noch flimmern.
+ */
+const STRIDE_LENGTH = Math.max(VILLAGER.size * 1.1, 0.3);
 /** Arbeitsschläge je Sekunde, in Radiant. */
 const WORK_TEMPO = 6;
 
@@ -106,7 +112,7 @@ function newVillager(id: number, x: number, y: number): Villager {
 /** Abstand der Sammelplätze von der Feldmitte, in Tiles. */
 const GATHER_SPREAD = 0.4;
 /** Abstand zur Gebäudekante, ab dem er abliefern kann. */
-const DELIVER_REACH = 0.6;
+const DELIVER_REACH = 0.3;
 
 interface SaveData {
   version: 2;
@@ -152,6 +158,11 @@ export class World {
     return key(building.x, building.y);
   }
 
+  /** Alle Hauptgebäude, in der Reihenfolge, in der sie gebaut wurden. */
+  townCenters(): Building[] {
+    return [...this.buildings.values()].filter((b) => b.type === 'town_center');
+  }
+
   hasTownCenter(): boolean {
     for (const b of this.buildings.values()) if (b.type === 'town_center') return true;
     return false;
@@ -181,6 +192,20 @@ export class World {
       training += b.queue;
     }
     return { used: this.villagers.length, cap, training };
+  }
+
+  /**
+   * Dorfbewohner je Ressource - alle mit dem Auftrag, sie zu sammeln, auch
+   * wenn sie gerade eine Ladung zum Lager tragen.
+   */
+  gatherers(): { counts: Record<GatherType, number>; idle: number } {
+    const counts = Object.fromEntries(GATHER_TYPES.map((t) => [t, 0])) as Record<GatherType, number>;
+    let idle = 0;
+    for (const v of this.villagers) {
+      if (v.task.kind === 'gather') counts[v.task.type]++;
+      else if (v.task.kind === 'idle') idle++;
+    }
+    return { counts, idle };
   }
 
   /** Was an einem Feld noch im Boden liegt. */
@@ -245,8 +270,30 @@ export class World {
       }
     }
 
+    if (this.slopeUnder(x, y, type) > MAX_BUILD_SLOPE * def.footprint) {
+      return 'Der Boden ist hier zu steil';
+    }
+
     if (!this.affordable(type)) return 'Zu wenig Rohstoffe';
     return null;
+  }
+
+  /**
+   * Höhenunterschied in Tiles zwischen höchster und tiefster Ecke der Felder,
+   * die ein Gebäude belegen würde - gemessen am Relief, das man sieht.
+   */
+  private slopeUnder(x: number, y: number, type: BuildingType): number {
+    const r = (BUILDINGS[type].footprint - 1) / 2;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let cy = y - r; cy <= y + r + 1; cy++) {
+      for (let cx = x - r; cx <= x + r + 1; cx++) {
+        const z = reliefZ(this.probe.getTile(cx, cy).height);
+        lo = Math.min(lo, z);
+        hi = Math.max(hi, z);
+      }
+    }
+    return hi - lo;
   }
 
   // --- Verändern -----------------------------------------------------------
@@ -408,7 +455,9 @@ export class World {
 
   /** Läuft zum Lager; true, sobald die Ladung abgegeben ist. */
   private deliverTo(v: Villager, building: Building, dt: number): boolean {
-    const reach = BUILDINGS[building.type].footprint / 2 + DELIVER_REACH;
+    // Bis an die Kante des Modells bzw. der belegten Felder - was größer ist.
+    const def = BUILDINGS[building.type];
+    const reach = Math.max(def.footprint, def.size) / 2 + DELIVER_REACH;
     if (!this.walk(v, building.x + 0.5, building.y + 0.5, reach, dt)) return false;
     if (v.carryType && v.carrying > 0) this.stock[v.carryType] += v.carrying;
     v.carrying = 0;

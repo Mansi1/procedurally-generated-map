@@ -95,8 +95,21 @@
       }
       #stock .res {
         display: inline-flex;
+        flex-direction: column;
+        line-height: 1.35;
+      }
+      #stock .amount {
+        display: inline-flex;
         align-items: center;
         gap: 5px;
+      }
+      /* Darunter: wie viele Dorfbewohner gerade daran arbeiten */
+      #stock .workers {
+        font-size: 11px;
+        color: rgba(207, 233, 214, 0.6);
+      }
+      #stock .workers.busy {
+        color: var(--text);
       }
       #stock .res i {
         width: 11px;
@@ -236,7 +249,7 @@
         <kbd>WASD</kbd> bewegen <kbd>Q</kbd>/<kbd>E</kbd> zoomen<span class="sep">|</span>
         <kbd>1</kbd>-<kbd>5</kbd> bauen <kbd>Esc</kbd> abbrechen<span class="sep">|</span>
         <kbd>Klick</kbd>/<kbd>Ziehen</kbd> auswählen <kbd>Rechtsklick</kbd> Befehl
-        <kbd>V</kbd> Dorfbewohner <kbd>Entf</kbd> abreißen
+        <kbd>V</kbd> Dorfbewohner <kbd>Leertaste</kbd> Hauptgebäude <kbd>Entf</kbd> abreißen
       </div>
       <div id="legend"></div>
     </div>
