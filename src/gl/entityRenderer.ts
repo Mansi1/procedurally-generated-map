@@ -12,14 +12,27 @@ import type { RGB } from '../functions/Color';
 import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
 import { TERRAIN_COMMON } from './terrainShader';
+import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
 import villagerMaleObj from '../models/villager_male.obj?raw';
 import villagerFemaleObj from '../models/villager_female.obj?raw';
 import villagerMtl from '../models/villager.mtl?raw';
 import millObj from '../models/mill.obj?raw';
 import millMtl from '../models/mill.mtl?raw';
+import mill2Obj from '../models/mill_2.obj?raw';
+import mill2Mtl from '../models/mill_2.mtl?raw';
+import mill3Obj from '../models/mill_3.obj?raw';
+import mill3Mtl from '../models/mill_3.mtl?raw';
+import mill4Obj from '../models/mill_4.obj?raw';
+import mill4Mtl from '../models/mill_4.mtl?raw';
 import lumberCampObj from '../models/lumber_camp.obj?raw';
 import lumberCampMtl from '../models/lumber_camp.mtl?raw';
+import lumberCamp2Obj from '../models/lumber_camp_2.obj?raw';
+import lumberCamp2Mtl from '../models/lumber_camp_2.mtl?raw';
+import lumberCamp3Obj from '../models/lumber_camp_3.obj?raw';
+import lumberCamp3Mtl from '../models/lumber_camp_3.mtl?raw';
+import lumberCamp4Obj from '../models/lumber_camp_4.obj?raw';
+import lumberCamp4Mtl from '../models/lumber_camp_4.mtl?raw';
 import houseObj from '../models/house.obj?raw';
 import houseMtl from '../models/house.mtl?raw';
 import house2Obj from '../models/house_2.obj?raw';
@@ -146,6 +159,14 @@ export const SHAPE = {
   house2: 34,
   house3: 35,
   house4: 36,
+  /** Weitere Mühlen (models/mill_2..4.obj) - je Bauplatz fest eine davon. */
+  mill2: 37,
+  mill3: 38,
+  mill4: 39,
+  /** Weitere Holzlager (models/lumber_camp_2..4.obj) - je Bauplatz fest eines davon. */
+  lumberCamp2: 40,
+  lumberCamp3: 41,
+  lumberCamp4: 42,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -285,6 +306,7 @@ precision highp usampler2DArray;
 
 ${TERRAIN_COMMON}
 ${PROJECT_GLSL}
+${FLATTEN_GLSL}
 
 // xy = Lage in der Grundfläche 0..1
 // z  = 0 Fuß (im Boden versenkt), 1 Traufe, 2 Dachfirst
@@ -376,7 +398,7 @@ uniform float uGroundStep;
 
 float groundZ(vec2 world) {
   return uReliefScale > 0.0
-      ? reliefZ(elevation(world * uMapScale, uGroundStep)) * uReliefScale
+      ? flattenZ(world, reliefZ(elevation(world * uMapScale, uGroundStep)) * uReliefScale)
       : 0.0;
 }
 
@@ -1009,6 +1031,8 @@ interface Model {
   hub: [number, number];
   /** Höchster Punkt in Modell-Einheiten - dort sitzt der Lebensbalken. */
   top: number;
+  /** Eingang (Modell-Einheiten: vorn, links), falls das Modell ihn markiert. */
+  entry?: [number, number];
   /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
   meters: number;
 }
@@ -1034,7 +1058,10 @@ function berryRandom(index: number): number {
  * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
  */
 function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = false, sawable = false): Model {
-  const triangles = parseObj(obj);
+  // Das Objekt "Entry" markiert nur den Eingang - nicht zeichnen, nicht mitmessen.
+  const all = parseObj(obj);
+  const entryPoints = all.filter((t) => t.object.startsWith('Entry')).flatMap((t) => t.points);
+  const triangles = all.filter((t) => !t.object.startsWith('Entry'));
   const colors = parseMtl(mtl);
   if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
 
@@ -1157,7 +1184,12 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
     }
   }
 
+  const entry = entryPoints.length > 0
+    ? local(entryPoints.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0])
+        .map((c) => c / entryPoints.length) as [number, number, number])
+    : undefined;
   return {
+    entry: entry && [entry[0], entry[1]] as [number, number],
     vertices: new Float32Array(v),
     lods: lod ? lods.map((l) => new Float32Array(l)) : undefined,
     hip,
@@ -1208,7 +1240,13 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   // Kürzere Schritte, sonst treten die Beine hinten aus dem langen Rock.
   { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleObj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
   { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
+  { shape: SHAPE.mill2, model: loadModel(mill2Obj, mill2Mtl, 'width'), scale: 1 },
+  { shape: SHAPE.mill3, model: loadModel(mill3Obj, mill3Mtl, 'width'), scale: 1 },
+  { shape: SHAPE.mill4, model: loadModel(mill4Obj, mill4Mtl, 'width'), scale: 1 },
   { shape: SHAPE.lumberCamp, model: loadModel(lumberCampObj, lumberCampMtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp2, model: loadModel(lumberCamp2Obj, lumberCamp2Mtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp3, model: loadModel(lumberCamp3Obj, lumberCamp3Mtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp4, model: loadModel(lumberCamp4Obj, lumberCamp4Mtl, 'width'), scale: 1 },
   { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
   { shape: SHAPE.house2, model: loadModel(house2Obj, house2Mtl, 'width'), scale: 1 },
   { shape: SHAPE.house3, model: loadModel(house3Obj, house3Mtl, 'width'), scale: 1 },
@@ -1239,6 +1277,20 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
 ];
 
 /**
+ * Eingang eines Gebäudes in der Welt: Mitte (x, y wie EntityInstance, also
+ * Tile-Anker), Größe und Blickrichtung wie beim Zeichnen. Undefined, wenn das
+ * Modell keinen Eingang markiert.
+ */
+export function modelEntry(shape: number, x: number, y: number, size: number, heading: number): { x: number; y: number } | undefined {
+  const m = MODELS.find((entry) => entry.shape === shape);
+  if (!m?.model.entry) return undefined;
+  const [f, l] = m.model.entry;
+  const s = size * m.scale;
+  const [fx, fy] = [Math.cos(heading), Math.sin(heading)];
+  return { x: x + 0.5 + (fx * f - fy * l) * s, y: y + 0.5 + (fy * f + fx * l) * s };
+}
+
+/**
  * Größe eines Modells in Tiles je Einheit der Instanzgröße: Höhe und Breite.
  * Für das Anklicken von Bäumen und Felsen an ihrer Krone statt am Boden.
  */
@@ -1258,6 +1310,9 @@ export class EntityRenderer {
   private flat: Mesh;
   /** Abtastschritt für die Bodenhöhe - MapRenderer setzt den des Geländegitters. */
   groundStep = 1;
+  /** Eingeebnete Flächen unter Gebäuden (siehe world/flatten.ts). */
+  flatZones = new Float32Array(MAX_FLAT_ZONES * 4);
+  flatCount = 0;
   private models: {
     shape: number; model: Model; scale: number; stride?: number;
     mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
@@ -1430,6 +1485,8 @@ export class EntityRenderer {
     gl.uniform1f(this.location('uMinSizeTiles'), minSizeTiles);
     gl.uniform1i(this.location('uSilhouette'), 0);
     gl.uniform1f(this.location('uGroundStep'), this.groundStep);
+    gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
+    gl.uniform1i(this.location('uFlatCount'), this.flatCount);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

@@ -4,6 +4,7 @@
 // Vorgaben.
 
 import woodBar from './icons/wood-bar.png';
+import { PLAYER_COLORS } from './world/buildings';
 
 export interface Settings {
   /** Lautstärke 0..1 - an/aus steuert weiterhin Sound.enabled (Taste M). */
@@ -20,10 +21,13 @@ export interface Settings {
   facing: string;
   /** Angehalten (F3) - bleibt beim Neuladen. */
   paused: boolean;
+  /** Spielerfarbe - Schlüssel in PLAYER_COLORS. */
+  playerColor: string;
 }
 
 const DEFAULTS: Settings = {
   volume: 1, speed: 1, scroll: 1, showHelp: true, showDebug: true, facing: '', paused: false,
+  playerColor: 'green',
 };
 const STORAGE_KEY = 'pgm.settings';
 
@@ -74,6 +78,16 @@ export class SettingsMenu {
     this.el.innerHTML = `
       <div class="menu-board" role="dialog" aria-label="Menü">
         <div class="menu-title">Menü</div>
+        <section>
+          <h3>Spieler</h3>
+          <div class="menu-row">
+            <span>Farbe</span>
+            <span class="menu-colors">
+              ${Object.entries(PLAYER_COLORS).map(([key, c]) =>
+                `<button type="button" data-color="${key}" title="${c.label}" style="background:${c.color.toRgbString()}"></button>`).join('')}
+            </span>
+          </div>
+        </section>
         <section>
           <h3>Spiel</h3>
           <div class="menu-row">
@@ -136,6 +150,7 @@ export class SettingsMenu {
         this.close();
       }
       if (button.parentElement?.dataset.set === 'speed') this.change({ speed: Number(button.dataset.value) });
+      if (button.dataset.color) this.change({ playerColor: button.dataset.color });
       this.refresh();
     });
     this.el.addEventListener('input', (e) => {
@@ -183,6 +198,9 @@ export class SettingsMenu {
     q<HTMLOutputElement>('[data-out="scroll"]').textContent = `${Math.round(s.scroll * 100)} %`;
     q<HTMLInputElement>('[data-set="showHelp"]').checked = s.showHelp;
     q<HTMLInputElement>('[data-set="showDebug"]').checked = s.showDebug;
+    for (const b of this.el.querySelectorAll<HTMLButtonElement>('[data-color]')) {
+      b.classList.toggle('active', b.dataset.color === s.playerColor);
+    }
   }
 
   private change(patch: Partial<Settings>) {

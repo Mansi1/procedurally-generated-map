@@ -1,3 +1,4 @@
+import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
 import { EntityRenderer, type EntityInstance } from './gl/entityRenderer';
 import { TerrainRenderer } from './gl/terrainRenderer';
@@ -351,6 +352,16 @@ export class MapRenderer {
   /**
    * @param centerX Welt-Tile in der Bildmitte
    */
+  /** Flächen, die unter Gebäuden eingeebnet werden - Gelände und Gebäude gleich. */
+  setFlatZones(zones: readonly FlatZone[]) {
+    const data = packZones(zones);
+    const count = Math.min(zones.length, MAX_FLAT_ZONES);
+    this.terrain.flatZones = data;
+    this.terrain.flatCount = count;
+    this.entities.flatZones = data;
+    this.entities.flatCount = count;
+  }
+
   render(
       centerX: number,
       centerY: number,

@@ -1,3 +1,4 @@
+import { flatten, type FlatZone } from './world/flatten';
 import { MapGenerator, reliefZ } from './noise';
 import {
   centerFor,
@@ -25,6 +26,8 @@ import {
   BUILDING_ORDER,
   MAX_GATHERERS,
   MAX_TRAINING_QUEUE,
+  player,
+  PLAYER_COLORS,
   VILLAGER,
   type BuildingType,
   type Stock,
@@ -137,7 +140,7 @@ const world = new World(probe, seed);
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 // Mit derselben Feinheit wie das Geländegitter der jetzigen Zoomstufe (wie zAt).
-world.groundAt = (x, y) => reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio)));
+world.groundAt = (x, y) => flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))), flatZones);
 const resources = new ResourceField(probe, mapGen);
 const sound = new Sound();
 
@@ -242,6 +245,7 @@ document.body.appendChild(pausedEl);
 
 function applySettings() {
   sound.volume = settings.volume;
+  player.color = (PLAYER_COLORS[settings.playerColor] ?? PLAYER_COLORS.green).color;
   // Mühlenflügel und Fahnen laufen mit der Spielgeschwindigkeit.
   setAnimationSpeed(settings.speed);
   document.getElementById('ui')!.hidden = !settings.showHelp;
@@ -500,6 +504,7 @@ function villagerAt(px: number, py: number): Villager | undefined {
   let best: Villager | undefined;
   let bestDistance = radius;
   for (const v of world.villagers) {
+    if (v.inside > 0) continue;
     const s = villagerScreen(v);
     const d = Math.hypot(s.x - px, s.y - py);
     if (d < bestDistance) {
@@ -1008,10 +1013,42 @@ function view(): IsoView {
  * Gitter des Gelände-Shaders, damit der Treffer auf derselben Fläche liegt,
  * die man sieht.
  */
+/**
+ * Eingeebnete Flächen unter den Gebäuden (siehe world/flatten.ts), je Bild
+ * neu zusammengestellt; die Höhe je Gebäude wird nur einmal gemessen.
+ */
+let flatZones: FlatZone[] = [];
+const flatHeights = new Map<string, number>();
+
+function updateFlatZones() {
+  const zones: FlatZone[] = [];
+  for (const b of world.allBuildings()) {
+    const fp = BUILDINGS[b.type].footprint;
+    const k = `${b.type}:${b.x},${b.y}`;
+    let z = flatHeights.get(k);
+    if (z === undefined) {
+      // Mittel über den Grundriss: so wird bergauf etwas abgetragen und
+      // bergab etwas aufgeschüttet.
+      let sum = 0, n = 0;
+      for (let i = 0; i <= 2; i++) for (let j = 0; j <= 2; j++) {
+        sum += reliefZ(mapGen.heightAt(b.x + 0.5 + (i - 1) * fp / 2, b.y + 0.5 + (j - 1) * fp / 2));
+        n++;
+      }
+      z = sum / n;
+      flatHeights.set(k, z);
+    }
+    zones.push({ x: b.x + 0.5, y: b.y + 0.5, half: fp / 2 + 0.1, z });
+  }
+  // Der Shader nimmt nur die der Bildmitte nächsten.
+  zones.sort((a, b) => Math.hypot(a.x - camX, a.y - camY) - Math.hypot(b.x - camX, b.y - camY));
+  flatZones = zones;
+  renderer.setFlatZones(zones);
+}
+
 function zAt(x: number, y: number): number {
   // Mit der aktuellen Reliefstärke - flachgelegt trifft der Klick sonst
   // die Stelle, an der der Berg stünde.
-  return reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))) * renderer.relief;
+  return flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))), flatZones) * renderer.relief;
 }
 
 /** Welt-Punkt unter einer Canvas-Position (CSS-Pixel), mit Relief. */
@@ -1260,7 +1297,7 @@ function collectOverlay(blend: number) {
         // Etwas zur Kamera hin versetzt: auf einem Vorkommen steht sie so vor
         // dem Baum oder Fels statt dahinter.
         x: building.rally.x + 0.3, y: building.rally.y + 0.3, size: 0.54,
-        color: BUILDINGS.town_center.color.toRGB(), shape: SHAPE.rallyFlag, alpha: 1,
+        color: player.color.toRGB(), shape: SHAPE.rallyFlag, alpha: 1,
       });
       overlay.push({
         x: building.rally.x, y: building.rally.y, size: 0.5,
@@ -1293,7 +1330,7 @@ function collectOverlay(blend: number) {
     x: mouseTileX,
     y: mouseTileY,
     size: def.size,
-    color: blocked ? [220, 70, 80] : def.color.toRGB(),
+    color: blocked ? [220, 70, 80] : player.color.toRGB(),
     shape: def.shape,
     alpha: 0.7,
   });
@@ -1353,6 +1390,7 @@ function loop(now: number) {
     tickAccumulator -= TICK;
   }
 
+  updateFlatZones();
   collectOverlay(tickAccumulator / TICK);
   renderer.render(camX, camY, mouseTileX, mouseTileY, overlay);
 

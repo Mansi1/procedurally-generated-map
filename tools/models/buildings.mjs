@@ -235,6 +235,8 @@ function house({ file, storeys = 2, stone = false, mirror = false, turn = 0 }) {
     box('Ivy', i % 2 ? 'Ivy' : 'IvyDark', [x - s, x + s], [y, y + s * 1.4], [z - s, z + s], { r: 0.3 });
   }
 
+  // Wo Dorfbewohner hineingehen: vor der Tür (unsichtbar, liest das Spiel aus).
+  box('Entry', 'Soot', [0.52, 0.58], [0, 0.05], [D + 0.55, D + 0.6]);
   // Spiegeln und drehen: nur die Eckpunkte - Flächen haben keine Vorderseite,
   // die Beleuchtung rechnet mit der Flächennormale aus dem Bild.
   m.out = m.out.map((l) => {
@@ -245,7 +247,7 @@ function house({ file, storeys = 2, stone = false, mirror = false, turn = 0 }) {
     return `v ${+x.toFixed(3)} ${y} ${+z.toFixed(3)}`;
   });
   write(dir, file, header(file, 'Haus',
-    '# Material Paint (Band und Wappen) bekommt die Gebaeudefarbe aus dem Spiel.\n'), m, '0.200 0.350 0.750');
+    '# Material Paint (Band und Wappen) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet.\n'), m, '0.200 0.350 0.750');
 }
 
 // --- Town center: timber-framed house on stilts with a cross-gabled shingle
@@ -492,72 +494,140 @@ function townCenter() {
   lantern(m, 0.9, 3.05, C + 0.35);
   box('Lantern.Bracket', 'Iron', [0.88, 0.92], [3.23, 3.27], [C, C + 0.37]);
 
+  // Wo Dorfbewohner hineingehen: am Fuß der Treppe (unsichtbar, liest das Spiel aus).
+  box('Entry', 'Soot', [0.87, 0.93], [0, 0.05], [C + 2.45, C + 2.5]);
   write(dir, 'town_center', header('town_center', 'Hauptgebaeude',
     '# Material Paint (Band, Wappen und Fahne) bekommt die Gebaeudefarbe aus dem Spiel,\n# das Objekt Cloth (Fahnentuch am Mast bei x = 0) weht.\n'), m, '0.200 0.350 0.750');
 }
 
-// --- Mill: tapered tower with a conical cap and four lattice sails, 4.3 m
-// wide without the sails (size 0.86) ----------------------------------------
-function mill() {
+// --- Mill: timber-framed tower like the house and the town center - stone
+// base, grey plaster, jettied upper floor over a band in the player's colour,
+// shingle roof with the gable to the front and four lattice sails before it,
+// a lean-to with flour sacks. 4.3 m wide without the sails (size 0.86).
+/**
+ * One of four mills: `stone` builds the lower storey from rubble stone,
+ * `mirror` flips door and lean-to to the other side, `tall` adds height and
+ * longer sails, `stripes` paints the sail canvas in stripes. No turning -
+ * the sails have to stay at the front, where the game spins them.
+ */
+function mill({ file, stone = false, mirror = false, tall = false, stripes = false }) {
   const m = model();
   const { box, beam } = m;
-  const r = (y) => 1.95 - (0.55 * (y - 0.5)) / 6.5; // tower radius
-  const face = (y) => r(y) * Math.cos(Math.PI / 10); // distance to a flat face
-  const N = 10, rot = Math.PI / 2 + Math.PI / 10; // flat face towards +z
+  const W = 1.45, D = 1.45;   // half size of the lower storey
+  const P = 0.6;              // stone base
+  const G = 3.3;              // top of the lower storey
+  const J = 0.12;             // jetty
+  const E = tall ? 6.9 : 5.9, R = tall ? 9.0 : 8.0;     // eaves, ridge
+  const WU = W + J, DU = D + J;
+  const wall = walls(m, W, D);
+  const upper = walls(m, WU, DU);
 
-  box('Plinth', 'Stone', [-2.15, 2.15], [0, 0.5], [-2.15, 2.15], { n: N, rot, x: [-2.05, 2.05], z: [-2.05, 2.05] });
-  box('Tower', 'Plaster', [-1.95, 1.95], [0.5, 7.0], [-1.95, 1.95], { n: N, rot, x: [-1.4, 1.4], z: [-1.4, 1.4] });
-  for (const y of [0.5, 3.4, 6.7]) {
-    const rr = r(y) + 0.03;
-    box('Tower.Band', 'StoneDark', [-rr, rr], [y, y + 0.16], [-rr, rr], { n: N, rot });
-  }
-  // Door with frame and steps, windows up the tower.
-  const dz = (y) => face(y) + 0.01;
-  box('Door', 'Wood', [-0.45, 0.45], [0.5, 2.6], [dz(0.5) - 0.03, dz(0.5) + 0.05], { z: [dz(2.6) - 0.03, dz(2.6) + 0.05] });
-  for (let i = 1; i < 4; i++) {
-    const x = -0.45 + i * 0.225;
-    box('Door.Seam', 'WoodDark', [x - 0.012, x + 0.012], [0.55, 2.55], [dz(0.5) + 0.05, dz(0.5) + 0.06], { z: [dz(2.6) + 0.05, dz(2.6) + 0.06] });
-  }
-  box('Door.Handle', 'Iron', [0.25, 0.32], [1.5, 1.6], [dz(1.5) + 0.04, dz(1.5) + 0.1], { r: 0.3 });
-  for (const s of [-1, 1]) {
-    box('Door.Frame', 'Timber', s > 0 ? [0.45, 0.58] : [-0.58, -0.45], [0.5, 2.75], [dz(0.5) - 0.03, dz(0.5) + 0.09], { z: [dz(2.75) - 0.03, dz(2.75) + 0.09] });
-  }
-  box('Door.Frame', 'Timber', [-0.58, 0.58], [2.6, 2.75], [dz(2.6) - 0.03, dz(2.6) + 0.1]);
-  box('Step', 'StoneLight', [-0.65, 0.65], [0, 0.25], [2.0, 2.5]);
-  box('Step', 'StoneLight', [-0.6, 0.6], [0.25, 0.5], [1.85, 2.2]);
-  for (const [y, a] of [[4.4, 0], [4.9, Math.PI * 0.6], [4.9, -Math.PI * 0.6], [2.2, Math.PI]]) {
-    const d = face(y + 0.3);
-    const c = Math.cos(a), s = Math.sin(a);
-    const at = (u, w) => [u * c + w * s, -u * s + w * c];
-    // Window on the face at angle a (0 = front): glass and frame.
-    for (const [mtl, hw, w0, w1, y0, y1] of [['Timber', 0.3, 0, 0.07, y - 0.06, y + 0.7], ['Glass', 0.22, 0.02, 0.09, y, y + 0.62]]) {
-      const pts = [at(-hw, d + w0), at(hw, d + w0), at(hw, d + w1), at(-hw, d + w1)];
-      m.extrude('Window', mtl, 'y', [y0, y1], pts);
+  box('Ground', 'Dirt', [-2.2, 2.2], [0, 0.03], [-1.9, 2.2], { r: 0.25 });
+  box('Base', 'Stone', [-W - 0.1, W + 0.1], [0, P], [-D - 0.1, D + 0.1]);
+  for (const face of ['front', 'back', 'left', 'right']) {
+    for (let i = 0; i < 5; i++) {
+      const u = -W + 0.12 + i * 0.6;
+      wall(face, 'Base.Stone', i % 2 ? 'StoneDark' : 'StoneLight', [u, u + 0.45], [0.08 + (i % 2) * 0.12, P - 0.1], [0.1, 0.14]);
     }
-    const bar = [at(-0.22, d + 0.09), at(0.22, d + 0.09), at(0.22, d + 0.11), at(-0.22, d + 0.11)];
-    m.extrude('Window.Bar', 'Timber', 'y', [y + 0.29, y + 0.33], bar);
   }
 
-  // Cap: timber rim, conical roof in courses, finial.
-  box('Cap.Rim', 'Wood', [-1.6, 1.6], [7.0, 7.25], [-1.6, 1.6], { n: N, rot });
-  const cone = [[1.75, 7.25], [1.25, 7.95], [0.7, 8.65], [0, 9.5]];
-  for (let i = 0; i < 3; i++) {
-    const [r0, y0] = cone[i], [r1, y1] = cone[i + 1];
-    box('Cap', 'Paint', [-r0, r0], [y0 - (i ? 0.08 : 0), y1], [-r0, r0], { n: N, rot, x: [-r1, r1], z: [-r1, r1] });
+  // Lower storey: plaster in a timber frame with braces - or rubble stone.
+  box('Walls', stone ? 'Stone' : 'PlasterGrey', [-W, W], [P, G], [-D, D]);
+  for (const face of ['front', 'back', 'left', 'right']) {
+    if (stone) {
+      for (let row = 0; row < 9; row++) {
+        for (let i = 0; i < 5; i++) {
+          const u = -W + 0.1 + i * 0.6 + (row % 2) * 0.3;
+          if (u + 0.45 > W) continue;
+          wall(face, 'Wall.Stone', (row + i) % 3 ? 'StoneDark' : 'StoneLight', [u, u + 0.45], [P + 0.05 + row * 0.3, P + 0.3 + row * 0.3], [0, 0.03]);
+        }
+      }
+      for (const u of [-W, W - 0.3]) {
+        for (let i = 0; i < 9; i++) wall(face, 'Wall.Quoin', 'StoneLight', [u + (i % 2) * 0.08, u + 0.3], [P + i * 0.3, P + i * 0.3 + 0.27], [0, 0.05]);
+      }
+    } else {
+      for (const u of [-W, 0, W]) wall(face, 'Timber.Post', 'Timber', [u - 0.08, u + 0.08], [P, G], [0, 0.06]);
+      wall(face, 'Timber.Sill', 'Timber', [-W, W], [P, P + 0.12], [0, 0.06]);
+      wall(face, 'Timber.Rail', 'Timber', [-W, W], [1.95, 2.05], [0, 0.06]);
+    }
   }
-  box('Cap.Finial', 'Wood', [-0.08, 0.08], [9.4, 9.8], [-0.08, 0.08], { n: 6, x: [0, 0], z: [0, 0] });
+  if (!stone) {
+    for (const s of [-1, 1]) {
+      for (const z of [D + 0.03, -D - 0.03]) beam('Timber.Brace', 'Timber', [s * (W - 0.08), 2.05, z], [s * 0.1, G - 0.05, z], 0.1);
+      for (const x of [W + 0.03, -W - 0.03]) beam('Timber.Brace', 'Timber', [x, 2.05, s * (D - 0.08)], [x, G - 0.05, s * 0.1], 0.1);
+    }
+  }
+  // Band in the player's colour and the jettied upper floor.
+  box('Band', 'Paint', [-WU - 0.02, WU + 0.02], [G, G + 0.2], [-DU - 0.02, DU + 0.02]);
+  box('Band.Edge', 'Timber', [-WU - 0.04, WU + 0.04], [G + 0.2, G + 0.26], [-DU - 0.04, DU + 0.04]);
+  const U0 = G + 0.26;
+  box('Upper', 'PlasterGrey', [-WU, WU], [U0, E], [-DU, DU]);
+  for (const face of ['front', 'back', 'left', 'right']) {
+    for (const u of [-WU, -WU / 3, WU / 3, WU]) upper(face, 'Timber.Post', 'Timber', [u - 0.07, u + 0.07], [U0, E], [0, 0.06]);
+    upper(face, 'Timber.Rail', 'Timber', [-WU, WU], [4.55, 4.65], [0, 0.06]);
+    if (tall) upper(face, 'Timber.Rail', 'Timber', [-WU, WU], [5.75, 5.85], [0, 0.06]);
+    upper(face, 'Timber.Plate', 'Timber', [-WU - 0.04, WU + 0.04], [E - 0.14, E], [0, 0.07]);
+  }
 
-  // Axle and hub, tail pole down to the ground at the back.
-  const HY = 7.65, HZ = 2.45;
-  box('Axle', 'Wood', [-0.15, 0.15], [HY - 0.15, HY + 0.15], [1.0, HZ - 0.1], { axis: 'z', n: 8 });
+  // Windows with warm light and open shutters.
+  const lit = (w, face, u, y0, y1, width) => {
+    const h = width / 2;
+    w(face, 'Window.Light', 'WindowLit', [u - h, u + h], [y0, y1], [0, 0.03]);
+    w(face, 'Window.Bar', 'Timber', [u - 0.02, u + 0.02], [y0, y1], [0.03, 0.06]);
+    w(face, 'Window.Sill', 'Timber', [u - h - 0.08, u + h + 0.08], [y0 - 0.07, y0], [0, 0.12]);
+    w(face, 'Window.Lintel', 'Timber', [u - h - 0.07, u + h + 0.07], [y1, y1 + 0.07], [0, 0.08]);
+    for (const s of [-1, 1]) {
+      const a = s < 0 ? [u - h - 0.06 - h, u - h - 0.06] : [u + h + 0.06, u + h + 0.06 + h];
+      w(face, 'Window.Shutter', 'Wood', a, [y0, y1], [0, 0.04]);
+      for (const y of [y0 + 0.1, y1 - 0.14]) w(face, 'Window.Shutter.Band', 'Timber', a, [y, y + 0.04], [0.04, 0.055]);
+    }
+  };
+  lit(wall, 'front', -0.75, 1.1, 1.75, 0.44);
+  lit(wall, 'left', 0.5, 1.1, 1.75, 0.44);
+  lit(wall, 'back', 0, 1.1, 1.75, 0.44);
+  lit(upper, 'right', -0.55, 3.8, 4.4, 0.42);
+  lit(upper, 'left', 0, 3.8, 4.4, 0.42);
+  lit(upper, 'back', 0, 3.8, 4.4, 0.42);
+  lit(upper, 'front', 0.75, 4.85, 5.45, 0.38);
+  if (tall) {
+    lit(upper, 'left', 0, 6.05, 6.6, 0.4);
+    lit(upper, 'right', 0.3, 6.05, 6.6, 0.4);
+  }
+  // Door on the right side (the sails sweep the front), steps and a lantern.
+  doorOn(wall, 'right', 0.35, P, 0.85, 1.9);
+  box('Step', 'StoneLight', [W + 0.02, W + 0.5], [0, P], [-0.9, 0.25], { r: 0.1 });
+  box('Step', 'StoneLight', [W + 0.02, W + 0.3], [P * 0.5, P], [-0.9, 0.25]);
+  lantern(m, W + 0.16, 2.55, -0.85);
+  box('Lantern.Bracket', 'Iron', [W, W + 0.18], [2.73, 2.77], [-0.87, -0.83]);
+  // Shield in the player's colour on the right upper wall.
+  m.extrude('Shield', 'Paint', 'x', [WU + 0.05, WU + 0.1], [[0.25, 5.45], [0.75, 5.45], [0.75, 5.15], [0.5, 4.8], [0.25, 5.15]]);
+  beam('Shield.Stripe', 'Canvas', [WU + 0.105, 5.41, 0.29], [WU + 0.105, 5.02, 0.71], 0.07);
+
+  // Shingle roof, gable to the front where the sails turn.
+  const RX = WU + 0.38, RZ = DU + 0.35;
+  for (const s of [1, -1]) slope(m, 'Roof', 'Shingle', 'z', [-RZ, RZ], [s * RX, E - 0.1], [0, R], 0.12, 8);
+  box('Roof.Ridge', 'ShingleDark', [-0.12, 0.12], [R - 0.02, R + 0.15], [-RZ - 0.04, RZ + 0.04], { axis: 'z', n: 6 });
+  m.extrude('Gable', 'PlasterGrey', 'z', [-DU, DU], [[-WU, E], [WU, E], [0, R - 0.1]]);
+  for (const s of [-1, 1]) {
+    const z = s * (DU + 0.03);
+    beam('Gable.KingPost', 'Timber', [0, E, z], [0, R - 0.2, z], 0.1);
+    for (const t of [-1, 1]) {
+      beam('Gable.Brace', 'Timber', [t * (WU - 0.1), E, z], [t * 0.35, E + 1.1, z], 0.09);
+      beam('Gable.Barge', 'Timber', [t * (RX - 0.04), E - 0.06, s * (RZ + 0.02)], [0, R + 0.1, s * (RZ + 0.02)], 0.13);
+    }
+  }
+  box('Finial', 'Wood', [-0.07, 0.07], [R + 0.1, R + 0.55], [RZ - 0.07, RZ + 0.07], { n: 6, x: [0, 0], z: [RZ, RZ] });
+
+  // Axle and hub on the front gable.
+  const HY = E + 0.65, HZ = DU + 0.9;
+  box('Axle', 'Wood', [-0.15, 0.15], [HY - 0.15, HY + 0.15], [DU - 0.2, HZ - 0.1], { axis: 'z', n: 8 });
+  box('Axle.Bearing', 'Timber', [-0.32, 0.32], [HY - 0.3, HY - 0.12], [DU, DU + 0.5]);
   box('Hub', 'WoodDark', [-0.32, 0.32], [HY - 0.32, HY + 0.32], [HZ - 0.12, HZ + 0.12], { axis: 'z', n: 8 });
-  beam('Tail', 'Wood', [0, 7.15, -1.4], [0, 0.4, -3.4], 0.16);
-  beam('Tail.Strut', 'Wood', [0, 7.0, -1.2], [0, 4.2, -2.55], 0.1);
-  box('Tail.Post', 'Timber', [-0.12, 0.12], [0, 0.55], [-3.52, -3.28]);
+  box('Hub.Cap', 'Iron', [-0.15, 0.15], [HY - 0.15, HY + 0.15], [HZ + 0.12, HZ + 0.2], { axis: 'z', n: 8 });
 
   // Sails: four blades with a spar, lattice frame and canvas on the trailing
   // side, each turned by 90 degrees so the set stays centred on the hub.
-  const L = 4.4, Z = [HZ + 0.02, HZ + 0.12];
+  const L = tall ? 5.2 : 4.5, Z = [HZ + 0.02, HZ + 0.12];
   const rect = (k, [a0, a1], [b0, b1]) => {
     const c = Math.round(Math.cos((k * Math.PI) / 2)), s = Math.round(Math.sin((k * Math.PI) / 2));
     const pts = [[a0, b0], [a1, b1]].map(([a, b]) => [a * c - b * s, a * s + b * c]);
@@ -566,7 +636,16 @@ function mill() {
   for (let k = 0; k < 4; k++) {
     const sb = (name, mtl, a, b, z) => { const [x, y] = rect(k, a, b); box(name, mtl, x, y, z); };
     sb('Sails.Spar', 'Wood', [0.25, L], [-0.09, 0.09], [Z[0], Z[1] + 0.04]);
-    sb('Sails.Canvas', 'Canvas', [0.95, L - 0.1], [-0.95, -0.1], [Z[0] - 0.02, Z[0] + 0.02]);
+    if (stripes) {
+      // Gestreiftes Segeltuch: abwechselnd hell und in Spielerfarbe.
+      const n = 6;
+      for (let i = 0; i < n; i++) {
+        const a0 = 0.95 + (i * (L - 1.05)) / n, a1 = 0.95 + ((i + 1) * (L - 1.05)) / n;
+        sb('Sails.Canvas', i % 2 ? 'Paint' : 'Canvas', [a0, a1], [-0.95, -0.1], [Z[0] - 0.02, Z[0] + 0.02]);
+      }
+    } else {
+      sb('Sails.Canvas', 'Canvas', [0.95, L - 0.1], [-0.95, -0.1], [Z[0] - 0.02, Z[0] + 0.02]);
+    }
     sb('Sails.Rail', 'Wood', [0.9, L], [-1.0, -0.9], Z);
     for (let i = 0; i <= 5; i++) {
       const a = 0.95 + (i * (L - 1.05)) / 5;
@@ -574,91 +653,180 @@ function mill() {
     }
   }
 
-  // Flour sacks and a crate by the door.
-  for (const [x, z, h] of [[-1.25, 2.0, 0.55], [-0.95, 2.3, 0.5], [1.2, 2.05, 0.55]]) {
-    box('Sack', 'Sack', [x - 0.22, x + 0.22], [0, h], [z - 0.2, z + 0.2], { r: 0.3, x: [x - 0.15, x + 0.15], z: [z - 0.13, z + 0.13] });
-    box('Sack.Tie', 'WoodDark', [x - 0.12, x + 0.12], [h - 0.08, h - 0.04], [z - 0.1, z + 0.1], { r: 0.3 });
+  // Lean-to on the left with flour sacks, a millstone and a cart wheel.
+  const LX = -W - 0.75;
+  for (const z of [-D + 0.2, D - 0.2]) {
+    box('Shed.Post', 'Timber', [LX - 0.09, LX + 0.09], [0, 2.1], [z - 0.09, z + 0.09]);
+    beam('Shed.Brace', 'Timber', [LX, 1.6, z], [LX + 0.45, 2.08, z], 0.07);
   }
-  crate(m, [1.45, 1.95], 0, [1.2, 1.7]);
-  write(dir, 'mill', header('mill', 'Muehle',
-    '# Die Objekte Sails.* drehen sich im Spiel um ihre Mitte (die Nabe), Blickachse\n# nach vorn. Material Paint (die Haube) bekommt die Gebaeudefarbe aus dem Spiel.\n'), m, '0.780 0.290 0.330');
+  box('Shed.Beam', 'Timber', [LX - 0.08, LX + 0.08], [2.05, 2.18], [-D - 0.1, D + 0.1]);
+  slope(m, 'Shed.Roof', 'Shingle', 'z', [-D - 0.25, D + 0.25], [LX - 0.25, 2.1], [-W, 2.6], 0.1, 3);
+  for (const [x, z, h] of [[LX + 0.35, -0.8, 0.55], [LX + 0.3, -0.35, 0.5], [LX + 0.4, 0.1, 0.55], [LX + 0.3, 0.55, 0.5], [LX + 0.35, -0.55, 1.0]]) {
+    const y0 = h > 0.9 ? 0.5 : 0.03;
+    const hh = h > 0.9 ? 0.45 : h;
+    box('Sack', 'Sack', [x - 0.22, x + 0.22], [y0, y0 + hh], [z - 0.2, z + 0.2], { r: 0.3, x: [x - 0.15, x + 0.15], z: [z - 0.13, z + 0.13] });
+    box('Sack.Tie', 'WoodDark', [x - 0.12, x + 0.12], [y0 + hh - 0.08, y0 + hh - 0.04], [z - 0.1, z + 0.1], { r: 0.3 });
+  }
+  box('Millstone', 'StoneLight', [LX - 0.1, LX + 0.1], [0.05, 0.85], [0.75, 1.55], { axis: 'x', n: 12 });
+  box('Millstone.Eye', 'StoneDark', [LX - 0.12, LX + 0.12], [0.36, 0.54], [1.06, 1.24], { axis: 'x', n: 8 });
+  crate(m, [1.55, 2.0], 0.03, [1.2, 1.65]);
+  barrel(m, 1.8, -1.55, 0.8, 0.28);
+  // Ivy up a front corner.
+  for (let i = 0; i < 14; i++) {
+    const a = i * 1.9, y = 0.1 + i * 0.18, s = 0.08 + (i % 3) * 0.02;
+    const [x, z] = [W + 0.04 + Math.cos(a) * 0.08, D + 0.04 + Math.sin(a) * 0.08];
+    box('Ivy', i % 2 ? 'Ivy' : 'IvyDark', [x - s, x + s], [y, y + s * 1.4], [z - s, z + s], { r: 0.3 });
+  }
+
+  // Wo Dorfbewohner hineingehen: vor der Tür (unsichtbar, liest das Spiel aus).
+  box('Entry', 'Soot', [W + 0.55, W + 0.6], [0, 0.05], [-0.4, -0.35]);
+  if (mirror) {
+    m.out = m.out.map((l) => {
+      if (!l.startsWith('v ')) return l;
+      const [x, y, z] = l.split(' ').slice(1);
+      return `v ${-Number(x)} ${y} ${z}`;
+    });
+  }
+  write(dir, file, header(file, 'Muehle',
+    '# Die Objekte Sails.* drehen sich im Spiel um ihre Mitte (die Nabe), Blickachse\n# nach vorn. Material Paint (Band und Wappen) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet.\n'), m, '0.780 0.290 0.330');
 }
 
-// --- Lumber camp: open shed with a log pile, chopping block and sawhorse,
-// 5 m wide (size 1) ---------------------------------------------------------
-function lumberCamp() {
+// --- Lumber camp: open timber shed under a shingle roof like the house and
+// the mill, with a band in the player's colour - a small storeroom at the
+// back (plaster or stone) or, open, a bigger log pile - and a yard with a
+// chopping block and a sawhorse. 5 m wide (size 1). Four variants.
+function lumberCamp({ file, stone = false, open = false, mirror = false }) {
   const m = model();
   const { box, beam } = m;
-  const X = 2.2, ZF = 1.45, ZB = -1.5, YF = 2.9, YB = 2.35;
+  const X = 2.3, ZF = 1.15, ZB = -1.55;   // posts: half width, front, back
+  const EF = 2.45, EB = 2.45, R = 3.75;   // eaves, ridge
+  const ZR = (ZF + ZB) / 2;               // ridge line
 
-  // Posts with knee braces, beams.
-  for (const x of [-X, X]) {
-    box('Post', 'Wood', [x - 0.11, x + 0.11], [0, YF], [ZF - 0.11, ZF + 0.11], { r: 0.25 });
-    box('Post', 'Wood', [x - 0.11, x + 0.11], [0, YB], [ZB - 0.11, ZB + 0.11], { r: 0.25 });
-    box('Post.Foot', 'Stone', [x - 0.17, x + 0.17], [0, 0.12], [ZF - 0.17, ZF + 0.17], { r: 0.2 });
-    box('Beam.Side', 'Timber', [x - 0.09, x + 0.09], [YB - 0.2, YB], [ZB - 0.15, ZF + 0.15], { y: [YF - 0.2, YF] });
-    beam('Brace', 'Timber', [x, YF - 0.8, ZF], [x, YF - 0.2, ZF - 0.6], 0.09);
-  }
-  box('Beam.Front', 'Timber', [-X - 0.2, X + 0.2], [YF - 0.24, YF], [ZF - 0.12, ZF + 0.12]);
-  box('Beam.Back', 'Timber', [-X - 0.2, X + 0.2], [YB - 0.24, YB], [ZB - 0.12, ZB + 0.12]);
-  for (const s of [-1, 1]) beam('Brace', 'Timber', [s * (X - 0.6), YF - 0.24, ZF], [s * X, YF - 0.9, ZF], 0.09);
+  box('Ground', 'Dirt', [-2.5, 2.5], [0, 0.03], [-1.9, 2.45], { r: 0.2 });
 
-  // Back wall of vertical planks, low side walls of horizontal boards.
-  for (let i = 0; i < 18; i++) {
-    const x = -X + i * (2 * X / 18);
-    box('Wall.Plank', i % 3 === 1 ? 'WoodLight' : 'Wood', [x, x + 2 * X / 18 - 0.015], [0, YB - 0.24 - (i % 2) * 0.03], [ZB - 0.06, ZB + 0.02]);
+  // Posts on stone feet, knee braces, beams all round.
+  for (const x of [-X, 0, X]) {
+    for (const z of [ZF, ZB]) {
+      box('Post.Foot', 'Stone', [x - 0.16, x + 0.16], [0, 0.14], [z - 0.16, z + 0.16], { r: 0.2 });
+      box('Post', 'Timber', [x - 0.11, x + 0.11], [0, z > 0 ? EF : EB], [z - 0.11, z + 0.11]);
+    }
+    for (const [z, s] of [[ZF, -1], [ZB, 1]]) beam('Brace', 'Timber', [x, 1.75, z], [x, 2.3, z + s * 0.55], 0.08);
   }
-  for (const x of [-X, X]) {
-    for (let j = 0; j < 4; j++) box('Wall.Board', j % 2 ? 'WoodLight' : 'Wood', [x - 0.04, x + 0.04], [j * 0.26, j * 0.26 + 0.24], [ZB, ZF - 0.6]);
+  for (const s of [-1, 1]) beam('Brace', 'Timber', [s * (X - 0.6), EF - 0.2, ZF], [s * X, EF - 0.8, ZF], 0.08);
+  box('Beam.Front', 'Timber', [-X - 0.15, X + 0.15], [EF - 0.24, EF], [ZF - 0.12, ZF + 0.12]);
+  box('Beam.Back', 'Timber', [-X - 0.15, X + 0.15], [EB - 0.24, EB], [ZB - 0.12, ZB + 0.12]);
+  for (const x of [-X, 0, X]) box('Beam.Side', 'Timber', [x - 0.09, x + 0.09], [EF - 0.2, EF], [ZB - 0.1, ZF + 0.1]);
+  // Band in the player's colour along the front beam.
+  box('Band', 'Paint', [-X - 0.17, X + 0.17], [EF - 0.22, EF - 0.06], [ZF + 0.12, ZF + 0.16]);
+
+  // Gable roof with shingles, ridge along x; planked gables.
+  const RZF = ZF + 0.45, RZB = ZB - 0.45, RX = X + 0.35;
+  slope(m, 'Roof', 'Shingle', 'x', [-RX, RX], [RZF, EF - 0.08], [ZR, R], 0.11, 6);
+  slope(m, 'Roof', 'Shingle', 'x', [-RX, RX], [RZB, EB - 0.08], [ZR, R], 0.11, 6);
+  box('Roof.Ridge', 'ShingleDark', [-RX - 0.04, RX + 0.04], [R - 0.02, R + 0.14], [ZR - 0.12, ZR + 0.12], { axis: 'x', n: 6 });
+  for (const s of [-1, 1]) {
+    const x = s * (X + 0.05);
+    m.extrude('Gable', 'WoodLight', 'x', [x - 0.04, x + 0.04], [[ZB, EB], [ZF, EF], [ZR, R - 0.1]]);
+    for (let i = 1; i < 5; i++) {
+      const z = ZB + ((ZF - ZB) * i) / 5;
+      const top = EF + (R - 0.1 - EF) * (1 - Math.abs(z - ZR) / ((ZF - ZB) / 2));
+      box('Gable.Seam', 'WoodDark', [x - 0.05, x + 0.05], [EF, Math.max(EF, top - 0.05)], [z - 0.012, z + 0.012]);
+    }
+    for (const t of [RZF, RZB]) beam('Gable.Barge', 'Timber', [s * (RX + 0.02), EF - 0.1, t], [s * (RX + 0.02), R + 0.08, ZR], 0.12);
   }
 
-  // Mono-pitch roof with planks and battens.
-  const RX = 2.5, RF = 1.95, RB = -1.95;
-  const yAt = (z) => YB + ((z - ZB) * (YF - YB)) / (ZF - ZB);
-  m.extrude('Roof', 'Paint', 'x', [-RX, RX], [[RB, yAt(RB)], [RF, yAt(RF)], [RF, yAt(RF) + 0.12], [RB, yAt(RB) + 0.12]]);
-  for (let i = 0; i <= 10; i++) {
-    const x = -RX + 0.1 + i * ((2 * RX - 0.2) / 10);
-    beam('Roof.Seam', 'Timber', [x, yAt(RB) + 0.13, RB], [x, yAt(RF) + 0.13, RF], 0.035);
+  if (!open) {
+    // Storeroom at the back left: plaster in a timber frame or rubble stone,
+    // a lit window, a plank door to the front and a shield.
+    const [x0, x1, z0, z1] = [-X + 0.05, -0.1, ZB + 0.05, -0.15];
+    box('Room.Plinth', 'Stone', [x0 - 0.04, x1 + 0.04], [0, 0.3], [z0 - 0.04, z1 + 0.04]);
+    box('Room', stone ? 'Stone' : 'PlasterGrey', [x0, x1], [0.3, EB - 0.24], [z0, z1]);
+    if (stone) {
+      for (let row = 0; row < 6; row++) {
+        for (let i = 0; i < 4; i++) {
+          const u = x0 + 0.08 + i * 0.55 + (row % 2) * 0.27;
+          if (u + 0.42 > x1) continue;
+          box('Room.Stone', (row + i) % 3 ? 'StoneDark' : 'StoneLight', [u, u + 0.42], [0.35 + row * 0.3, 0.6 + row * 0.3], [z1, z1 + 0.03]);
+        }
+      }
+    } else {
+      for (const x of [x0, (x0 + x1) / 2, x1]) box('Room.Post', 'Timber', [x - 0.07, x + 0.07], [0.3, EB - 0.24], [z1, z1 + 0.05]);
+      box('Room.Rail', 'Timber', [x0, x1], [1.4, 1.5], [z1, z1 + 0.05]);
+      beam('Room.Brace', 'Timber', [x1 - 0.05, 1.5, z1 + 0.025], [(x0 + x1) / 2 + 0.05, EB - 0.3, z1 + 0.025], 0.09);
+    }
+    // Window and door on the front of the room.
+    const wx = x0 + 0.5;
+    box('Room.Window', 'WindowLit', [wx - 0.22, wx + 0.22], [1.0, 1.45], [z1, z1 + 0.03]);
+    box('Room.Window.Bar', 'Timber', [wx - 0.02, wx + 0.02], [1.0, 1.45], [z1 + 0.03, z1 + 0.06]);
+    box('Room.Window.Frame', 'Timber', [wx - 0.29, wx + 0.29], [0.93, 1.0], [z1, z1 + 0.12]);
+    for (const s of [-1, 1]) box('Room.Window.Shutter', 'Wood', s < 0 ? [wx - 0.5, wx - 0.26] : [wx + 0.26, wx + 0.5], [1.0, 1.45], [z1, z1 + 0.04]);
+    const dx = x1 - 0.55;
+    box('Room.Door', 'Wood', [dx - 0.35, dx + 0.35], [0.3, 1.95], [z1, z1 + 0.05]);
+    for (let i = 1; i < 4; i++) box('Room.Door.Seam', 'WoodDark', [dx - 0.35 + i * 0.175 - 0.01, dx - 0.35 + i * 0.175 + 0.01], [0.35, 1.9], [z1 + 0.05, z1 + 0.06]);
+    box('Room.Door.Frame', 'Timber', [dx - 0.45, dx + 0.45], [1.95, 2.07], [z1, z1 + 0.08]);
+    m.extrude('Shield', 'Paint', 'z', [z1 + 0.05, z1 + 0.1], [[wx - 0.2, 2.05], [wx + 0.2, 2.05], [wx + 0.2, 1.8], [wx, 1.55], [wx - 0.2, 1.8]]);
+    beam('Shield.Stripe', 'Canvas', [wx - 0.16, 2.01, z1 + 0.105], [wx + 0.16, 1.66, z1 + 0.105], 0.06);
   }
-  for (const z of [RB + 0.05, RF - 0.05]) box('Roof.Edge', 'Timber', [-RX - 0.02, RX + 0.02], [yAt(z) - 0.02, yAt(z) + 0.16], [z - 0.05, z + 0.05]);
 
-  // Log pile under the roof, four rows.
-  const rows = [[0.2, [-1.2, -0.8, -0.4, 0, 0.4]], [0.54, [-1.0, -0.6, -0.2, 0.2]], [0.88, [-0.8, -0.4, 0]], [1.22, [-0.6, -0.2]]];
-  rows.forEach(([y, zs], ri) => zs.forEach((z, i) => {
-    const d = ((ri * 7 + i * 3) % 5) * 0.06 - 0.12;
-    log(m, [-1.6 + d, 1.55 - d], y, z, 0.19);
-  }));
-  box('Pile.Stake', 'Wood', [-1.72, -1.64], [0, 1.2], [0.52, 0.6]);
-  box('Pile.Stake', 'Wood', [1.62, 1.7], [0, 1.2], [0.52, 0.6]);
-  // Planks stacked in the right corner, tools on the back wall.
-  for (let j = 0; j < 6; j++) box('Planks', j % 2 ? 'WoodLight' : 'LogEnd', [1.72, 2.12], [0.06 + j * 0.08, 0.13 + j * 0.08], [-1.35, 0.6]);
-  box('Planks.Spacer', 'Wood', [1.72, 2.12], [0, 0.06], [-1.2, -1.1]);
-  box('Planks.Spacer', 'Wood', [1.72, 2.12], [0, 0.06], [0.35, 0.45]);
-  for (const x of [-1.95, -1.75]) {
-    box('Tool.Handle', 'WoodLight', [x - 0.02, x + 0.02], [1.2, 2.0], [ZB + 0.03, ZB + 0.07]);
-    box('Tool.Head', 'Iron', [x - 0.03, x + 0.1], [1.2, 1.33], [ZB + 0.03, ZB + 0.08], { x: [x - 0.03, x + 0.03] });
+  // Log pile under the roof - on the right, or across the whole shed when open.
+  const pileX = open ? [-X + 0.25, X - 0.25] : [0.15, X - 0.2];
+  const rows = open ? 5 : 4;
+  for (let row = 0; row < rows; row++) {
+    const count = 5 - Math.floor(row * 0.8);
+    for (let i = 0; i < count; i++) {
+      const z = ZB + 0.35 + i * 0.38 + row * 0.18;
+      const y = 0.2 + row * 0.33;
+      const d = ((row * 7 + i * 3) % 5) * 0.05 - 0.1;
+      log(m, [pileX[0] + d, pileX[1] - d], y, z, 0.17);
+    }
   }
-  box('Saw.Blade', 'Iron', [0.3, 1.2], [1.6, 1.72], [ZB + 0.03, ZB + 0.05], { x: [0.3, 1.1] });
-  box('Saw.Handle', 'WoodLight', [1.2, 1.35], [1.6, 1.8], [ZB + 0.03, ZB + 0.07]);
+  for (const x of [pileX[0] - 0.1, pileX[1] + 0.1]) box('Pile.Stake', 'Wood', [x - 0.04, x + 0.04], [0, 1.2], [ZB + 0.2, ZB + 0.28]);
+  // Stacked planks by the front post (room variants) and tools on a post.
+  if (!open) {
+    for (let j = 0; j < 5; j++) box('Planks', j % 2 ? 'WoodLight' : 'LogEnd', [-2.15, -0.35], [0.06 + j * 0.08, 0.13 + j * 0.08], [0.05, 0.45]);
+    box('Planks.Spacer', 'Wood', [-1.9, -1.8], [0, 0.06], [0.05, 0.45]);
+    box('Planks.Spacer', 'Wood', [-0.7, -0.6], [0, 0.06], [0.05, 0.45]);
+  }
+  for (const [x, dy] of [[0.07, 0], [0.12, 0.25]]) {
+    box('Tool.Handle', 'WoodLight', [x - 0.02, x + 0.02], [1.0 + dy, 1.8 + dy], [ZF - 0.16, ZF - 0.12]);
+    box('Tool.Head', 'Iron', [x - 0.03, x + 0.12], [1.0 + dy, 1.13 + dy], [ZF - 0.17, ZF - 0.12], { x: [x - 0.03, x + 0.03] });
+  }
+  box('Saw.Blade', 'Iron', [-0.95, -0.2], [1.6, 1.7], [ZF - 0.14, ZF - 0.12], { x: [-0.95, -0.35] });
+  box('Saw.Handle', 'WoodLight', [-0.2, -0.08], [1.6, 1.78], [ZF - 0.15, ZF - 0.11]);
 
   // Yard: chopping block with an axe, split firewood, sawhorse with a log.
-  box('Block', 'Bark', [0.95, 1.55], [0, 0.5], [1.7, 2.3], { n: 10 });
-  box('Block.Top', 'LogEnd', [0.97, 1.53], [0.5, 0.52], [1.72, 2.28], { n: 10 });
-  beam('Axe.Handle', 'WoodLight', [1.2, 0.5, 1.95], [1.55, 1.05, 2.3], 0.05);
-  box('Axe.Head', 'Iron', [1.1, 1.3], [0.47, 0.6], [1.9, 1.98], { x: [1.14, 1.26] });
+  box('Block', 'Bark', [0.95, 1.55], [0, 0.5], [1.55, 2.15], { n: 10 });
+  box('Block.Top', 'LogEnd', [0.97, 1.53], [0.5, 0.52], [1.57, 2.13], { n: 10 });
+  beam('Axe.Handle', 'WoodLight', [1.2, 0.5, 1.8], [1.55, 1.05, 2.15], 0.05);
+  box('Axe.Head', 'Iron', [1.1, 1.3], [0.47, 0.6], [1.75, 1.83], { x: [1.14, 1.26] });
   for (let i = 0; i < 7; i++) {
-    const x = 1.75 + (i % 3) * 0.18, z = 1.75 + Math.floor(i / 3) * 0.2, y = i === 6 ? 0.14 : 0;
+    const x = 1.75 + (i % 3) * 0.18, z = 1.6 + Math.floor(i / 3) * 0.2, y = i === 6 ? 0.14 : 0;
     box('Firewood', i % 2 ? 'LogEnd' : 'Bark', [x - 0.08, x + 0.08], [y, y + 0.14], [z - 0.07, z + 0.07], { n: 3, rot: i });
   }
   for (const x of [-1.25, -0.55]) {
-    beam('Sawhorse.Leg', 'Wood', [x, 0, 1.75], [x, 0.8, 2.2], 0.07);
-    beam('Sawhorse.Leg', 'Wood', [x, 0, 2.25], [x, 0.8, 1.8], 0.07);
+    beam('Sawhorse.Leg', 'Wood', [x, 0, 1.6], [x, 0.8, 2.05], 0.07);
+    beam('Sawhorse.Leg', 'Wood', [x, 0, 2.1], [x, 0.8, 1.65], 0.07);
   }
-  log(m, [-1.7, -0.05], 0.9, 2.0, 0.14);
-  box('Saw.Bow', 'Wood', [-0.9, -0.85], [1.05, 1.5], [1.9, 2.1]);
-  lantern(m, 0, YF - 0.6, ZF + 0.02);
-  box('Lantern.Chain', 'Iron', [-0.01, 0.01], [YF - 0.4, YF - 0.24], [ZF, ZF + 0.04]);
-  write(dir, 'lumber_camp', header('lumber_camp', 'Holzlager', '# Material Paint (das Dach) bekommt die Gebaeudefarbe aus dem Spiel.\n'), m, '0.490 0.360 0.190');
+  log(m, [-1.7, -0.05], 0.9, 1.85, 0.14);
+  lantern(m, 0, EF - 0.6, ZF + 0.02);
+  box('Lantern.Chain', 'Iron', [-0.01, 0.01], [EF - 0.4, EF - 0.24], [ZF, ZF + 0.04]);
+  // Ivy up a front post.
+  for (let i = 0; i < 12; i++) {
+    const a = i * 1.9, y = 0.1 + i * 0.18, s = 0.07 + (i % 3) * 0.02;
+    const [x, z] = [X + Math.cos(a) * 0.14, ZF + Math.sin(a) * 0.14];
+    box('Ivy', i % 2 ? 'Ivy' : 'IvyDark', [x - s, x + s], [y, y + s * 1.4], [z - s, z + s], { r: 0.3 });
+  }
+
+  // Wo Dorfbewohner abladen: vorn unter dem Dach (unsichtbar, liest das Spiel aus).
+  box('Entry', 'Soot', [0.32, 0.38], [0, 0.05], [1.5, 1.55]);
+  if (mirror) {
+    m.out = m.out.map((l) => {
+      if (!l.startsWith('v ')) return l;
+      const [x, y, z] = l.split(' ').slice(1);
+      return `v ${-Number(x)} ${y} ${z}`;
+    });
+  }
+  write(dir, file, header(file, 'Holzlager', '# Material Paint (Band und Wappen) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet.\n'), m, '0.490 0.360 0.190');
 }
 
 // --- Mining camp: shed on a stone back wall, rails with an ore cart, piles
@@ -749,7 +917,9 @@ function miningCamp() {
   box('Sieve', 'Wood', [0.9, 1.3], [0.1, 0.2], [0.1, 0.5], { n: 10 });
   lantern(m, X - 0.05, 1.7, ZF + 0.2);
   box('Lantern.Hook', 'Iron', [X - 0.08, X - 0.02], [1.9, 1.95], [ZF, ZF + 0.22]);
-  write(dir, 'mining_camp', header('mining_camp', 'Minenlager', '# Material Paint (das Dach) bekommt die Gebaeudefarbe aus dem Spiel.\n'), m, '0.590 0.600 0.640');
+  // Wo Dorfbewohner abladen: vorn neben den Schienen (unsichtbar, liest das Spiel aus).
+  box('Entry', 'Soot', [-0.93, -0.87], [0, 0.05], [1.3, 1.35]);
+  write(dir, 'mining_camp', header('mining_camp', 'Minenlager', '# Material Paint (das Dach) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet.\n'), m, '0.590 0.600 0.640');
 }
 
 house({ file: 'house' });
@@ -759,6 +929,12 @@ house({ file: 'house_2', stone: true, mirror: true });
 house({ file: 'house_3', storeys: 1, turn: 2 });
 house({ file: 'house_4', storeys: 1, stone: true, mirror: true });
 townCenter();
-mill();
-lumberCamp();
+mill({ file: 'mill' });
+mill({ file: 'mill_2', stone: true, mirror: true });
+mill({ file: 'mill_3', tall: true });
+mill({ file: 'mill_4', stone: true, mirror: true, tall: true, stripes: true });
+lumberCamp({ file: 'lumber_camp' });
+lumberCamp({ file: 'lumber_camp_2', stone: true, mirror: true });
+lumberCamp({ file: 'lumber_camp_3', open: true });
+lumberCamp({ file: 'lumber_camp_4', open: true, mirror: true });
 miningCamp();

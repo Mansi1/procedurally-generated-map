@@ -3,6 +3,7 @@
 # Vorderseite nach +Z - so wie Blender ein Modell exportiert, das in der
 # Vorderansicht zum Betrachter schaut.
 # Material Paint (Band und Wappen) bekommt die Gebaeudefarbe aus dem Spiel.
+# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet.
 mtllib house.mtl
 o Ground
 v -0.988 0 -1.75
@@ -5158,3 +5159,20 @@ f 2545 2546 2554 2553
 f 2546 2547 2555 2554
 f 2547 2548 2556 2555
 f 2548 2541 2549 2556
+o Entry
+v 0.52 0 1.8
+v 0.52 0 1.85
+v 0.58 0 1.85
+v 0.58 0 1.8
+v 0.52 0.05 1.8
+v 0.52 0.05 1.85
+v 0.58 0.05 1.85
+v 0.58 0.05 1.8
+usemtl Soot
+s off
+f 2560 2559 2558 2557
+f 2561 2562 2563 2564
+f 2557 2558 2562 2561
+f 2558 2559 2563 2562
+f 2559 2560 2564 2563
+f 2560 2557 2561 2564

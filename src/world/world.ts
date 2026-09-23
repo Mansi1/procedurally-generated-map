@@ -7,7 +7,7 @@
 import { findPath, lineOfSight } from './pathfinding';
 import { uniqueName } from './names';
 import type { EntityInstance } from '../gl/entityRenderer';
-import { BUILDING_HEADING, FALL_LYING, POSE, SHAPE, frozenMillMotion, millMotion } from '../gl/entityRenderer';
+import { BUILDING_HEADING, FALL_LYING, POSE, SHAPE, frozenMillMotion, millMotion, modelEntry } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
 import { reliefZ } from '../noise';
 import {
@@ -16,6 +16,7 @@ import {
   MAX_BUILD_SLOPE,
   MAX_GATHERERS,
   MAX_TRAINING_QUEUE,
+  player,
   VILLAGER,
   initialStock,
 } from './buildings';
@@ -81,6 +82,8 @@ export interface Villager {
    * er berechnet ist. Nicht gespeichert - nach dem Laden neu gesucht.
    */
   path: { x: number; y: number }[] | null;
+  /** Sekunden, die er noch im Gebäude ist (abladen) - solange unsichtbar. */
+  inside: number;
   pathTarget: { x: number; y: number } | null;
 }
 
@@ -137,13 +140,19 @@ export interface ViewRect {
   height: number;
 }
 
-/** Häuser gibt es in vier Varianten - welche, hängt fest am Bauplatz. */
-const HOUSES = [SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4];
+/** Häuser, Mühlen und Holzlager gibt es in vier Varianten - welche, hängt fest am Bauplatz. */
+const VARIANTS: Partial<Record<BuildingType, number[]>> = {
+  house: [SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4],
+  lumberjack: [SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4],
+};
 
 function buildingShape(type: BuildingType, x: number, y: number): number {
-  if (type !== 'house') return BUILDINGS[type].shape;
+  const kinds = BUILDINGS[type].shape === SHAPE.mill
+    ? [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4]
+    : VARIANTS[type];
+  if (!kinds) return BUILDINGS[type].shape;
   const h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663);
-  return HOUSES[((h >>> 0) % HOUSES.length)];
+  return kinds[((h >>> 0) % kinds.length)];
 }
 
 const key = (x: number, y: number) => `${x},${y}`;
@@ -173,6 +182,7 @@ function newVillager(id: number, x: number, y: number, name: string, female: boo
     prevWorkTime: 0,
     path: null,
     pathTarget: null,
+    inside: 0,
   };
 }
 
@@ -180,6 +190,8 @@ function newVillager(id: number, x: number, y: number, name: string, female: boo
 const GATHER_SPREAD = 0.4;
 /** Abstand zur Gebäudekante, ab dem er abliefern kann. */
 const DELIVER_REACH = 0.6;
+/** So lange (Sekunden) bleibt ein Dorfbewohner beim Abladen im Gebäude. */
+const INSIDE_TIME = 1.2;
 
 interface SaveData {
   version: 3;
@@ -567,6 +579,8 @@ export class World {
   command(ids: ReadonlySet<number>, x: number, y: number): string | null {
     const selected = this.villagers.filter((v) => ids.has(v.id));
     if (selected.length === 0) return null;
+    // Wer gerade im Gebäude ablädt, kommt für den neuen Befehl sofort heraus.
+    for (const v of selected) v.inside = 0;
 
     const target = this.at(x, y);
     if (target) {
@@ -745,10 +759,21 @@ export class World {
 
   /** Läuft zum Lager; true, sobald die Ladung abgegeben ist. */
   private deliverTo(v: Villager, building: Building, dt: number): boolean {
-    // Bis an die Kante des Modells bzw. der belegten Felder - was größer ist.
+    // Im Gebäude: kurz warten, dann kommt er ohne Last wieder heraus.
+    if (v.inside > 0) {
+      v.inside -= dt;
+      if (v.inside > 0) return false;
+      v.inside = 0;
+      return true;
+    }
+    // Zur Tür (im Modell markiert), sonst bis an die Kante des Modells bzw.
+    // der belegten Felder - was größer ist.
     const def = BUILDINGS[building.type];
-    const reach = Math.max(def.footprint, def.size) / 2 + DELIVER_REACH;
-    if (!this.walk(v, building.x + 0.5, building.y + 0.5, reach, dt)) return false;
+    const entry = modelEntry(buildingShape(building.type, building.x, building.y),
+        building.x, building.y, def.size, BUILDING_HEADING);
+    const reach = entry ? 0.08 : Math.max(def.footprint, def.size) / 2 + DELIVER_REACH;
+    const [tx, ty] = entry ? [entry.x, entry.y] : [building.x + 0.5, building.y + 0.5];
+    if (!this.walk(v, tx, ty, reach, dt)) return false;
     if (v.carryType && v.carrying > 0) {
       this.stock[v.carryType] += v.carrying;
       this.onEvent?.({ kind: 'deliver', x: v.x, y: v.y });
@@ -756,6 +781,12 @@ export class World {
     v.carrying = 0;
     v.carryType = null;
     this.dirty = true;
+    // Durch die Tür hinein - einen Moment lang ist er weg.
+    if (entry) {
+      v.inside = INSIDE_TIME;
+      v.heading = Math.atan2(building.y + 0.5 - v.y, building.x + 0.5 - v.x);
+      return false;
+    }
     return true;
   }
 
@@ -973,7 +1004,7 @@ export class World {
         x: building.x,
         y: building.y,
         size: def.size,
-        color: def.color.toRGB(),
+        color: player.color.toRGB(),
         shape: buildingShape(building.type, building.x, building.y),
         alpha: 1,
         // Jede Mühle dreht in ihrem eigenen Takt.
@@ -983,6 +1014,8 @@ export class World {
     }
 
     for (const v of this.villagers) {
+      // Im Gebäude (beim Abladen) sieht man ihn nicht.
+      if (v.inside > 0) continue;
       const { x, y } = this.villagerPosition(v, blend);
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
       const phase = v.pose === POSE.walk
@@ -999,7 +1032,7 @@ export class World {
         x: x - 0.5,
         y: y - 0.5,
         size: VILLAGER.size,
-        color: VILLAGER.color.toRGB(),
+        color: player.color.toRGB(),
         // Frau oder Mann - steht beim Dorfbewohner fest (siehe Villager.female).
         shape: v.female ? SHAPE.villagerFemale : SHAPE.villager,
         alpha: 1,
@@ -1033,7 +1066,7 @@ export class World {
         x: ruin.x + shake,
         y: ruin.y - shake,
         size: def.size,
-        color: def.color.toRGB(),
+        color: player.color.toRGB(),
         shape: buildingShape(ruin.type, ruin.x, ruin.y),
         // Knapp unter 1: bleibt so vorn in der Sortierung für Halbdurchsichtiges.
         alpha: Math.max(0.01, fade * 0.999),

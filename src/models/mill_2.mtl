@@ -1,7 +1,21 @@
-# mining_camp.mtl
+# mill_2.mtl
 
 newmtl Paint
-Kd 0.590 0.600 0.640
+Kd 0.780 0.290 0.330
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Canvas
+Kd 0.930 0.900 0.820
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Dirt
+Kd 0.450 0.380 0.280
 Ka 0 0 0
 Ks 0 0 0
 d 1
@@ -14,20 +28,6 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl Gold
-Kd 0.930 0.740 0.220
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
-newmtl GoldDark
-Kd 0.700 0.520 0.120
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
 newmtl Iron
 Kd 0.400 0.420 0.450
 Ka 0 0 0
@@ -35,8 +35,43 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl Ore
-Kd 0.350 0.330 0.320
+newmtl Ivy
+Kd 0.300 0.520 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl IvyDark
+Kd 0.190 0.380 0.140
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl PlasterGrey
+Kd 0.760 0.760 0.740
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Sack
+Kd 0.800 0.720 0.560
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Shingle
+Kd 0.520 0.410 0.290
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl ShingleDark
+Kd 0.380 0.290 0.200
 Ka 0 0 0
 Ks 0 0 0
 d 1
@@ -72,6 +107,13 @@ illum 1
 
 newmtl Timber
 Kd 0.270 0.180 0.110
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl WindowLit
+Kd 1.000 0.820 0.420
 Ka 0 0 0
 Ks 0 0 0
 d 1

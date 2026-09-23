@@ -4,6 +4,7 @@
 // in isometrischer Ansicht; der Vertex-Shader hebt es auf die Geländehöhe, die
 // Farbe kommt aus dem Cache.
 
+import { MAX_FLAT_ZONES } from '../world/flatten';
 import { NOISE_LAYERS, SimplexNoise, TERRAIN_PARAMS } from '../noise';
 import {
   DISPLAY_FRAGMENT_SOURCE,
@@ -305,6 +306,9 @@ export class TerrainRenderer {
    * im oder über dem Boden.
    */
   gridCell = 1;
+  /** Eingeebnete Flächen unter Gebäuden (siehe world/flatten.ts). */
+  flatZones = new Float32Array(MAX_FLAT_ZONES * 4);
+  flatCount = 0;
 
   /** Nur für Tests: 0 = Bild, 1 = Höhe, 2 = Hangneigung. */
   debugMode = 0;
@@ -602,6 +606,8 @@ export class TerrainRenderer {
     const ppt = camera.pixelsPerTile;
     const win = this.window!;
     setCameraUniforms(gl, (name) => this.location(name), camera);
+    gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
+    gl.uniform1i(this.location('uFlatCount'), this.flatCount);
     gl.uniform2f(this.location('uWindowStart'), win.u / ppt, win.v / ppt);
     gl.uniform2f(this.location('uWindowMod'), mod(win.u, this.cacheWidth), mod(win.v, this.cacheHeight));
     gl.uniform2f(this.location('uCacheSize'), this.cacheWidth, this.cacheHeight);

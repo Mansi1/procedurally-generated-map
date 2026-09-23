@@ -154,6 +154,25 @@ export function initialStock(): Stock {
   return { wood: 350, stone: 120, gold: 0, berries: 200 };
 }
 
+/** Spielerfarben zur Auswahl in den Einstellungen - wie in AoE2. */
+export const PLAYER_COLORS: Record<string, { label: string; color: Color }> = {
+  green: { label: 'Grün', color: Color.rgb(64, 160, 72) },
+  blue: { label: 'Blau', color: Color.rgb(52, 92, 200) },
+  red: { label: 'Rot', color: Color.rgb(200, 48, 48) },
+  yellow: { label: 'Gelb', color: Color.rgb(226, 196, 40) },
+  cyan: { label: 'Türkis', color: Color.rgb(40, 180, 190) },
+  purple: { label: 'Lila', color: Color.rgb(140, 64, 180) },
+  grey: { label: 'Grau', color: Color.rgb(140, 140, 140) },
+  orange: { label: 'Orange', color: Color.rgb(230, 120, 30) },
+};
+
+/**
+ * Farbe des Spielers: Kittel und Kleid der Dorfbewohner, Band, Wappen und
+ * Fahnen der Gebäude, gestreifte Mühlenflügel, die Sammelpunkt-Fahne. Wird
+ * bei jedem Bild gelesen - die Einstellungen können sie ändern.
+ */
+export const player = { color: PLAYER_COLORS.green.color };
+
 /** Der Dorfbewohner: wird im Hauptgebäude ausgebildet und sammelt Rohstoffe. */
 export const VILLAGER = {
   label: 'Dorfbewohner',
@@ -167,7 +186,6 @@ export const VILLAGER = {
   speed: 3.2,
   /** So viel trägt er, bevor er zum Lager geht. */
   capacity: 10,
-  color: Color.rgb(70, 110, 190),
   /**
    * Figurgröße in Tiles - nur fürs Bild; die Figur ist 1.7-mal so hoch. Die
    * Modelle rechnen mit 1 Tile = 5 m: 0.2 * 1.7 * 5 m = 1.7 m, so passt ein

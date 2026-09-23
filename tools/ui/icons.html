@@ -2,7 +2,7 @@
 <html><body style="margin:0;background:transparent"><canvas id="c" width="256" height="256"></canvas>
 <script src="icondata.js"></script><script>
 function parse(src,mtl){const K={};let cur;for(const l of mtl.split('\n')){const a=l.trim().split(/\s+/);if(a[0]=='newmtl')cur=a[1];if(a[0]=='Kd')K[cur]=a.slice(1).map(Number)}
-K.Paint=K.Paint||[.3,.55,.25];K.Tunic=[0.2,0.3,0.8];K.Load=[0.5,0.35,0.2];
+K.Paint=K.Paint||[.3,.55,.25];K.Tunic=[0.25,0.63,0.28];K.Load=[0.5,0.35,0.2];
 const P=[],T=[];let m='',o='';for(const l of src.split('\n')){const a=l.trim().split(/\s+/);if(a[0]=='v')P.push(a.slice(1).map(Number));if(a[0]=='o')o=a[1];if(a[0]=='usemtl')m=a[1];if(a[0]=='f'){const c=a.slice(1).map(i=>P[+i.split('/')[0]-1]);for(let i=1;i+1<c.length;i++)T.push({k:K[m]||[.6,.6,.6],o,p:[c[0],c[i],c[i+1]]});}}return T.filter(t=>!/^(Load|Arm\.R\.Lower\.Tool)/.test(t.o))}
 const W=256,H=256,ctx=document.getElementById('c').getContext('2d');
 function render(items,yaw,pitch){const img=ctx.createImageData(W,H);const zb=new Float32Array(W*H).fill(-1e9);

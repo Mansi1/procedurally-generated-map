@@ -6,6 +6,7 @@
 // beschreiben.
 
 import { PROJECT_GLSL } from './iso';
+import { FLATTEN_GLSL } from '../world/flatten';
 
 /**
  * Rauschen und Höhenfunktion. Steht im Vertex-Shader (Relief) und im
@@ -213,6 +214,7 @@ precision highp usampler2DArray;
 
 ${TERRAIN_COMMON}
 ${PROJECT_GLSL}
+${FLATTEN_GLSL}
 
 uniform vec2  uGridOrigin;  // (u, v) des ersten Eckpunkts
 uniform float uGridCell;    // Zellgroesse in u/v-Einheiten
@@ -233,6 +235,8 @@ void main() {
     // Mit der Zellgroesse als Abtastschritt: Feinoktaven, die das Gitter
     // nicht aufloesen kann, bleiben aus dem Relief heraus.
     z = reliefZ(elevation(world * uMapScale, uGridCell)) * uReliefScale;
+    // Unter Gebäuden eben (siehe world/flatten.ts).
+    z = flattenZ(world, z);
   }
   vWorld = world;
   // Ringpuffer: Texturkoordinaten laufen ueber den Rand hinaus, REPEAT
