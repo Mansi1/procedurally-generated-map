@@ -28,7 +28,7 @@ import {
 } from './world/buildings';
 import { World, type Villager } from './world/world';
 import { ResourceField } from './world/resources';
-import { GATHER_CURSOR } from './cursors';
+import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
@@ -187,8 +187,11 @@ function select(type: BuildingType | null) {
  */
 function updateCursor() {
   let cursor = 'crosshair';
+  const trainer = selectedBuilding ? world.building(selectedBuilding) : undefined;
   if (selected) {
     cursor = 'copy';
+  } else if (trainer && BUILDINGS[trainer.type].trains) {
+    cursor = RALLY_CURSOR;
   } else if (selectedVillagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
     const found = world.remainingAt(mouseTileX, mouseTileY);
     if (found.type && found.amount > 0 && !world.at(mouseTileX, mouseTileY)) {
@@ -370,9 +373,19 @@ canvas.addEventListener('contextmenu', (e) => {
     select(null);
     return;
   }
-  if (selectedVillagers.size === 0) return;
   const p = canvasPoint(e);
   const { x, y } = tileAt(p.x, p.y);
+
+  // Ausbildendes Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt.
+  const trainer = selectedBuilding ? world.building(selectedBuilding) : undefined;
+  if (trainer && BUILDINGS[trainer.type].trains) {
+    const reason = world.setRally(trainer, x, y);
+    if (reason) hint(reason);
+    updateSelectionUI();
+    return;
+  }
+
+  if (selectedVillagers.size === 0) return;
   const reason = world.command(selectedVillagers, x, y);
   if (reason) hint(reason);
   updateSelectionUI();
@@ -472,6 +485,9 @@ function updateSelectionUI() {
           `${full ? ' - <span class="muted">Bevölkerung voll, baue ein Haus</span>' : ''}</div>` +
           `<div class="bar"><i style="width:${percent}%"></i></div>`;
       }
+      html += building.rally
+        ? `<div class="muted">Sammelpunkt gesetzt - Rechtsklick versetzt ihn, auf das Gebäude hebt ihn auf.</div>`
+        : `<div class="muted">Rechtsklick auf die Karte setzt einen Sammelpunkt für neue Dorfbewohner.</div>`;
       const cost = Object.entries(VILLAGER.cost)
           .map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', ');
       actions.push(
@@ -777,6 +793,20 @@ function collectOverlay(blend: number) {
       x: building.x, y: building.y, size: BUILDINGS[building.type].footprint + 0.4,
       color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
     });
+    // Sammelpunkt: Fahne in der Spielerfarbe, nur solange das Gebäude
+    // ausgewählt ist - sonst stünden überall Fahnen herum.
+    if (building.rally) {
+      overlay.push({
+        // Etwas zur Kamera hin versetzt: auf einem Vorkommen steht sie so vor
+        // dem Baum oder Fels statt dahinter.
+        x: building.rally.x + 0.3, y: building.rally.y + 0.3, size: 0.27,
+        color: BUILDINGS.town_center.color.toRGB(), shape: SHAPE.rallyFlag, alpha: 1,
+      });
+      overlay.push({
+        x: building.rally.x, y: building.rally.y, size: 0.5,
+        color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
+      });
+    }
   }
   if (selectedResource) {
     overlay.push({

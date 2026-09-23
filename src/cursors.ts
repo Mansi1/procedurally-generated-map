@@ -39,3 +39,10 @@ export const GATHER_CURSOR: Record<GatherType, string> = {
       '<circle cx="14" cy="22" r="5" fill="#c23b45" stroke="#111" stroke-width="1.5"/>',
       14, 16),
 };
+
+/** Sammelpunkt setzen: kleine Fahne, Klickpunkt am Fuß des Masts. */
+export const RALLY_CURSOR = svgCursor(
+    '<path d="M7 29 L7 4" stroke="#111" stroke-width="4.5" stroke-linecap="round"/>' +
+    '<path d="M7 29 L7 4" stroke="#9a6532" stroke-width="2.5" stroke-linecap="round"/>' +
+    '<path d="M8 5 L25 8 L8 15 Z" fill="#4670be" stroke="#111" stroke-width="1.5" stroke-linejoin="round"/>',
+    7, 29);

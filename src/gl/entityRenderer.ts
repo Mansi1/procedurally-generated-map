@@ -33,6 +33,8 @@ import goldObj from '../models/gold.obj?raw';
 import goldMtl from '../models/gold.mtl?raw';
 import berryBushObj from '../models/berry_bush.obj?raw';
 import berryBushMtl from '../models/berry_bush.mtl?raw';
+import rallyFlagObj from '../models/rally_flag.obj?raw';
+import rallyFlagMtl from '../models/rally_flag.mtl?raw';
 
 /** Formen für aParams.x - die Zahlen stehen so auch im Shader. */
 export const SHAPE = {
@@ -66,10 +68,13 @@ export const SHAPE = {
   goldRock: 14,
   /** Beerenstrauch (models/berry_bush.obj). */
   berryBush: 15,
+  /** Fahne am Sammelpunkt eines Gebäudes (models/rally_flag.obj). */
+  rallyFlag: 16,
 } as const;
 
-/** Ab dieser Form sind es Vorkommen, keine Gebäude oder Figuren. */
+/** Von bis: diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
 const FIRST_NATURAL = SHAPE.tree;
+const LAST_NATURAL = SHAPE.berryBush;
 
 /** Gebäude schauen schräg zur Kamera (die steht bei +x +y). */
 const BUILDING_HEADING = 0.5;
@@ -167,6 +172,7 @@ const int P_ARM_R = 4;
 const int P_HEAD = 5;
 const int P_LOAD = 6;
 const int P_SAILS = 7;
+const int P_CLOTH = 8;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -212,7 +218,7 @@ void main() {
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5;
-    bool natural = shape >= ${FIRST_NATURAL};
+    bool natural = shape >= ${FIRST_NATURAL} && shape <= ${LAST_NATURAL};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
     // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
     float size = natural ? aParams.z
@@ -244,6 +250,12 @@ void main() {
       // Die Last waechst mit der Ladung aus dem Ruecken heraus.
       if (part == P_LOAD) p = uLoadAnchor + (p - uLoadAnchor) * aMotion.w;
       p.z += bob;
+    }
+
+    if (part == P_CLOTH) {
+      // Fahnentuch weht: eine Welle läuft vom Mast zum freien Ende, das
+      // weiter ausschlägt als die Seite am Mast.
+      p.x += sin(uTime * 5.0 - p.y * 14.0) * 0.12 * p.y;
     }
 
     if (part == P_SAILS) {
@@ -434,6 +446,7 @@ const PARTS: [prefix: string, part: number][] = [
   ['Head', 5],
   ['Load', 6],
   ['Sails', 7],
+  ['Cloth', 8],
 ];
 
 /** Materialien, die zur Laufzeit gefärbt werden - aMaterial.w im Shader. */
@@ -552,6 +565,9 @@ const MODELS: { shape: number; model: Model; scale: number }[] = [
   { shape: SHAPE.stoneRock, model: loadModel(stoneObj, stoneMtl, 'width'), scale: 1 },
   { shape: SHAPE.goldRock, model: loadModel(goldObj, goldMtl, 'width'), scale: 1 },
   { shape: SHAPE.berryBush, model: loadModel(berryBushObj, berryBushMtl, 'width'), scale: 1 },
+  // Nach Höhe gemessen: das Tuch bewegt sich und zählt nicht zur Breite,
+  // der Mast allein wäre als Maßstab viel zu schmal.
+  { shape: SHAPE.rallyFlag, model: loadModel(rallyFlagObj, rallyFlagMtl, 'height'), scale: 1 },
 ];
 
 interface Mesh {
@@ -675,7 +691,9 @@ export class EntityRenderer {
     solids.sort(backToFront);
     // Nur Halbdurchsichtiges braucht die Reihenfolge; Bäume und Felsen sind
     // undurchsichtig, der Tiefenpuffer reicht - und es sind Tausende.
-    for (const m of this.models) if (m.shape < FIRST_NATURAL) m.list.sort(backToFront);
+    for (const m of this.models) {
+      if (m.shape < FIRST_NATURAL || m.shape > LAST_NATURAL) m.list.sort(backToFront);
+    }
 
     const bars = healthBars ? instances.filter((e) => e.health !== undefined) : [];
     const total = instances.length + bars.length;

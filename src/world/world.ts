@@ -28,6 +28,8 @@ export interface Building {
   progress: number;
   /** Verbleibende Trefferpunkte - höchstens BUILDINGS[type].hp. */
   hp: number;
+  /** Sammelpunkt (Tile) für frisch Ausgebildete, oder null. */
+  rally: { x: number; y: number } | null;
 }
 
 /**
@@ -117,7 +119,7 @@ const DELIVER_REACH = 0.3;
 interface SaveData {
   version: 2;
   stock: Stock;
-  buildings: { t: BuildingType; x: number; y: number; q?: number; hp?: number }[];
+  buildings: { t: BuildingType; x: number; y: number; q?: number; hp?: number; r?: [number, number] }[];
   villagers: { x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number }[];
   /** "x,y" -> bereits entnommene Menge. */
   harvested: Record<string, number>;
@@ -364,7 +366,7 @@ export class World {
     if (reason) return reason;
 
     this.pay(BUILDINGS[type].cost);
-    this.buildings.set(key(x, y), { type, x, y, queue: 0, progress: 0, hp: BUILDINGS[type].hp });
+    this.buildings.set(key(x, y), { type, x, y, queue: 0, progress: 0, hp: BUILDINGS[type].hp, rally: null });
     for (const [tx, ty] of this.footprintTiles(x, y, type)) {
       this.occupied.set(key(tx, ty), key(x, y));
     }
@@ -389,6 +391,26 @@ export class World {
       if (v.task.kind === 'deliver' && v.task.building === anchor) v.task = { kind: 'idle' };
     }
     this.dirty = true;
+  }
+
+  /**
+   * Sammelpunkt setzen: wer hier fertig ausgebildet wird, bekommt denselben
+   * Befehl, als hätte man ihn mit Rechtsklick auf dieses Feld geschickt -
+   * auf ein Vorkommen sammelt er, sonst geht er hin. Ein Klick auf das
+   * Gebäude selbst hebt den Sammelpunkt auf.
+   */
+  setRally(building: Building, x: number, y: number): string | null {
+    if (!BUILDINGS[building.type].trains) return 'Nur ausbildende Gebäude haben einen Sammelpunkt';
+    if (this.at(x, y) === building) {
+      building.rally = null;
+      this.dirty = true;
+      return null;
+    }
+    const tile = this.probe.getTile(x, y);
+    if (tile.tileType === 'water' || tile.tileType === 'deep_water') return 'Dorfbewohner können nicht schwimmen';
+    building.rally = { x, y };
+    this.dirty = true;
+    return null;
   }
 
   /** Stellt einen Dorfbewohner in die Warteschlange. Kosten werden sofort fällig. */
@@ -481,7 +503,9 @@ export class World {
     const spread = (this.nextId % 5) * 0.4 - 0.8;
     const x = building.x + 0.5 + r + spread * 0.5;
     const y = building.y + 0.5 + r - spread * 0.5;
-    this.villagers.push(newVillager(this.nextId++, x, y));
+    const villager = newVillager(this.nextId++, x, y);
+    this.villagers.push(villager);
+    if (building.rally) this.command(new Set([villager.id]), building.rally.x, building.rally.y);
     this.dirty = true;
   }
 
@@ -739,7 +763,10 @@ export class World {
     const data: SaveData = {
       version: 2,
       stock: this.stock,
-      buildings: [...this.buildings.values()].map((b) => ({ t: b.type, x: b.x, y: b.y, q: b.queue, hp: b.hp })),
+      buildings: [...this.buildings.values()].map((b) => ({
+        t: b.type, x: b.x, y: b.y, q: b.queue, hp: b.hp,
+        ...(b.rally ? { r: [b.rally.x, b.rally.y] as [number, number] } : {}),
+      })),
       villagers: this.villagers.map((v) => ({
         x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp,
       })),
@@ -793,7 +820,8 @@ export class World {
       if (!BUILDINGS[b.t]) continue;
       // Ältere Speicherstände kennen keine Trefferpunkte - dann unbeschädigt.
       const hp = Math.min(b.hp ?? BUILDINGS[b.t].hp, BUILDINGS[b.t].hp);
-      this.buildings.set(key(b.x, b.y), { type: b.t, x: b.x, y: b.y, queue: b.q ?? 0, progress: 0, hp });
+      const rally = b.r ? { x: b.r[0], y: b.r[1] } : null;
+      this.buildings.set(key(b.x, b.y), { type: b.t, x: b.x, y: b.y, queue: b.q ?? 0, progress: 0, hp, rally });
       for (const [tx, ty] of this.footprintTiles(b.x, b.y, b.t)) {
         this.occupied.set(key(tx, ty), key(b.x, b.y));
       }
