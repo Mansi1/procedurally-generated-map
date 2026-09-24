@@ -38,7 +38,7 @@ import { World, furrowCells, type Villager } from './world/world';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './components/ResourceBar';
 import { BuildMenu } from './components/BuildMenu';
-import { mountHud } from './components/Hud';
+import { mountGame } from './components/Hud';
 import { renderSelection, type FarmView, type SelectionView, type TrainView } from './components/SelectionPanel';
 import { SettingsMenu } from './components/SettingsMenu';
 import { loadSettings, saveSettings } from './settings';
@@ -47,9 +47,9 @@ import { Sound, type SoundName } from './audio';
 import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
 
-// Erst das Grundgerüst der Oberfläche (components/Hud.tsx) - danach werden
-// seine Teile hier über ihre IDs gefunden.
-mountHud(document.getElementById('hud')!);
+// Erst Spielfeld-Canvas und Oberfläche (components/Hud.tsx) - danach werden
+// ihre Teile hier über ihre IDs gefunden.
+mountGame(document.getElementById('app')!);
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;

@@ -1,10 +1,10 @@
 // Hud.tsx
-// Das Grundgerüst der Oberfläche über dem Spielfeld: Tastenhilfe, Legende und
-// Entwickler-Infos, die Plätze für Rohstoffleiste, Auswahl, Hinweise und
-// Baumenü, Minimap, Ton-Knopf, Kompass und das Pause-Schild. main.ts rendert
-// es einmal vor allem anderen und findet die Teile dann über ihre IDs; was
-// sich ändert, setzt es gezielt (Texte, hidden, Klassen) oder rendert die
-// jeweilige Komponente hinein.
+// Die ganze Spielseite: das Canvas fürs Spielfeld und darüber das Grundgerüst
+// der Oberfläche - Tastenhilfe, Legende und Entwickler-Infos, die Plätze für
+// Rohstoffleiste, Auswahl, Hinweise und Baumenü, Minimap, Ton-Knopf, Kompass
+// und das Pause-Schild. main.ts rendert es einmal vor allem anderen und findet
+// die Teile dann über ihre IDs; was sich ändert, setzt es gezielt (Texte,
+// hidden, Klassen) oder rendert die jeweilige Komponente hinein.
 
 import { render } from 'defuss';
 import { TILE_TYPE_COLOR, TILE_TYPE_LABEL } from '../map';
@@ -103,7 +103,13 @@ function Hud() {
   );
 }
 
-/** Rendert das Grundgerüst in `root` - einmal, bevor main.ts seine Teile sucht. */
-export function mountHud(root: HTMLElement) {
-  render(<Hud />, root);
+/** Rendert Spielfeld-Canvas und Grundgerüst in `root` - einmal, bevor main.ts seine Teile sucht. */
+export function mountGame(root: HTMLElement) {
+  render(
+    <>
+      <canvas id="game" />
+      <Hud />
+    </>,
+    root,
+  );
 }

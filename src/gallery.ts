@@ -216,7 +216,7 @@ const titleAt = ROWS.map((row, r) => {
 
 // Die Seite (components/GalleryOverlay.tsx): Canvas, Kopfzeile, Beschriftungen.
 const { canvas, labels: labelEls, titles: titleEls } = mountGallery(
-  document.body,
+  document.getElementById('app')!,
   placed.map((p) => p.item.label),
   titleAt.map((t) => t.title),
 );
