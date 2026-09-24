@@ -1069,7 +1069,10 @@ function updateSelectionUI() {
   }
   for (const a of [...selectedBuildings]) if (!world.building(a)) selectedBuildings.delete(a);
   if (selectedBuilding && !selectedBuildings.has(selectedBuilding)) selectedBuilding = [...selectedBuildings][0] ?? null;
-  renderSelection(selectionEl, selectionView());
+  const shown = selectionView();
+  // Ohne Auswahl und ohne Hauptgebäude kein Panel - kein "Los geht's".
+  selectionEl.hidden = shown.kind === 'start';
+  renderSelection(selectionEl, shown);
   // Auswahl hat sich vielleicht geändert, oder das Feld unter dem Zeiger ist
   // inzwischen leer gesammelt.
   updateCursor();
