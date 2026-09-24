@@ -1,4 +1,13 @@
+import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
+import { EntityRenderer, type EntityInstance } from './gl/entityRenderer';
+import { TerrainRenderer } from './gl/terrainRenderer';
+import {
+  screenToGround,
+  snapCamera,
+  visibleWorldRect,
+  type IsoView,
+} from './gl/iso';
 import {
   FractalNoise,
   MapGenerator,
@@ -63,26 +72,81 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, Color> = {
   berries: Color.rgb(168, 52, 62),
 } as const;
 
+/**
+ * Eine Regel: auf `biome` entsteht `type`, sobald das Ressourcen-Rauschen über
+ * `threshold` liegt und das feinere Häufchen-Rauschen über `cluster`. Das
+ * erste legt grob fest, in welcher Gegend etwas vorkommt, das zweite teilt die
+ * Gegend in kleine Vorkommen von einigen Tiles - wie in AoE2 ein paar
+ * Beerensträucher oder ein Häufchen Stein statt einer ganzen Wiese voll.
+ * Die Menge ist (r + 1) * yield, abgerundet.
+ *
+ * Die Reihenfolge ist Teil der Regel - die erste passende gewinnt. Gold steht
+ * deshalb vor Stein: beide liegen im Gebirge, Gold nur in der oberen Spitze
+ * der Verteilung, der Rest wird Stein.
+ *
+ * Diese Tabelle ist die einzige Quelle für die Schwellen. Der Shader bekommt
+ * sie als Uniforms (TERRAIN_PALETTE.resourceRules), die CPU-Fassung liest sie
+ * in resourceFromNoise(). Vorher standen die Zahlen doppelt da - in TypeScript
+ * und in GLSL - und mussten von Hand synchron gehalten werden.
+ */
+export interface ResourceRule {
+  biome: TileType;
+  type: Exclude<ResourceType, "none">;
+  threshold: number;
+  /** Schwelle fürs Häufchen-Rauschen (-1..1); unter -1 zählt es nicht (Wälder). */
+  cluster: number;
+  yield: number;
+}
+
+export const RESOURCE_RULES: readonly ResourceRule[] = [
+  { biome: "forest", type: "wood", threshold: 0.15, cluster: -2, yield: 50 },
+  { biome: "mountain", type: "gold", threshold: 0.4, cluster: 0.75, yield: 40 },
+  { biome: "mountain", type: "stone", threshold: 0.1, cluster: 0.72, yield: 40 },
+  { biome: "grass", type: "berries", threshold: 0.3, cluster: 0.7, yield: 30 },
+];
+
+/**
+ * Maßstab des Häufchen-Rauschens: ein Vorkommen misst einige Tiles. Jede
+ * Regel liest es an einer eigenen Stelle (RESOURCE_CLUSTER_OFFSET * Index),
+ * damit Stein und Gold nicht in denselben Häufchen liegen. Der Shader rechnet
+ * genauso (resourceAt in terrainShader.ts).
+ */
+const RESOURCE_CLUSTER_SCALE = 0.075;
+const RESOURCE_CLUSTER_OFFSET = [40, 68] as const;
+
+/** Position eines Bioms in TILE_TYPE_GRADIENT - entspricht den B_*-Konstanten im Shader. */
+const BIOME_INDEX = Object.fromEntries(
+  (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t, i) => [t, i]),
+) as Record<TileType, number>;
+
+/** Position einer Ressource in RESOURCE_TYPE_COLORS - entspricht uResourceColor[] im Shader. */
+const RESOURCE_INDEX = Object.fromEntries(
+  (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map((t, i) => [t, i]),
+) as Record<ResourceType, number>;
+
+/**
+ * Wertet RESOURCE_RULES aus - erste passende Regel gewinnt. `cluster(i)` ist
+ * das Häufchen-Rauschen für Regel i an diesem Tile.
+ */
+export function resourceFromNoise(
+  tileType: TileType,
+  r: number,
+  cluster: (rule: number) => number,
+): { type: ResourceType; amount: number } {
+  for (let i = 0; i < RESOURCE_RULES.length; i++) {
+    const rule = RESOURCE_RULES[i];
+    if (rule.biome === tileType && r > rule.threshold && (rule.cluster < -1 || cluster(i) > rule.cluster)) {
+      return { type: rule.type, amount: Math.floor((r + 1) * rule.yield) };
+    }
+  }
+  return { type: "none", amount: 0 };
+}
+
 export interface RenderTile extends MapTile {
   resource: ResourceType;
   resourceAmount: number; // 0-100
   /** Einmal bei der Chunk-Erzeugung berechnet. */
   rgb: RGB;
-}
-
-/**
- * Ein Chunk hält nur noch seine Farben, nicht die Tile-Objekte. Beim
- * Herauszoomen sind einige hundert Chunks gleichzeitig geladen - als Objekte
- * wären das über 100 MB und entsprechend lange GC-Pausen. Einzelne Tiles
- * (für die Anzeige unter dem Mauszeiger) werden bei Bedarf neu berechnet.
- */
-export interface Chunk {
-  /** RGBA je Zelle, zeilenweise - der Renderer kopiert daraus ganze Zeilen. */
-  colors: Uint8ClampedArray;
-  cx: number;
-  cy: number;
-  /** Welt-Tiles je Zelle. 1 = Detail, >1 = grobe Übersicht für die Minimap. */
-  step: number;
 }
 
 /**
@@ -99,28 +163,7 @@ const WATER_RAMP: RGB[] = [
 const SURF: RGB = [178, 216, 224];
 
 /** Weltmaßstab der Ressourcen-Vorkommen (1/RESOURCE_SCALE Tiles pro Einheit). */
-const RESOURCE_SCALE = 0.018;
-
-/** Farbe für noch nicht erzeugte Chunks. */
-const LOADING_COLOR: RGB = [18, 22, 28];
-
-/**
- * Kantenlänge einer Abtastzelle in CSS-Pixeln. Kleiner = feineres Gelände beim
- * Hineinzoomen, aber quadratisch mehr Chunks. Weil die Zelle an den Bildschirm
- * gekoppelt ist und nicht an die Welt, bleibt die Last über alle Zoomstufen
- * gleich: es sind immer ungefähr Bildfläche / CELL_CSS_PIXELS² Zellen.
- */
-const CELL_CSS_PIXELS = 2;
-
-/** Packt eine Farbe so, wie sie im Speicher einer ImageData liegt (endian-sicher). */
-function packRGB(rgb: RGB): number {
-  const bytes = new Uint8ClampedArray(4);
-  bytes[0] = rgb[0];
-  bytes[1] = rgb[1];
-  bytes[2] = rgb[2];
-  bytes[3] = 255;
-  return new Uint32Array(bytes.buffer)[0];
-}
+const RESOURCE_SCALE = 0.009;
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -209,456 +252,248 @@ export function getTileRGB(tile: MapTile & { resource?: ResourceType; resourceAm
   return [byte(r), byte(g), byte(bl)];
 }
 
-export class ChunkManager {
-  private chunks = new Map<string, Chunk>();
-  /** Zeitpunkt, ab dem in diesem Frame keine neuen Chunks mehr erzeugt werden. */
-  private deadline = 0;
-  private resourceNoise: FractalNoise;
-  public readonly chunkSize: number;
+/**
+ * Farben und Skalen, die der WebGL-Shader als Uniforms bekommt. Die Reihenfolge
+ * der Biome muss zu den B_*-Konstanten im Shader passen - das ist genau die
+ * Deklarationsreihenfolge von TILE_TYPE_GRADIENT.
+ */
+export const TERRAIN_PALETTE = {
+  biomeLo: (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t) => TILE_TYPE_GRADIENT[t][0]),
+  biomeHi: (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t) => TILE_TYPE_GRADIENT[t][1]),
+  waterRamp: WATER_RAMP,
+  surf: SURF,
+  resourceColors: (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map(
+      (t) => RESOURCE_TYPE_COLORS[t]),
+  resourceScale: RESOURCE_SCALE,
+  resourceClusterScale: RESOURCE_CLUSTER_SCALE,
+  resourceClusterOffset: RESOURCE_CLUSTER_OFFSET,
+  // Als Indizes, damit der Shader sie ohne Namenszuordnung vergleichen kann.
+  resourceRules: RESOURCE_RULES.map((rule) => ({
+    biome: BIOME_INDEX[rule.biome],
+    type: RESOURCE_INDEX[rule.type],
+    threshold: rule.threshold,
+    cluster: rule.cluster,
+    yield: rule.yield,
+  })),
+};
 
-  constructor(
-      private mapGen: MapGenerator,
-      chunkSize: number = 32,
-      seed: string,
-  ) {
-    this.chunkSize = chunkSize;
-    // Extra Noise Layer für Ressourcen wie in AoE2
+/**
+ * Erzeugt einzelne Tiles für die Anzeige unter dem Mauszeiger. Das Bild kommt
+ * seit der Umstellung auf WebGL aus dem Shader; ein Chunk-Cache wird dafür
+ * nicht mehr gebraucht. Ein Tile kostet ein paar Mikrosekunden, und gebraucht
+ * wird es einmal pro Mausbewegung.
+ */
+export class TileProbe {
+  private resourceNoise: FractalNoise;
+  private clusterNoise: SimplexNoise;
+
+  constructor(private mapGen: MapGenerator, seed: string) {
     // Wenige Oktaven + niedrige Frequenz: Ressourcen sollen zusammenhängende
     // Vorkommen bilden, kein Konfetti über die ganze Karte.
-    this.resourceNoise = new FractalNoise(
-        new SimplexNoise(seed + "_resources"),
-        2,
-        0.5,
-        2,
-    );
+    this.resourceNoise = new FractalNoise(new SimplexNoise(seed + "_resources"), 2, 0.5, 2);
+    this.clusterNoise = new SimplexNoise(seed + "_resource_clusters");
   }
 
-  get loadedChunks(): number {
-    return this.chunks.size;
+  /** Häufchen-Rauschen für Regel `rule` an Tile (x, y). */
+  private cluster(x: number, y: number) {
+    return (rule: number) => this.clusterNoise.noise2D(
+        x * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[0],
+        y * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[1]);
   }
 
-  private chunkKey(cx: number, cy: number, step: number): string {
-    return `${step}_${cx}_${cy}`;
-  }
-
-  private generateResources(tile: MapTile): {
-    type: ResourceType;
-    amount: number;
-  } {
+  private generateResources(tile: MapTile): { type: ResourceType; amount: number } {
+    // Ressourcen spawnen nur auf passendem Terrain. Die Schwellen in
+    // RESOURCE_RULES passen zur Verteilung von noise2D (sd ~0.6, -1..1).
     const r = this.resourceNoise.noise2D(tile.x * RESOURCE_SCALE, tile.y * RESOURCE_SCALE);
-
-    // Logik: Ressourcen spawnen nur auf passendem Terrain.
-    // Die Schwellen passen zur Verteilung von noise2D (sd ~0.6, -1..1).
-    if (tile.tileType === "forest" && r > 0.15) {
-      return { type: "wood", amount: Math.floor((r + 1) * 50) };
-    }
-    if (tile.tileType === "mountain" && r > 0.25) {
-      return {
-        type: r > 0.86 ? "gold" : "stone",
-        amount: Math.floor((r + 1) * 40),
-      };
-    }
-    if (tile.tileType === "grass" && r > 0.62) {
-      return { type: "berries", amount: Math.floor((r + 1) * 30) };
-    }
-    return { type: "none", amount: 0 };
+    return resourceFromNoise(tile.tileType, r, this.cluster(tile.x, tile.y));
   }
 
-  /**
-   * `step` ist die Schrittweite in Welt-Tiles. Jede Stufe hat ihren eigenen
-   * Cache-Eintrag; die Minimap teilt sich bei step 1 die Chunks mit der
-   * Hauptansicht und braucht nur bei grober Abtastung eigene.
-   */
-  getChunk(cx: number, cy: number, step: number = 1): Chunk {
-    const key = this.chunkKey(cx, cy, step);
-    const cached = this.chunks.get(key);
-    if (cached) return cached;
-
-    const tiles = this.mapGen.generateChunk(cx, cy, this.chunkSize, step);
-    const colors = new Uint8ClampedArray(this.chunkSize * this.chunkSize * 4);
-
-    let at = 0;
-    for (const row of tiles) {
-      for (let i = 0; i < row.length; i++) {
-        // Die Tiles sind hier ohnehin kurzlebig, also direkt erweitern statt
-        // kopieren - ein Spread pro Tile kostet mehr als die Noise-Auswertung.
-        const tile = row[i] as RenderTile;
-        const res = this.generateResources(tile);
-        tile.resource = res.type;
-        tile.resourceAmount = res.amount;
-        const rgb = getTileRGB(tile);
-        colors[at++] = rgb[0];
-        colors[at++] = rgb[1];
-        colors[at++] = rgb[2];
-        colors[at++] = 255;
-      }
-    }
-
-    // Die Tile-Objekte werden hier fallengelassen; sie sind kurzlebiger Müll
-    // und belasten anders als ein dauerhafter Cache den GC kaum.
-    const chunk: Chunk = { colors, cx, cy, step };
-    this.chunks.set(key, chunk);
-    return chunk;
+  /** Nur das Vorkommen und die Höhe eines Tiles - billiger als getTile(). */
+  resourceAt(x: number, y: number): { height: number; type: ResourceType; amount: number; tileType: TileType } {
+    const terrain = this.mapGen.terrainAt(x, y);
+    const r = this.resourceNoise.noise2D(x * RESOURCE_SCALE, y * RESOURCE_SCALE);
+    const res = resourceFromNoise(terrain.tileType, r, this.cluster(x, y));
+    return { height: terrain.height, type: res.type, amount: res.amount, tileType: terrain.tileType };
   }
 
-  /**
-   * Wie getChunk, erzeugt aber nichts mehr, wenn das Zeitbudget des Frames
-   * aufgebraucht ist. Beim Herauszoomen werden sonst mehrere hundert Chunks in
-   * einem einzigen Frame erzeugt - das ist die sichtbare Ruckelquelle.
-   */
-  getChunkIfAffordable(cx: number, cy: number, step: number = 1): Chunk | undefined {
-    const cached = this.chunks.get(this.chunkKey(cx, cy, step));
-    if (cached) return cached;
-    if (performance.now() >= this.deadline) return undefined;
-    return this.getChunk(cx, cy, step);
-  }
-
-  /** Gibt der laufenden Frame-Phase ein Zeitbudget fürs Nachladen. */
-  beginBudget(milliseconds: number) {
-    this.deadline = performance.now() + milliseconds;
-  }
-
-  /**
-   * Einzelnes Tile mit allen Werten - für die Anzeige unter dem Mauszeiger.
-   * Wird frisch berechnet statt zwischengespeichert; das kostet ein paar
-   * Mikrosekunden und spart den gesamten Objekt-Cache.
-   */
   getTile(worldX: number, worldY: number): RenderTile {
     const tile = this.mapGen.getTile(Math.floor(worldX), Math.floor(worldY));
     const res = this.generateResources(tile);
-    const render = {
-      ...tile,
-      resource: res.type,
-      resourceAmount: res.amount,
-    } as RenderTile;
+    const render = { ...tile, resource: res.type, resourceAmount: res.amount } as RenderTile;
     render.rgb = getTileRGB(render);
     return render;
   }
+}
+
+/**
+ * Hauptansicht in isometrischer 3D-Sicht. Das Gelände entsteht komplett auf der
+ * GPU, die Gebäude kommen als zweiter, instanzierter Durchgang darüber.
+ */
+export class MapRenderer {
+  private terrain: TerrainRenderer;
+  private entities: EntityRenderer;
+  /**
+   * Stärke des Reliefs, 1 = voll, gegen 0 flach. Zum Flachlegen, um hinter
+   * Berge zu sehen. Nie ganz 0: das wäre für den Cache "kein Relief" und
+   * würde ihn neu befüllen.
+   */
+  relief = 1;
+
+  constructor(
+      canvas: HTMLCanvasElement,
+      seed: string,
+      public tileSize: number = 8,
+      public pixelRatio: number = 1,
+  ) {
+    this.terrain = new TerrainRenderer(canvas, seed, TERRAIN_PALETTE);
+    this.entities = new EntityRenderer(this.terrain.context);
+  }
 
   /**
-   * Alles in Welt-Tiles. Gemessen wird als Schachbrettdistanz: Viewport und
-   * Minimap decken beide ein Rechteck um die Kamera ab - mit Manhattan-Distanz
-   * würden genau deren Ecken laufend verworfen und neu erzeugt.
+   * @param centerX Welt-Tile in der Bildmitte
    */
-  unloadDistantChunks(
-      cameraX: number,
-      cameraY: number,
-      detailTiles: number,
-      overviewTiles: number,
+  /** Spielerfarbe für die Pfosten der Felder (0..255). */
+  setPlayerColor(rgb: [number, number, number]) {
+    this.entities.playerColor = rgb;
+  }
+
+  /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */
+  setFields(x: number, y: number, data: Uint8Array | null) {
+    this.terrain.setFields(x, y, data);
+  }
+
+  /** Flächen, die unter Gebäuden eingeebnet werden - Gelände und Gebäude gleich. */
+  setFlatZones(zones: readonly FlatZone[]) {
+    const data = packZones(zones);
+    const count = Math.min(zones.length, MAX_FLAT_ZONES);
+    this.terrain.flatZones = data;
+    this.terrain.flatCount = count;
+    this.entities.flatZones = data;
+    this.entities.flatCount = count;
+  }
+
+  render(
+      centerX: number,
+      centerY: number,
+      mouseTileX?: number,
+      mouseTileY?: number,
+      overlay: EntityInstance[] = [],
   ) {
-    for (const [key, chunk] of this.chunks) {
-      const span = this.chunkSize * chunk.step;
-      const centerX = (chunk.cx + 0.5) * span;
-      const centerY = (chunk.cy + 0.5) * span;
-      const dist = Math.max(Math.abs(centerX - cameraX), Math.abs(centerY - cameraY));
+    const canvas = this.terrain.context.canvas;
+    const camera = snapCamera({
+      centerX,
+      centerY,
+      pixelsPerTile: this.tileSize * this.pixelRatio,
+      reliefScale: this.relief,
+    }, canvas.width, canvas.height);
 
-      // Feine Stufen braucht nur die Hauptansicht, grobe nur die Minimap.
-      // Stufe 1 nutzen beide, je nach Zoom - dort gilt der größere Radius.
-      const limit =
-        chunk.step < 1 ? detailTiles
-        : chunk.step > 1 ? overviewTiles
-        : Math.max(detailTiles, overviewTiles);
+    this.terrain.hoverTile =
+      mouseTileX !== undefined && mouseTileY !== undefined
+        ? { x: mouseTileX, y: mouseTileY }
+        : null;
 
-      if (dist > limit + span) this.chunks.delete(key);
-    }
+    this.terrain.render(camera);
+    // Mindestens acht Geräte-Pixel: kleiner wird ein Gebäude auf der
+    // herausgezoomten Karte zum Einzelpunkt und ist nicht mehr zu erkennen.
+    this.entities.groundStep = this.terrain.gridCell;
+    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true);
   }
 }
 
-export class MapRenderer {
-  private ctx: CanvasRenderingContext2D;
-  /**
-   * Zwischenbild in Tile-Auflösung: 1 Pixel = 1 Tile. Es wird einmal pro Frame
-   * hart hochskaliert aufs Canvas geblittet. Beim Herauszoomen auf 2px-Tiles
-   * wären es sonst ~500.000 fillRect-Aufrufe pro Frame.
-   */
-  private tileCanvas: HTMLCanvasElement;
-  private tileCtx: CanvasRenderingContext2D;
-  private buffer: ImageData | null = null;
-  private buffer32: Uint32Array | null = null;
-  private bufferWidth = 0;
-  private bufferHeight = 0;
-
+/**
+ * Übersichtskarte - dieselbe Rautenansicht wie die Hauptkarte, aber flach, so
+ * wie die Minimap in AoE2. Der Ausschnitt der Hauptansicht ist darauf ein
+ * achsenparalleles Rechteck.
+ */
+export class MiniMap {
+  private terrain: TerrainRenderer;
+  private entities: EntityRenderer;
+  private cssSize = 300;
 
   /**
-   * Geräte-Pixel je CSS-Pixel. Kamera und tileSize rechnen in CSS-Pixeln,
-   * gezeichnet wird in echten Bildschirmpixeln - sonst skaliert der Browser
-   * das fertige Canvas hoch und Fadenkreuz und Kanten werden unsauber.
+   * Wie viel breiter als die Hauptansicht die Minimap zeigt - bei jeder
+   * Zoomstufe gleich: das Sichtrechteck ist immer etwa ein Fünftel davon, man
+   * sieht die Umgebung und erkennt darin noch Gebäude und Felder.
    */
-  public pixelRatio = 1;
+  private static readonly OVERVIEW = 5;
+  /** Grenzen (u-Einheiten): ganz nah noch die Nachbarschaft, ganz weit nicht der halbe Kontinent. */
+  private static readonly MIN_COVERAGE = 160;
+  private static readonly MAX_COVERAGE = 6000;
 
   constructor(
       private canvas: HTMLCanvasElement,
-      private chunkManager: ChunkManager,
-      public tileSize: number = 8,
+      seed: string,
       pixelRatio: number = 1,
   ) {
-    this.pixelRatio = pixelRatio;
-    this.ctx = canvas.getContext("2d", { alpha: false })!;
-    this.tileCanvas = document.createElement("canvas");
-    this.tileCtx = this.tileCanvas.getContext("2d", { willReadFrequently: true })!;
-  }
-
-  private ensureBuffer(width: number, height: number) {
-    if (this.buffer && this.bufferWidth === width && this.bufferHeight === height) return;
-
-    this.tileCanvas.width = width;
-    this.tileCanvas.height = height;
-    this.buffer = this.tileCtx.createImageData(width, height);
-    this.buffer32 = new Uint32Array(this.buffer.data.buffer);
-    this.bufferWidth = width;
-    this.bufferHeight = height;
-  }
-
-  /** Welt-Tiles je Abtastzelle beim aktuellen Zoom. */
-  sampleStep(): number {
-    const dpr = this.pixelRatio;
-    return this.cellPixels(dpr) / (this.tileSize * dpr);
-  }
-
-  /** Geräte-Pixel je Abtastzelle - immer ganzzahlig, damit der Blit scharf bleibt. */
-  private cellPixels(dpr: number): number {
-    return Math.max(1, Math.round(CELL_CSS_PIXELS * dpr));
-  }
-
-  render(cameraX: number, cameraY: number, mouseTileX?: number, mouseTileY?: number) {
-    const ctx = this.ctx;
-    const { width, height } = this.canvas;   // Geräte-Pixel
-    const dpr = this.pixelRatio;
-    const chunkSize = this.chunkManager.chunkSize;
-
-    // Abgetastet wird nicht je Tile, sondern je Zelle fester Bildschirmgröße.
-    // Beim Hineinzoomen wird das Noise dadurch feiner abgetastet statt dieselben
-    // Tiles zu Klötzen aufzublasen - und die Zahl der Zellen pro Bildschirm
-    // bleibt über alle Zoomstufen gleich.
-    const cell = this.cellPixels(dpr);                 // Geräte-Pixel je Zelle
-    const step = cell / (this.tileSize * dpr);         // Welt-Tiles je Zelle
-
-    // Ganze Pixel, sonst entstehen beim Scrollen Halbpixel-Nähte.
-    const camX = Math.round(cameraX * dpr);
-    const camY = Math.round(cameraY * dpr);
-
-    const startCellX = Math.floor(camX / cell);
-    const startCellY = Math.floor(camY / cell);
-    const cellsX = Math.ceil(width / cell) + 1;
-    const cellsY = Math.ceil(height / cell) + 1;
-
-    this.ensureBuffer(cellsX, cellsY);
-    const data = this.buffer!.data;
-    this.buffer32!.fill(packRGB(LOADING_COLOR));
-
-    const endCellX = startCellX + cellsX;
-    const endCellY = startCellY + cellsY;
-    const startCx = Math.floor(startCellX / chunkSize);
-    const startCy = Math.floor(startCellY / chunkSize);
-    const endCx = Math.floor((endCellX - 1) / chunkSize);
-    const endCy = Math.floor((endCellY - 1) / chunkSize);
-
-    for (let cy = startCy; cy <= endCy; cy++) {
-      for (let cx = startCx; cx <= endCx; cx++) {
-        const chunk = this.chunkManager.getChunkIfAffordable(cx, cy, step);
-        if (!chunk) continue;
-
-        const originX = cx * chunkSize;
-        const originY = cy * chunkSize;
-        // Sichtbarer Ausschnitt dieses Chunks, in Chunk-lokalen Zellen
-        const x0 = Math.max(0, startCellX - originX);
-        const x1 = Math.min(chunkSize, endCellX - originX);
-        const y0 = Math.max(0, startCellY - originY);
-        const y1 = Math.min(chunkSize, endCellY - originY);
-        const runLength = (x1 - x0) * 4;
-        if (runLength <= 0) continue;
-
-        for (let y = y0; y < y1; y++) {
-          const src = (y * chunkSize + x0) * 4;
-          const dst = ((originY + y - startCellY) * cellsX + (originX + x0 - startCellX)) * 4;
-          data.set(chunk.colors.subarray(src, src + runLength), dst);
-        }
-      }
-    }
-
-    this.tileCtx.putImageData(this.buffer!, 0, 0);
-
-    // Harte Kanten beim Hochskalieren - sonst matscht der Browser die Zellen weich.
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-        this.tileCanvas,
-        0, 0, cellsX, cellsY,
-        startCellX * cell - camX, startCellY * cell - camY, cellsX * cell, cellsY * cell,
-    );
-
-    const size = this.tileSize * dpr;        // Geräte-Pixel je Welt-Tile
-
-    if (mouseTileX !== undefined && mouseTileY !== undefined) {
-      const screenX = mouseTileX * size - camX;
-      const screenY = mouseTileY * size - camY;
-      // Strichstärken in CSS-Pixeln denken, in Geräte-Pixeln zeichnen
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = 3 * dpr;
-      ctx.strokeRect(screenX + dpr / 2, screenY + dpr / 2, size - dpr, size - dpr);
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = dpr;
-      ctx.strokeRect(screenX + dpr / 2, screenY + dpr / 2, size - dpr, size - dpr);
-    }
-  }
-}
-
-export class MiniMap {
-  private ctx: CanvasRenderingContext2D;
-  /** Anzeigegröße in CSS-Pixeln. Legt fest, wie viel Welt die Minimap zeigt. */
-  private cssSize = 300;
-  private offscreenCanvas: HTMLCanvasElement;
-  private offscreenCtx: CanvasRenderingContext2D;
-  private image: ImageData | null = null;
-  private image32: Uint32Array | null = null;
-  private imageSize = 0;
-
-  /**
-   * Wie viel breiter als der Viewport die Minimap zeigen soll. 1.7 entspricht
-   * dem, was sie bei 8px-Tiles schon immer abgedeckt hat - dieser Eindruck
-   * bleibt jetzt über alle Zoomstufen gleich.
-   */
-  private static readonly OVERVIEW = 1.7;
-
-  constructor(
-      private canvas: HTMLCanvasElement,
-      private chunkManager: ChunkManager,
-      private pixelRatio: number = 1,
-  ) {
-    this.ctx = canvas.getContext('2d')!;
-    this.offscreenCanvas = document.createElement('canvas');
-    this.offscreenCtx = this.offscreenCanvas.getContext('2d', { willReadFrequently: true })!;
+    this.terrain = new TerrainRenderer(canvas, seed, TERRAIN_PALETTE);
+    this.entities = new EntityRenderer(this.terrain.context);
+    this.terrain.centerDot = true;
+    // Ohne Relief gibt es nichts zu unterteilen.
+    this.terrain.cellPixels = 64;
+    // Die Minimap verschiebt sich nur mit der Hauptansicht und viel langsamer.
+    this.terrain.bubblePixels = 64;
     this.setPixelRatio(pixelRatio);
   }
 
   setPixelRatio(pixelRatio: number) {
-    this.pixelRatio = pixelRatio;
-    // Speicher in echten Bildschirmpixeln, Anzeige in CSS-Pixeln
     this.canvas.width = Math.round(this.cssSize * pixelRatio);
     this.canvas.height = Math.round(this.cssSize * pixelRatio);
     this.canvas.style.width = `${this.cssSize}px`;
     this.canvas.style.height = `${this.cssSize}px`;
   }
 
-  /**
-   * Welt-Tiles je CSS-Pixel. Zweierpotenz, damit beim Zoomen dieselben
-   * Übersichts-Chunks wiederverwendet werden statt für jede Zwischenstufe neue.
-   * Hängt bewusst nur an der CSS-Größe: so bleibt der gezeigte Ausschnitt auf
-   * jedem Bildschirm gleich, unabhängig von der Pixeldichte.
-   */
-  private stepFor(viewportTilesX: number): number {
-    const wanted = (viewportTilesX * MiniMap.OVERVIEW) / this.cssSize;
-    if (wanted <= 1) return 1;
-    return 2 ** Math.ceil(Math.log2(wanted));
+  /** u-Einheiten, die die Minimap waagerecht abdeckt. */
+  private coverage(view: IsoView): number {
+    return Math.min(Math.max((view.width / view.tileSize) * MiniMap.OVERVIEW, MiniMap.MIN_COVERAGE), MiniMap.MAX_COVERAGE);
   }
 
-  /** Gemeinsame Geometrie für Zeichnen und Klick-Umrechnung. */
-  private frame(camTopLeftTileX: number, camTopLeftTileY: number, viewportTilesX: number, viewportTilesY: number) {
-    const step = this.stepFor(viewportTilesX);
-    const cover = this.cssSize * step;
-
-    // Bei hoher Pixeldichte wird feiner abgetastet statt nur hochskaliert -
-    // dieselbe Weltfläche, aber ein echtes Bild in Bildschirmauflösung.
-    const sample = Math.max(1, 2 ** Math.round(Math.log2(step / this.pixelRatio)));
-    const imageSize = Math.round(cover / sample);
-
-    const centerX = camTopLeftTileX + viewportTilesX / 2;
-    const centerY = camTopLeftTileY + viewportTilesY / 2;
-    const startCellX = Math.floor(centerX / sample) - imageSize / 2;
-    const startCellY = Math.floor(centerY / sample) - imageSize / 2;
-
+  /** Dieselbe Mitte wie die Hauptansicht, in CSS-Pixeln der Minimap. */
+  private miniView(view: IsoView): IsoView {
     return {
-      cover,
-      sample,
-      imageSize,
-      startCellX,
-      startCellY,
-      worldLeft: startCellX * sample,
-      worldTop: startCellY * sample,
+      centerX: view.centerX,
+      centerY: view.centerY,
+      tileSize: this.cssSize / this.coverage(view),
+      width: this.cssSize,
+      height: this.cssSize,
     };
   }
 
-  private ensureImage(size: number) {
-    if (this.image && this.imageSize === size) return;
-    this.offscreenCanvas.width = size;
-    this.offscreenCanvas.height = size;
-    this.image = this.offscreenCtx.createImageData(size, size);
-    this.image32 = new Uint32Array(this.image.data.buffer);
-    this.imageSize = size;
+  render(view: IsoView, overlay: EntityInstance[] = []) {
+    const mini = this.miniView(view);
+    const scale = this.canvas.width / this.cssSize;
+    const camera = snapCamera({
+      centerX: view.centerX,
+      centerY: view.centerY,
+      pixelsPerTile: mini.tileSize * scale,
+      reliefScale: 0,
+    }, this.canvas.width, this.canvas.height);
+
+    const w = (view.width / view.tileSize) * mini.tileSize * scale;
+    const h = (view.height / view.tileSize) * mini.tileSize * scale;
+    this.terrain.viewRect = {
+      x: (this.canvas.width - w) / 2,
+      y: (this.canvas.height - h) / 2,
+      width: w,
+      height: h,
+    };
+    this.terrain.render(camera);
+    // Auf der Minimap zählt nur, dass überhaupt etwas dasteht - vier Pixel
+    // reichen dafür, die Form ist auf dieser Größe ohnehin nicht zu erkennen.
+    this.entities.render(overlay, camera, 4 / camera.pixelsPerTile);
   }
 
-  render(camTopLeftTileX: number, camTopLeftTileY: number, viewportTilesX: number, viewportTilesY: number) {
-    const f = this.frame(camTopLeftTileX, camTopLeftTileY, viewportTilesX, viewportTilesY);
-    this.ensureImage(f.imageSize);
-
-    const data = this.image!.data;
-    const chunkSize = this.chunkManager.chunkSize;
-    this.image32!.fill(packRGB(LOADING_COLOR));
-
-    // Gerechnet wird in Zellen (= sample Welt-Tiles). In diesem Raster ist eine
-    // Bildzeile wieder eine zusammenhängende Folge von Chunk-Zellen, die sich
-    // am Stück kopieren lässt - unabhängig von Zoom und Pixeldichte.
-    for (let y = 0; y < f.imageSize; y++) {
-      const cellY = f.startCellY + y;
-      const cy = Math.floor(cellY / chunkSize);
-      const ly = ((cellY % chunkSize) + chunkSize) % chunkSize;
-
-      let x = 0;
-      while (x < f.imageSize) {
-        const cellX = f.startCellX + x;
-        const cx = Math.floor(cellX / chunkSize);
-        const lx = ((cellX % chunkSize) + chunkSize) % chunkSize;
-        const run = Math.min(chunkSize - lx, f.imageSize - x);
-
-        // Fehlt der Chunk, bleibt das Stück in der Ladefarbe und wird in einem
-        // der nächsten Frames nachgezogen - nie blockiert das den Aufbau.
-        const chunk = this.chunkManager.getChunkIfAffordable(cx, cy, f.sample);
-        if (chunk) {
-          const src = (ly * chunkSize + lx) * 4;
-          data.set(chunk.colors.subarray(src, src + run * 4), (y * f.imageSize + x) * 4);
-        }
-        x += run;
-      }
-    }
-
-    const pixels = this.canvas.width;
-    this.offscreenCtx.putImageData(this.image!, 0, 0);
-    // Hochskalieren hart (scharfe Kanten), Herunterskalieren weich (kein Flimmern)
-    this.ctx.imageSmoothingEnabled = f.imageSize > pixels;
-    this.ctx.drawImage(this.offscreenCanvas, 0, 0, f.imageSize, f.imageSize, 0, 0, pixels, pixels);
-
-    // Overlay in Geräte-Pixeln, Strichstärken weiter in CSS-Pixeln gedacht
-    const dpr = this.pixelRatio;
-    const perPixel = f.cover / pixels;               // Welt-Tiles je Geräte-Pixel
-    const rectX = Math.round((camTopLeftTileX - f.worldLeft) / perPixel) + 0.5;
-    const rectY = Math.round((camTopLeftTileY - f.worldTop) / perPixel) + 0.5;
-    const rectW = Math.max(3 * dpr, Math.round(viewportTilesX / perPixel));
-    const rectH = Math.max(3 * dpr, Math.round(viewportTilesY / perPixel));
-
-    this.ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-    this.ctx.lineWidth = 3 * dpr;
-    this.ctx.strokeRect(rectX, rectY, rectW, rectH);
-    this.ctx.strokeStyle = '#FFFFFF';
-    this.ctx.lineWidth = dpr;
-    this.ctx.strokeRect(rectX, rectY, rectW, rectH);
-
-    // Kamera-Mittelpunkt
-    this.ctx.fillStyle = '#FFDD33';
-    this.ctx.fillRect(pixels / 2 - dpr, pixels / 2 - dpr, 3 * dpr, 3 * dpr);
+  /** Welt-Ausschnitt, den die Minimap zeigt - für das Einsammeln der Instanzen. */
+  /** CSS-Pixel der Minimap je Welt-Tile bei dieser Hauptansicht. */
+  pixelsPerTile(view: IsoView): number {
+    return this.miniView(view).tileSize;
   }
 
-  /** Welt-Tiles, die die Minimap gerade abdeckt - für Cache und Klick-Umrechnung. */
-  coverage(viewportTilesX: number): number {
-    return this.cssSize * this.stepFor(viewportTilesX);
+  viewRectOf(view: IsoView) {
+    return visibleWorldRect({ ...this.miniView(view) });
   }
 
   /** Rechnet einen Klick (in CSS-Pixeln) auf die Minimap in Welt-Tiles um. */
-  toWorld(clickX: number, clickY: number, camTopLeftTileX: number, camTopLeftTileY: number,
-          viewportTilesX: number, viewportTilesY: number): { x: number; y: number } {
-    const f = this.frame(camTopLeftTileX, camTopLeftTileY, viewportTilesX, viewportTilesY);
-    const perCssPixel = f.cover / this.cssSize;
-    return {
-      x: f.worldLeft + clickX * perCssPixel,
-      y: f.worldTop + clickY * perCssPixel,
-    };
+  toWorld(clickX: number, clickY: number, view: IsoView): { x: number; y: number } {
+    return screenToGround(this.miniView(view), clickX, clickY);
   }
 }
