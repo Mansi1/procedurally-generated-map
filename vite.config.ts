@@ -1,7 +1,9 @@
-import { defineConfig, type Plugin } from 'vite';
-// defuss: JSX-Komponenten für die Oberfläche (Rohstoffleiste, Menü, ...).
+import { defineConfig } from 'vite';
+
+// import the defuss plugin - JSX for the UI components (resource bar, menu, ...)
 import defuss from 'defuss-vite';
 
 export default defineConfig({
-  plugins: [defuss() as Plugin],
+  // add the defuss() plugin to make JSX transpilation work
+  plugins: [defuss()],
 });
