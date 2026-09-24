@@ -27,6 +27,31 @@
   color: #fff;
   text-shadow: 1px 1px 0 #000;
 }
+/* Bildlaufleiste, sobald die Tafel nicht ganz passt - immer sichtbar: Mit
+   eigenem Stil blenden Chrome und Safari sie nicht aus wie die schmale Leiste
+   von macOS, die erst beim Scrollen erscheint. */
+#menu .menu-board::-webkit-scrollbar {
+  width: 10px;
+}
+#menu .menu-board::-webkit-scrollbar-track {
+  margin: 4px 0;
+  border-radius: 6px;
+  background: rgba(30, 18, 8, 0.55);
+}
+#menu .menu-board::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(30, 18, 8, 0.55);
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e8c47a, #b8893f);
+}
+#menu .menu-board::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #f6d890, #caa050);
+}
+/* Firefox kennt die Pseudo-Elemente nicht - dort nur die Farben. */
+@supports not selector(::-webkit-scrollbar) {
+  #menu .menu-board {
+    scrollbar-color: #d4a85a rgba(30, 18, 8, 0.55);
+  }
+}
 /* Logo des Spiels oben auf der Menütafel. */
 #menu .menu-logo {
   display: block;
@@ -120,6 +145,8 @@
   border-radius: 0;
   margin-left: -2px;
   font-size: 13px;
+  /* Auch wenn die Bildlaufleiste Platz nimmt: "Sehr schnell" in einer Zeile. */
+  white-space: nowrap;
 }
 #menu .menu-choice button:first-child {
   border-radius: 4px 0 0 4px;
