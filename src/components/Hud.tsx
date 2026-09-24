@@ -11,14 +11,11 @@ import './Hud.css';
 import { TILE_TYPE_COLOR, TILE_TYPE_LABEL } from '../map';
 import type { TileType } from '../noise';
 
-/** Tastenhilfe oben rechts - dazu Position, Abtastung und Zoom. */
+/** Tastenhilfe oben rechts. */
 function HelpPanel() {
   return (
     <div id="ui" class="panel">
       <div>
-        Pos <b id="pos">0, 0</b><span class="sep">|</span>
-        Tiles/Px <b id="sampling">-</b><span class="sep">|</span>
-        Zoom <b id="zoom">8px</b><span class="sep">|</span>
         <kbd>WASD</kbd> bewegen <kbd>Q</kbd>/<kbd>E</kbd> zoomen<span class="sep">|</span>
         <kbd>1</kbd>-<kbd>6</kbd> bauen <kbd>Esc</kbd> abbrechen<span class="sep">|</span>
         <kbd>Klick</kbd>/<kbd>Ziehen</kbd> auswählen <kbd>Rechtsklick</kbd> Befehl{' '}
@@ -43,12 +40,17 @@ function Legend() {
   );
 }
 
-/** Legende und Entwickler-Infos oben links. */
+/** Legende und Entwickler-Infos oben links - dazu Position, Abtastung und Zoom. */
 function DebugPanel() {
   return (
     <div id="debug" class="panel">
       <Legend />
       <div>Tile <b id="tile-info">-</b></div>
+      <div>
+        Pos <b id="pos">0, 0</b><span class="sep">|</span>
+        Tiles/Px <b id="sampling">-</b><span class="sep">|</span>
+        Zoom <b id="zoom">8px</b>
+      </div>
       <div>
         Cursor <b id="cursor-coords">-, -</b><span class="sep">|</span>
         Kamera <b id="cam-coords">-, -</b><span class="sep">|</span>
