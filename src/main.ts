@@ -20,8 +20,9 @@ import {
 } from './map';
 import type { TileType } from './noise';
 import type { EntityInstance } from './gl/entityRenderer';
-import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
+import { NATURAL, SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
+  ANIMALS,
   BUILDINGS,
   BUILDING_ORDER,
   CROP_ORDER,
@@ -39,6 +40,7 @@ import {
 import { World, furrowCells, type Villager } from './world/world';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './resourceBar';
+import { EditorPanel } from './editor';
 import { loadSettings, saveSettings, SettingsMenu } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
@@ -274,6 +276,7 @@ const menu = new SettingsMenu(settings, {
   toggleSound: () => toggleSound(),
   paused: () => paused,
   togglePause,
+  openEditor: () => toggleEditor(true),
   newGame: () => {
     world.reset();
     clearSelection();
@@ -281,6 +284,100 @@ const menu = new SettingsMenu(settings, {
     updateResourceUI();
   },
 });
+
+// --- Szenario-Editor ----------------------------------------------------------
+
+const editor = new EditorPanel(() => toggleEditor(false));
+/** Hat der Editor das Spiel angehalten? Dann läuft es beim Beenden weiter. */
+let editorPaused = false;
+/** Felder im Editor: mit gedrückter Taste Tile für Tile. */
+let editorPainting = false;
+
+function toggleEditor(on: boolean) {
+  if (on === editor.active) return;
+  editor.show(on);
+  buildEl.hidden = on;
+  select(null);
+  clearSelection();
+  // Im Editor steht die Welt still, wie in AoE2.
+  if (on && !paused) {
+    togglePause();
+    editorPaused = true;
+  } else if (!on && editorPaused) {
+    if (paused) togglePause();
+    editorPaused = false;
+  }
+}
+
+/** Welt-Punkt unter dem Zeiger (fein, nicht auf Tiles gerundet). */
+function pointerWorld(px: number, py: number) {
+  return pick(px, py);
+}
+
+/** Setzt, was im Editor gewählt ist, an der Zeigerposition. */
+function editorPlace(px: number, py: number, quiet = false): boolean {
+  const item = editor.item;
+  if (!item) return false;
+  const p = pointerWorld(px, py);
+  const [tx, ty] = [Math.floor(p.x), Math.floor(p.y)];
+  let reason: string | null = null;
+  switch (item.kind) {
+    case 'building': reason = world.place(tx, ty, item.type, true); break;
+    case 'villager': world.addVillager(p.x, p.y, item.female); break;
+    case 'animal': world.addAnimal(item.animal, p.x, p.y); break;
+    case 'decor': world.addDecor({ shape: item.shape, x: p.x, y: p.y, heading: item.heading + editor.turn, size: item.size }); break;
+    case 'erase': if (!world.removeNear(p.x, p.y)) reason = 'Hier steht nichts'; break;
+  }
+  invalidatePlacementCheck();
+  if (reason) {
+    if (!quiet) hint(reason);
+    return false;
+  }
+  sound.play('place');
+  updateResourceUI();
+  updateSelectionUI();
+  return true;
+}
+
+/** Vorschau im Editor an der Zeigerposition. */
+function editorOverlay() {
+  const item = editor.item;
+  if (!item || mousePixelX === undefined || mousePixelY === undefined) return;
+  const p = pointerWorld(mousePixelX, mousePixelY);
+  const [tx, ty] = [Math.floor(p.x), Math.floor(p.y)];
+  const color = player.color.toRGB();
+  switch (item.kind) {
+    case 'building': {
+      const def = BUILDINGS[item.type];
+      const blocked = world.canPlace(tx, ty, item.type, true);
+      overlay.push({ x: tx, y: ty, size: def.footprint, color: blocked ? [220, 70, 80] : [110, 231, 160], shape: SHAPE.flat, alpha: 0.22 });
+      if (item.type === 'farm') {
+        for (let row = 0; row < FIELD_ROWS; row++) {
+          overlay.push({ x: tx, y: ty, size: def.size, color, shape: CROPS[world.farmCrop].shape + row, alpha: 0.7, motion: [row, 3, 1, 16] });
+        }
+      } else {
+        overlay.push({ x: tx, y: ty, size: def.size, color: blocked ? [220, 70, 80] : color, shape: def.shape, alpha: 0.7 });
+      }
+      break;
+    }
+    case 'villager':
+      overlay.push({ x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size, color, shape: item.female ? SHAPE.villagerFemale : SHAPE.villager,
+        alpha: 0.75, motion: [Math.PI * 0.25, 0, 0, 0] });
+      break;
+    case 'animal': {
+      const def = ANIMALS[item.animal];
+      overlay.push({ x: p.x - 0.5, y: p.y - 0.5, size: def.height, color, shape: def.shape, alpha: 0.75, motion: [Math.PI * 0.25 + editor.turn, 0, 1, 0] });
+      break;
+    }
+    case 'decor':
+      overlay.push({ x: p.x - 0.5, y: p.y - 0.5, size: item.size, color, shape: item.shape, alpha: 0.75,
+        motion: [item.heading + editor.turn, 0, 0, NATURAL.includes(item.shape) ? 1 : 0] });
+      break;
+    case 'erase':
+      overlay.push({ x: tx, y: ty, size: 1, color: [220, 70, 80], shape: SHAPE.flat, alpha: 0.35 });
+      break;
+  }
+}
 
 // Zahnrad am Ende der Rohstoffleiste öffnet das Menü.
 const menuButton = document.createElement('button');
@@ -661,6 +758,11 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const p = canvasPoint(e);
 
+  if (editor.active && editor.item) {
+    editorPainting = editor.item.kind === 'building' && editor.item.type === 'farm' || editor.item.kind === 'erase';
+    editorPlace(p.x, p.y);
+    return;
+  }
   if (selected) {
     const { x, y } = tileAt(p.x, p.y);
     sowing = selected === 'farm';
@@ -685,7 +787,10 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) sowing = false;
+  if (e.button === 0) {
+    sowing = false;
+    editorPainting = false;
+  }
   if (e.button !== 0 || !drag) return;
   const p = canvasPoint(e);
   if (drag.active) boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
@@ -700,6 +805,12 @@ canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (selected) {
     select(null);
+    return;
+  }
+  // Im Editor legt Rechtsklick das Werkzeug weg.
+  if (editor.active && editor.item) {
+    editor.item = null;
+    editor.show(true);
     return;
   }
   const p = canvasPoint(e);
@@ -1229,6 +1340,26 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') menu.close();
     return;
   }
+  // F4: Szenario-Editor. Darin dreht R die Deko, Esc legt das Werkzeug weg
+  // bzw. beendet den Editor; Bautasten gibt es nicht.
+  if (e.key === 'F4') {
+    e.preventDefault();
+    toggleEditor(!editor.active);
+    return;
+  }
+  if (editor.active) {
+    if (e.key.toLowerCase() === 'r') editor.rotate();
+    if (e.key === 'Escape') {
+      if (editor.item) {
+        editor.item = null;
+        editor.show(true);
+      } else {
+        toggleEditor(false);
+      }
+      return;
+    }
+    if (/^[0-9]$/.test(e.key) || e.key.toLowerCase() === VILLAGER.key) return;
+  }
   // F3 wie in AoE2: Pause.
   if (e.key === 'F3') {
     e.preventDefault();
@@ -1332,6 +1463,11 @@ canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const [before, beforeY] = [mouseTileX, mouseTileY];
   updateHoveredTile(e.clientX - rect.left, e.clientY - rect.top);
+  // Editor: Felder und Löschen auch im Ziehen, Tile für Tile.
+  if (editorPainting && editor.active && (e.buttons & 1) && mouseTileX !== undefined
+      && (mouseTileX !== before || mouseTileY !== beforeY)) {
+    editorPlace(e.clientX - rect.left, e.clientY - rect.top, true);
+  }
   // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
   if (sowing && selected === 'farm' && (e.buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
       && (mouseTileX !== before || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
@@ -1466,6 +1602,7 @@ function collectOverlay(blend: number) {
     });
   }
 
+  if (editor.active) editorOverlay();
   if (selected === null || mouseTileX === undefined || mouseTileY === undefined) return;
   const def = BUILDINGS[selected];
 

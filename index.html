@@ -395,6 +395,45 @@
       .panel[hidden] {
         display: none;
       }
+      /* Szenario-Editor: an der Stelle des Baumenüs, Reiter und Modelle. */
+      #editor {
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px;
+        max-width: min(1100px, calc(100vw - 32px));
+      }
+      #editor .editor-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+      #editor .editor-head b {
+        margin-right: 6px;
+      }
+      #editor .editor-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      #editor .editor-tab {
+        font: inherit;
+        color: inherit;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        padding: 3px 9px;
+        cursor: pointer;
+      }
+      #editor .editor-tab[aria-pressed='true'] {
+        background: rgba(110, 231, 160, 0.25);
+        border-color: rgba(110, 231, 160, 0.7);
+      }
+
       #build {
         bottom: 12px;
         left: 50%;

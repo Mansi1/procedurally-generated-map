@@ -57,6 +57,8 @@ export interface MenuHooks {
   toggleSound(): void;
   paused(): boolean;
   togglePause(): void;
+  /** Den Szenario-Editor öffnen. */
+  openEditor(): void;
   newGame(): void;
 }
 
@@ -128,6 +130,7 @@ export class SettingsMenu {
         </section>
         <div class="menu-footer">
           <button type="button" class="menu-btn danger" data-act="new">Neues Spiel</button>
+          <button type="button" class="menu-btn" data-act="editor">Szenario-Editor <small>F4</small></button>
           <button type="button" class="menu-btn" data-act="close">Weiter spielen <small>Esc</small></button>
         </div>
       </div>`;
@@ -145,6 +148,10 @@ export class SettingsMenu {
       if (act === 'pause') this.hooks.togglePause();
       if (act === 'sound') this.hooks.toggleSound();
       if (act === 'close') this.close();
+      if (act === 'editor') {
+        this.close();
+        this.hooks.openEditor();
+      }
       if (act === 'new' && window.confirm('Neues Spiel beginnen? Der jetzige Stand geht verloren.')) {
         this.hooks.newGame();
         this.close();

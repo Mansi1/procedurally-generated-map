@@ -7,7 +7,7 @@
 import { findPath, lineOfSight } from './pathfinding';
 import { uniqueName } from './names';
 import type { EntityInstance } from '../gl/entityRenderer';
-import { ANIMAL_POSE, BUILDING_HEADING, FALL_LYING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelEntry } from '../gl/entityRenderer';
+import { ANIMAL_POSE, BUILDING_HEADING, FALL_LYING, NATURAL, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelEntry } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
 import { reliefZ } from '../noise';
 import {
@@ -54,6 +54,16 @@ export interface Animal {
   /** Zurückgelegte Strecke - Takt der Beine. */
   stride: number;
   prevStride: number;
+}
+
+/** Ein Deko-Modell aus dem Szenario-Editor. */
+export interface Decor {
+  shape: number;
+  /** Mitte in Welt-Tiles. */
+  x: number;
+  y: number;
+  heading: number;
+  size: number;
 }
 
 /** Kantenlänge (Tiles) der Stücke, in denen Tiere entstehen - je Stück höchstens ein Rudel. */
@@ -368,6 +378,8 @@ interface SaveData {
   /** Tiere: Art, Lage, Trefferpunkte, Nahrung, erlegt; dazu die Stücke, in denen sie schon entstanden sind. */
   animals?: { k: AnimalKind; x: number; y: number; hp: number; f: number; d?: boolean }[];
   spawned?: string[];
+  /** Deko aus dem Szenario-Editor: Modell, Lage, Blickrichtung, Größe. */
+  decor?: { s: number; x: number; y: number; h: number; z: number }[];
 }
 
 export class World {
@@ -410,6 +422,11 @@ export class World {
   villagers: Villager[] = [];
   /** Wild - lebend und erlegt. */
   animals: Animal[] = [];
+  /**
+   * Deko aus dem Szenario-Editor: irgendein Modell an irgendeiner Stelle, nur
+   * zum Anschauen - man kann dort nichts sammeln oder abliefern.
+   */
+  decor: Decor[] = [];
   /** Stücke (ANIMAL_CHUNK), in denen schon Tiere entstanden sind - erlegte kommen nicht wieder. */
   private spawnedChunks = new Set<string>();
   /** Was auf neu angelegten Feldern gesät wird - die zuletzt gewählte Frucht. */
@@ -723,12 +740,15 @@ export class World {
    * Prüft den Bauplatz. Gibt den Grund zurück, warum es nicht geht, oder null.
    * Die Meldung geht so in die Oberfläche - deshalb sind es ganze Sätze.
    */
-  canPlace(x: number, y: number, type: BuildingType): string | null {
+  /**
+   * @param free im Szenario-Editor: ohne Kosten und ohne Hauptgebäude vorab
+   */
+  canPlace(x: number, y: number, type: BuildingType, free = false): string | null {
     const def = BUILDINGS[type];
 
     // Wie in AoE2 fängt alles beim Hauptgebäude an: dort entstehen die
     // Dorfbewohner, und die erste Ernte wird dort abgeliefert.
-    if (type !== 'town_center' && !this.hasTownCenter()) {
+    if (!free && type !== 'town_center' && !this.hasTownCenter()) {
       return 'Baue zuerst ein Hauptgebäude';
     }
 
@@ -737,7 +757,7 @@ export class World {
       // Der Mittelpunkt ist der Schlüssel des Felds - zwei dürfen ihn nicht teilen.
       if (this.buildings.has(key(x, y))) return 'Hier steht schon etwas';
       if (this.farmTiles(x, y) === 0) return 'Hier kann nichts gesät werden - Felder brauchen freie Wiese oder Waldboden';
-      return this.affordable(type) ? null : 'Zu wenig Rohstoffe';
+      return free || this.affordable(type) ? null : 'Zu wenig Rohstoffe';
     }
 
     for (const [tx, ty] of this.footprintTiles(x, y, type)) {
@@ -751,7 +771,7 @@ export class World {
       return 'Der Boden ist hier zu steil';
     }
 
-    if (!this.affordable(type)) return 'Zu wenig Rohstoffe';
+    if (!free && !this.affordable(type)) return 'Zu wenig Rohstoffe';
     return null;
   }
 
@@ -793,11 +813,11 @@ export class World {
 
   // --- Verändern -----------------------------------------------------------
 
-  place(x: number, y: number, type: BuildingType): string | null {
-    const reason = this.canPlace(x, y, type);
+  place(x: number, y: number, type: BuildingType, free = false): string | null {
+    const reason = this.canPlace(x, y, type, free);
     if (reason) return reason;
 
-    this.pay(BUILDINGS[type].cost);
+    if (!free) this.pay(BUILDINGS[type].cost);
     const farm = type === 'farm' ? newFarm(this.farmCrop, this.farmTiles(x, y)) : undefined;
     this.buildings.set(key(x, y), {
       type, x, y, queue: 0, progress: 0, hp: BUILDINGS[type].hp, rally: null,
@@ -813,11 +833,14 @@ export class World {
   }
 
   /** Abriss. Die Hälfte der Kosten kommt zurück - sonst bestraft ein Fehlklick zu hart. */
-  remove(building: Building) {
+  /** @param free im Szenario-Editor: ohne Erstattung */
+  remove(building: Building, free = false) {
     const def = BUILDINGS[building.type];
-    this.pay(def.cost, -0.5);
-    // Wer noch in Ausbildung war, wird voll erstattet - er hat ja nie gearbeitet.
-    this.pay(VILLAGER.cost, -building.queue);
+    if (!free) {
+      this.pay(def.cost, -0.5);
+      // Wer noch in Ausbildung war, wird voll erstattet - er hat ja nie gearbeitet.
+      this.pay(VILLAGER.cost, -building.queue);
+    }
     for (const [tx, ty] of this.footprintTiles(building.x, building.y, building.type, building.farm?.tiles)) {
       this.occupied.delete(key(tx, ty));
     }
@@ -1517,6 +1540,62 @@ export class World {
     this.dirty = true;
   }
 
+  // --- Szenario-Editor ---------------------------------------------------------
+
+  /** Einen Dorfbewohner an (x, y) hinstellen - untätig, ohne Ausbildung. */
+  addVillager(x: number, y: number, female: boolean) {
+    this.villagers.push(newVillager(this.nextId++, x, y, this.freeName(female), female));
+    this.dirty = true;
+  }
+
+  addDecor(decor: Decor) {
+    this.decor.push(decor);
+    this.dirty = true;
+  }
+
+  /**
+   * Entfernt, was an einem Welt-Punkt steht - Dorfbewohner, Tier, Deko, dann
+   * Gebäude, das Nächste zuerst. Gibt zurück, was es war, oder null.
+   */
+  removeNear(x: number, y: number): string | null {
+    const near = <T extends { x: number; y: number }>(list: T[], r: number) => {
+      let best: T | undefined;
+      let bestDistance = r;
+      for (const o of list) {
+        const d = Math.hypot(o.x - x, o.y - y);
+        if (d < bestDistance) {
+          bestDistance = d;
+          best = o;
+        }
+      }
+      return best;
+    };
+    const v = near(this.villagers, 0.4);
+    if (v) {
+      this.villagers = this.villagers.filter((u) => u !== v);
+      this.dirty = true;
+      return v.name;
+    }
+    const a = near(this.animals, 0.5);
+    if (a) {
+      this.animals = this.animals.filter((u) => u !== a);
+      this.dirty = true;
+      return ANIMALS[a.kind].label;
+    }
+    const d = near(this.decor, 0.7);
+    if (d) {
+      this.decor = this.decor.filter((u) => u !== d);
+      this.dirty = true;
+      return 'Deko';
+    }
+    const b = this.at(Math.floor(x), Math.floor(y));
+    if (b) {
+      this.remove(b, true);
+      return BUILDINGS[b.type].label;
+    }
+    return null;
+  }
+
   /** Das Tier, das einem Welt-Punkt am nächsten liegt - höchstens `radius` Tiles entfernt. */
   animalNear(x: number, y: number, radius: number): Animal | undefined {
     let best: Animal | undefined;
@@ -1960,6 +2039,18 @@ export class World {
         accent: v.carryType ? RESOURCE_TYPE_COLORS[v.carryType].toRGB() : undefined,
       });
     }
+    for (const d of this.decor) {
+      if (d.x < x0 || d.x > x1 || d.y < y0 || d.y > y1) continue;
+      out.push({
+        x: d.x - 0.5, y: d.y - 0.5, size: d.size, color: player.color.toRGB(), shape: d.shape, alpha: 1,
+        // Vorkommen: motion[3] = 1 - Bäume ungefällt, Sträucher voller Beeren.
+        // Bei Gebäuden hieße derselbe Wert "eingestürzt", dort 0. Mühlen drehen.
+        motion: d.shape === SHAPE.mill || (d.shape >= SHAPE.mill2 && d.shape <= SHAPE.mill4)
+          ? [d.heading, ...millMotion(Math.round(d.x * 7), Math.round(d.y * 7)).slice(1, 3), 0] as [number, number, number, number]
+          : [d.heading, 0, 0, NATURAL.includes(d.shape) ? 1 : 0],
+        ground: this.groundAt?.(d.x, d.y),
+      });
+    }
     for (const a of this.animals) {
       const x = a.prevX + (a.x - a.prevX) * blend;
       const y = a.prevY + (a.y - a.prevY) * blend;
@@ -2085,6 +2176,7 @@ export class World {
         ...(a.state === 'dead' ? { d: true } : {}),
       })),
       spawned: [...this.spawnedChunks],
+      decor: this.decor.map((d) => ({ s: d.shape, x: +d.x.toFixed(2), y: +d.y.toFixed(2), h: +d.heading.toFixed(2), z: d.size })),
     };
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(data));
@@ -2162,6 +2254,7 @@ export class World {
 
     if (data.version === 3) {
       for (const k of data.spawned ?? []) this.spawnedChunks.add(k);
+      this.decor = (data.decor ?? []).map((d) => ({ shape: d.s, x: d.x, y: d.y, heading: d.h, size: d.z }));
       for (const a of data.animals ?? []) {
         if (ANIMALS[a.k]) this.addAnimal(a.k, a.x, a.y, a.hp, a.f, a.d);
       }
@@ -2219,6 +2312,7 @@ export class World {
     this.felled.clear();
     this.villagers = [];
     this.animals = [];
+    this.decor = [];
     this.spawnedChunks.clear();
     this.stock = initialStock();
     this.dirty = true;
