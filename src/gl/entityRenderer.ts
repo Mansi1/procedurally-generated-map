@@ -403,6 +403,7 @@ flat out int vTex;
 out vec3 vLocal;
 uniform float uMeters;       // Breite des Modells in Metern (Modell-Einheit)
 uniform vec3  uPlayerColor;  // Spielerfarbe - für Felder, deren aColor das Gefälle trägt
+uniform float uSkirt;        // 1: Gebäude reichen in den Boden (Spiel), 0: ohne Sockel (Galerie ohne Gelände)
 flat out float vRoof;   // Gebäude: 1 = Dachfläche. Figuren: Körperteil.
 
 // Körperteile der Figur - aCorner.w im Menschen-Mesh.
@@ -909,7 +910,7 @@ void main() {
     // fliegt durch die Luft) - die brauchen keinen Sockel.
     // Felder liegen einfach auf dem Gelände - ein Sockel stünde am Hang als
     // Wand unter der Erde heraus.
-    if (!figure && !natural && !field && !beast && p.z < 0.001) z = base - 1.0;
+    if (uSkirt > 0.5 && !figure && !natural && !field && !beast && p.z < 0.001) z = base - 1.0;
     world = vec3(xy, z);
   } else if (shape == 17) {
     // Staub: ein zur Kamera gedrehter Fleck. Mitte in der Welt, Ausdehnung
@@ -1691,6 +1692,8 @@ export class EntityRenderer {
   /** Eingeebnete Flächen unter Gebäuden (siehe world/flatten.ts). */
   flatZones = new Float32Array(MAX_FLAT_ZONES * 4);
   flatCount = 0;
+  /** Gebäude mit Sockel in den Boden - ohne Gelände (Galerie) stünden sie auf Stelzen. */
+  skirts = true;
   /** Spielerfarbe (0..255) - Felder bekommen sie als Uniform (siehe uPlayerColor). */
   playerColor: [number, number, number] = [64, 160, 72];
   private models: {
@@ -1884,6 +1887,7 @@ export class EntityRenderer {
 
     gl.uniform1f(this.location('uTime'), animationTime());
     gl.uniform3f(this.location('uPlayerColor'), this.playerColor[0] / 255, this.playerColor[1] / 255, this.playerColor[2] / 255);
+    gl.uniform1f(this.location('uSkirt'), this.skirts ? 1 : 0);
     // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
