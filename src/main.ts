@@ -1654,5 +1654,7 @@ if (settings.facing in COMPASS) {
 if (settings.paused && !paused) togglePause();
 updateCompass();
 updateResourceUI();
+// Wer die Seite aufmacht, landet im Menü - "Weiter spielen" (Esc) geht ins Spiel.
+menu.open();
 requestAnimationFrame(loop);
 document.title = `Soliva - ${seed}`;
