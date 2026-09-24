@@ -92,7 +92,7 @@ export class StartScreen {
     document.body.appendChild(this.qr);
     render(
       <a class="start-qr" href="https://mannseicher.com" target="_blank" rel="noopener" title="mannseicher.com">
-        <img src="/qr-mannseicher.svg" width="96" height="96" alt="QR-Code zu mannseicher.com" />
+        <img src="/qr-mannseicher.svg" width="160" height="160" alt="QR-Code zu mannseicher.com" />
         <span>mannseicher.com</span>
       </a>,
       this.qr,
