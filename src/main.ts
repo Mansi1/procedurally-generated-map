@@ -1533,6 +1533,7 @@ function loop(now: number) {
   updateFlatZones();
   updateFields(now);
   collectOverlay(tickAccumulator / TICK);
+  renderer.setPlayerColor(player.color.toRGB());
   renderer.render(camX, camY, mouseTileX, mouseTileY, overlay);
 
   const current = view();

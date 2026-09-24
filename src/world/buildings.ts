@@ -177,7 +177,7 @@ export interface CropDef {
   growTime: number;
   /** Faktor auf FARM_RATE - Mais erntet sich langsamer. */
   rate: number;
-  /** Mit der Sichel (stehend, schlagend) statt kniend von Hand. */
+  /** Mit der Sense gemäht statt von Hand geerntet. */
   scythe: boolean;
 }
 
@@ -187,7 +187,8 @@ export interface CropDef {
  */
 export const CROPS: Record<CropType, CropDef> = {
   wheat: { label: 'Weizen', shape: SHAPE.farmWheat, food: 175, growTime: 40, rate: 1, scythe: true },
-  corn: { label: 'Mais', shape: SHAPE.farmCorn, food: 250, growTime: 70, rate: 0.8, scythe: true },
+  // Maiskolben werden von Hand gebrochen - Weizen wird gemäht.
+  corn: { label: 'Mais', shape: SHAPE.farmCorn, food: 250, growTime: 70, rate: 0.8, scythe: false },
 };
 
 /**

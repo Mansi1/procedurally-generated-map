@@ -281,6 +281,8 @@ export const POSE = {
   work: 2,
   /** Kniend Beeren pflücken - ohne Beil. */
   pick: 3,
+  /** Mit der Sense mähen: der Oberkörper schwingt die Sense flach über den Boden. */
+  scythe: 4,
 } as const;
 
 export interface EntityInstance {
@@ -376,6 +378,7 @@ flat out vec3 vTeam;     // Instanzfarbe (Spielerfarbe) - für den Umriss verdec
 flat out int vTex;
 out vec3 vLocal;
 uniform float uMeters;       // Breite des Modells in Metern (Modell-Einheit)
+uniform vec3  uPlayerColor;  // Spielerfarbe - für Felder, deren aColor das Gefälle trägt
 flat out float vRoof;   // Gebäude: 1 = Dachfläche. Figuren: Körperteil.
 
 // Körperteile der Figur - aCorner.w im Menschen-Mesh.
@@ -393,6 +396,7 @@ const int P_SHIN_R = 10;
 const int P_FOREARM_L = 11;
 const int P_FOREARM_R = 12;
 const int P_TOOL = 13;       // Beil in der rechten Hand, schwingt mit dem Unterarm
+const int P_SCYTHE = 23;     // Sense in der rechten Hand - nur beim Mähen zu sehen
 // Beere am Strauch. aCorner.w = 14 + Zufall * 0.45 je Beere: sie ist zu
 // sehen, solange der Rest des Vorkommens (aMotion.w) über dem Zufall liegt.
 const int P_BERRY = 14;
@@ -483,7 +487,7 @@ void main() {
       bool legL = part == P_LEG_L || part == P_SHIN_L;
       bool legR = part == P_LEG_R || part == P_SHIN_R;
       bool armL = part == P_ARM_L || part == P_FOREARM_L;
-      bool armR = part == P_ARM_R || part == P_FOREARM_R || part == P_TOOL;
+      bool armR = part == P_ARM_R || part == P_FOREARM_R || part == P_TOOL || part == P_SCYTHE;
       // Oberkörper: alles über der Hüfte, was kein Bein ist - er neigt und
       // dreht sich über der Hüfte, Arme und Kopf gehen mit.
       bool upper = !legL && !legR && (part != P_TORSO || p.z > uHip);
@@ -548,6 +552,23 @@ void main() {
         lean = 0.32 + 0.08 * reach;
         twist = -0.1 + 0.12 * reach;
         bob = -(uKnee - 0.04);
+      } else if (pose == 4) {
+        // Mähen: breit und leicht gebeugt, vorgeneigt; die rechte Hand am
+        // Stiel, die linke vorn am Griff. Der Oberkörper dreht hin und her
+        // und zieht die Sense flach über den Boden von rechts nach links.
+        float t = phase * 0.6;
+        float sweep = sin(t);
+        hipL = 0.3;
+        hipR = -0.2;
+        kneeL = -0.4;
+        kneeR = -0.3;
+        shR = 0.05 + 0.05 * sweep;
+        elR = 0.08;
+        shL = 0.85;
+        elL = 0.7;
+        lean = 0.16;
+        twist = sweep * 0.55;
+        bob = -0.035;
       } else {
         // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
         // eine Gruppe nicht im Gleichtakt atmet.
@@ -582,10 +603,12 @@ void main() {
       if (part == P_SHIN_L) p = swingAround(p, uKnee, kneeL);
       if (part == P_SHIN_R) p = swingAround(p, uKnee, kneeR);
       if (part == P_FOREARM_L) p = swingAround(p, uElbow, elL);
-      if (part == P_FOREARM_R || part == P_TOOL) p = swingAround(p, uElbow, elR);
+      if (part == P_FOREARM_R || part == P_TOOL || part == P_SCYTHE) p = swingAround(p, uElbow, elR);
       // Beim Pflücken ist das Beil weggesteckt: alle Ecken auf einen Punkt,
       // die Dreiecke haben dann keine Fläche mehr.
-      if (part == P_TOOL && pose == 3) p = vec3(0.0, 0.0, uHip);
+      if (part == P_TOOL && (pose == 3 || pose == 4)) p = vec3(0.0, 0.0, uHip);
+      // Die Sense nur beim Mähen - sonst trägt er das Beil.
+      if (part == P_SCYTHE && pose != 4) p = vec3(0.0, 0.0, uHip);
       if (legL) p = swingAround(p, uHip, hipL);
       if (legR) p = swingAround(p, uHip, hipR);
       if (armL) p = swingAround(p, uShoulder, shL);
@@ -862,7 +885,10 @@ void main() {
     // Modelle färben nach Material: Kittel bzw. Anstrich in der Instanzfarbe,
     // die Last in der Farbe der Ressource, alles andere wie in der MTL-Datei.
     int role = int(aMaterial.w + 0.5);
-    vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
+    // Felder: aColor trägt das Gefälle, der Anstrich (Pfosten) kommt als Uniform.
+    bool fieldShape = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
+    vec3 paint = fieldShape ? uPlayerColor : aColor;
+    vColor = role == 1 ? paint : role == 2 ? aAccent : aMaterial.rgb;
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
@@ -1157,6 +1183,8 @@ const PARTS: [prefix: string, part: number][] = [
   ['Arm.L.Lower', 11],
   // Das Beil vor dem Unterarm, sonst fiele es unter 'Arm.R.Lower'.
   ['Arm.R.Lower.Tool', 13],
+  // Ebenso die Sense.
+  ['Arm.R.Lower.Scythe', 23],
   ['Arm.R.Lower', 12],
   ['Berry', 14],
   ['Crop', 20],
@@ -1560,6 +1588,8 @@ export class EntityRenderer {
   /** Eingeebnete Flächen unter Gebäuden (siehe world/flatten.ts). */
   flatZones = new Float32Array(MAX_FLAT_ZONES * 4);
   flatCount = 0;
+  /** Spielerfarbe (0..255) - Felder bekommen sie als Uniform (siehe uPlayerColor). */
+  playerColor: [number, number, number] = [64, 160, 72];
   private models: {
     shape: number; model: Model; scale: number; stride?: number;
     mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
@@ -1750,6 +1780,7 @@ export class EntityRenderer {
     this.draw(this.building, flats.length, solids.length);
 
     gl.uniform1f(this.location('uTime'), animationTime());
+    gl.uniform3f(this.location('uPlayerColor'), this.playerColor[0] / 255, this.playerColor[1] / 255, this.playerColor[2] / 255);
     // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;

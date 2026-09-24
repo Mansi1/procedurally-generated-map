@@ -102,6 +102,31 @@ function hatchet({ box }, [x0, x1], gy) {
   box('Arm.R.Lower.Tool.Edge', 'Steel', [hc - 0.011, hc + 0.011], [gy - 0.24, gy + 0.03], [0.42, 0.49], { z: [0.47, 0.53] });
 }
 
+/**
+ * Scythe in the right hand, only shown while mowing (pose 4): the snath runs
+ * through the hand from behind the hip forward down to just above the
+ * ground, the blade reaches across to the left. It sweeps with the body.
+ */
+function scythe({ box }, [x0, x1], gy) {
+  const hx = -(x0 + x1) / 2;
+  const hand = [hx, gy + 0.04, 0];
+  const low = [hx + 0.24, 0.12, 0.9];
+  const dir = low.map((v, i) => v - hand[i]);
+  const high = hand.map((v, i) => v - dir[i] * 0.5);
+  // Snath: a slanted prism from the high end down to the low end.
+  const w = 0.022;
+  box('Arm.R.Lower.Scythe.Snath', 'Wood', [low[0] - w, low[0] + w], [low[1], high[1]], [low[2] - w, low[2] + w],
+    { x: [high[0] - w, high[0] + w], z: [high[2] - w, high[2] + w] });
+  // Grip for the left hand, a third of the way down from the hand.
+  const g = hand.map((v, i) => v + dir[i] * 0.3);
+  box('Arm.R.Lower.Scythe.Nib', 'Wood', [g[0], g[0] + 0.14], [g[1] - 0.018, g[1] + 0.018], [g[2] - 0.018, g[2] + 0.018]);
+  // Blade: thin and curving back to its tip.
+  const [bx, by, bz] = low;
+  box('Arm.R.Lower.Scythe.Blade', 'Steel', [bx - 0.02, bx + 0.32], [by - 0.012, by + 0.008], [bz - 0.05, bz + 0.035]);
+  box('Arm.R.Lower.Scythe.Blade', 'Steel', [bx + 0.32, bx + 0.56], [by - 0.012, by + 0.006], [bz - 0.1, bz - 0.03]);
+  box('Arm.R.Lower.Scythe.Blade', 'Steel', [bx + 0.56, bx + 0.68], [by - 0.01, by + 0.004], [bz - 0.14, bz - 0.1]);
+}
+
 /** Sack on the back - grows out of the back with the load, tinted by resource. */
 function load({ box, pair }, back) {
   box('Load', 'Load', [-0.16, 0.16], [0.86, 1.26], [back - 0.21, back], { x: [-0.14, 0.14], z: [back - 0.19, back], r: 0.2 });
@@ -167,6 +192,7 @@ function male() {
   hand(m, [0.26, 0.322], sh - 0.56);
 
   hatchet(m, [0.26, 0.322], sh - 0.64);
+  scythe(m, [0.26, 0.322], sh - 0.64);
   load(m, -0.13);
   return m.out.join('\n');
 }
@@ -223,6 +249,7 @@ function female() {
   hand(m, [0.212, 0.268], sh - 0.54);
 
   hatchet(m, [0.212, 0.268], sh - 0.62);
+  scythe(m, [0.212, 0.268], sh - 0.62);
   load(m, -0.125);
   return m.out.join('\n');
 }

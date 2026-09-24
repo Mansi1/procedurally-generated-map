@@ -1387,9 +1387,9 @@ export class World {
       if (working) f.sown = Math.min(1, f.sown + dt / (SOW_TIME * length));
       return;
     }
-    // Ernten: Getreide mit der Sichel, andere Früchte kniend von Hand.
-    v.pose = crop.scythe ? POSE.work : POSE.pick;
-    this.swing(v, dt, 'berries', !crop.scythe);
+    // Ernten: Weizen mit der Sense, andere Früchte von Hand.
+    v.pose = crop.scythe ? POSE.scythe : POSE.pick;
+    this.swing(v, dt, 'berries', true);
     if (v.carryType !== 'berries') {
       v.carrying = 0;
       v.carryType = 'berries';
@@ -1621,7 +1621,7 @@ export class World {
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
       const phase = v.pose === POSE.walk
         ? lerp(v.prevStride, v.stride, blend) * (Math.PI * 2 / STRIDE_LENGTH)
-        : v.pose === POSE.work || v.pose === POSE.pick
+        : v.pose === POSE.work || v.pose === POSE.pick || v.pose === POSE.scythe
           ? lerp(v.prevWorkTime, v.workTime, blend) * WORK_TEMPO
           // Stehen: Weltzeit in Sekunden, je Figur versetzt (Leerlauf-Animation).
           : this.time + blend * this.lastDt + v.id * 7.3;

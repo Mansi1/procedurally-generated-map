@@ -352,6 +352,11 @@ export class MapRenderer {
   /**
    * @param centerX Welt-Tile in der Bildmitte
    */
+  /** Spielerfarbe für die Pfosten der Felder (0..255). */
+  setPlayerColor(rgb: [number, number, number]) {
+    this.entities.playerColor = rgb;
+  }
+
   /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */
   setFields(x: number, y: number, data: Uint8Array | null) {
     this.terrain.setFields(x, y, data);

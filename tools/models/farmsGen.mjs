@@ -10,7 +10,7 @@
 import { model } from './primitives.mjs';
 
 const PALETTE = {
-  Wood: '0.420 0.290 0.170', Rope: '0.900 0.860 0.740',
+  Wood: '0.420 0.290 0.170', Rope: '0.900 0.860 0.740', Paint: '0.251 0.627 0.282',
   Wheat: '0.820 0.700 0.450', WheatDark: '0.700 0.560 0.330', WheatStem: '0.760 0.660 0.400',
   WheatEar: '0.940 0.830 0.560',
   CornStalk: '0.460 0.590 0.230', CornLeaf: '0.380 0.560 0.200', CornCob: '1.000 0.840 0.220',
@@ -64,6 +64,8 @@ function ground(m) {
         for (const t of [0, 0.5, 1]) {
           const [px, pz] = [ax + (bx - ax) * t, az + (bz - az) * t];
           m.box(name, 'Wood', [px - 0.05, px + 0.05], [0, 0.5], [pz - 0.05, pz + 0.05], { x: [px - 0.03, px + 0.03], z: [pz - 0.03, pz + 0.03] });
+          // Painted top in the player colour.
+          m.box(name, 'Paint', [px - 0.045, px + 0.045], [0.42, 0.56], [pz - 0.045, pz + 0.045]);
         }
         // In pieces - the game lays the field on the terrain vertex by vertex,
         // a single 5 m cord would cut into a hill.
