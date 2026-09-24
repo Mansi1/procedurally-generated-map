@@ -17,6 +17,8 @@
   padding: 18px 22px 16px;
   background-color: #8a5a32;
   background-size: auto 58px;
+  /* Die Holzplanken scrollen mit dem Inhalt, statt stehen zu bleiben. */
+  background-attachment: local;
   border: 3px solid #3a2412;
   border-radius: 6px;
   box-shadow:
