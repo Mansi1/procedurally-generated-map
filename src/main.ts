@@ -47,7 +47,7 @@ import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
 import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
-import { currentSeed, DEFAULT_SEED, startInWorld, takeNewGameRequest } from './worlds';
+import { currentSeed, DEFAULT_SEED, deleteSave, switchWorld, takeStartRequest } from './worlds';
 
 // Erst Spielfeld-Canvas und Oberfläche (components/Hud.tsx) - danach werden
 // ihre Teile hier über ihre IDs gefunden.
@@ -279,7 +279,11 @@ const start = new StartScreen({
   world: seed,
   continueGame: goToStart,
   // Dieselbe Welt beginnt hier von vorn, eine andere nach dem Neuladen.
-  newGame: (s) => (s === seed ? startNewGame() : startInWorld(s)),
+  newGame: (s) => (s === seed ? startNewGame() : switchWorld(s, 'new')),
+  loadGame: (s) => (s === seed ? goToStart() : switchWorld(s, 'continue')),
+  // Die jetzige Welt steht im Speicher und würde sich neu speichern - also leeren.
+  deleteGame: (s) => (s === seed ? startNewGame() : deleteSave(s)),
+  save: () => world.save(),
   openSettings: () => menu.open(),
 });
 
@@ -1634,8 +1638,9 @@ if (settings.paused && !paused) togglePause();
 updateCompass();
 updateResourceUI();
 // Wer die Seite aufmacht, landet im Hauptmenü - wie bei einem Spiel. Nach
-// der Wahl einer anderen Welt geht es dort gleich mit dem neuen Spiel los.
-if (takeNewGameRequest()) startNewGame();
-else start.open();
+// der Wahl einer anderen Welt geht es dort gleich los - neu oder geladen.
+const request = takeStartRequest();
+if (request === 'new') startNewGame();
+else if (request !== 'continue') start.open();
 requestAnimationFrame(loop);
 document.title = `Soliva - ${seed}`;

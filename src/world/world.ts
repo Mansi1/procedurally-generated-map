@@ -368,6 +368,8 @@ interface SaveData {
   /** Tiere: Art, Lage, Trefferpunkte, Nahrung, erlegt; dazu die Stücke, in denen sie schon entstanden sind. */
   animals?: { k: AnimalKind; x: number; y: number; hp: number; f: number; d?: boolean }[];
   spawned?: string[];
+  /** Wann gespeichert wurde (ms seit 1970) - fürs Laden-Menü; fehlt in älteren Ständen. */
+  savedAt?: number;
 }
 
 export class World {
@@ -2064,6 +2066,7 @@ export class World {
     if (!this.dirty) return;
     const data: SaveData = {
       version: 3,
+      savedAt: Date.now(),
       stock: this.stock,
       buildings: [...this.buildings.values()].map((b) => ({
         t: b.type, x: b.x, y: b.y, q: b.queue, hp: b.hp,

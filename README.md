@@ -50,7 +50,8 @@ unter *Settings → Git* „Git Large File Storage (LFS)“ eingeschaltet sein.
 | `/galerie` | alle Modelle und Animationen ohne Gelände (`?zeige=Birke&zoom=300` zeigt auf ein Modell) |
 
 Die Welt (Seed) wählt man im Hauptmenü unter Einzelspieler → Neues Spiel;
-gleicher Name, gleiche Welt. Standard ist `Soliva`. Der Spielstand liegt im
+gleicher Name, gleiche Welt. Standard ist `Soliva`. Unter Einzelspieler →
+Spiel laden stehen alle Spielstände dieses Browsers. Der Spielstand liegt im
 `localStorage` des Browsers, je Seed unter `pgm.world.<seed>`, die zuletzt
 gewählte Welt unter `pgm.seed`.
 

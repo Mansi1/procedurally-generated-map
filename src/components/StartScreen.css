@@ -150,3 +150,67 @@ body.title-screen #app > :not(#game) {
 #start .start-dice:hover {
   filter: brightness(1.2);
 }
+/* Spiel laden: je Spielstand eine Zeile - Welt, was gebaut ist, wann gespeichert; ✕ löscht. */
+#start .start-saves {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+#start .start-save {
+  display: flex;
+  gap: 6px;
+}
+#start .start-save-load {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  text-align: left;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #fbe7b5;
+  text-shadow: 1px 1px 0 #000;
+  background: rgba(30, 16, 6, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.15);
+  cursor: pointer;
+}
+#start .start-save-load:hover {
+  background: rgba(80, 48, 20, 0.7);
+}
+#start .start-save-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  font-weight: bold;
+}
+#start .start-save-name small {
+  margin-left: 6px;
+  font-size: 11px;
+  font-style: italic;
+  font-weight: normal;
+  color: #e8c878;
+}
+#start .start-save-info {
+  font-size: 12px;
+  color: #cdb58a;
+}
+#start .start-save-delete {
+  width: 38px;
+  font-size: 16px;
+  color: #fbe7b5;
+  background: linear-gradient(180deg, #8e2e1f, #5a170d);
+  border: 2px solid #1a0f07;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#start .start-save-delete:hover {
+  filter: brightness(1.2);
+}

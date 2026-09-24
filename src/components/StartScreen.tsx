@@ -2,13 +2,13 @@
 // Hauptmenü beim Öffnen der Seite, wie bei einem Spiel: Logo und die Wahl
 // zwischen Einzelspieler, Mehrspieler (noch nicht da), Einstellungen und
 // Galerie. Dahinter zieht langsam die Welt vorbei; das Spiel selbst steht,
-// bis man unter Einzelspieler weiterspielt oder neu beginnt - für ein neues
-// Spiel fragt es nach der Welt (Seed).
+// bis man unter Einzelspieler weiterspielt, einen Spielstand lädt oder neu
+// beginnt - für ein neues Spiel fragt es nach der Welt (Seed).
 
 import { createRef, render } from 'defuss';
 import './StartScreen.css';
 import woodBar from '../icons/wood-bar.png';
-import { DEFAULT_SEED, hasProgress, randomSeed } from '../worlds';
+import { DEFAULT_SEED, hasProgress, listSaves, randomSeed, type SaveInfo } from '../worlds';
 
 /** Was das Hauptmenü braucht - main.ts liefert es. */
 export interface StartHooks {
@@ -20,11 +20,17 @@ export interface StartHooks {
   continueGame(): void;
   /** Neues Spiel in der Welt `seed` - ein vorhandener Spielstand dort geht verloren. */
   newGame(seed: string): void;
+  /** Den Spielstand der Welt `seed` laden. */
+  loadGame(seed: string): void;
+  /** Den Spielstand der Welt `seed` löschen. */
+  deleteGame(seed: string): void;
+  /** Die jetzige Welt speichern - damit die Liste der Spielstände stimmt. */
+  save(): void;
   /** Das Einstellungsmenü öffnen. */
   openSettings(): void;
 }
 
-type Page = 'main' | 'single' | 'new';
+type Page = 'main' | 'single' | 'new' | 'load';
 
 function StartButton({ label, hint, onClick, disabled, submit }: {
   label: string; hint?: string; onClick?: () => void; disabled?: boolean; submit?: boolean;
@@ -34,6 +40,37 @@ function StartButton({ label, hint, onClick, disabled, submit }: {
       {label}
       {hint ? <small>{hint}</small> : null}
     </button>
+  );
+}
+
+/** "vor 5 Min." - wie lange es her ist, dass gespeichert wurde. */
+function ago(ms: number): string {
+  const min = Math.floor((Date.now() - ms) / 60_000);
+  if (min < 1) return 'gerade eben';
+  if (min < 60) return `vor ${min} Min.`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `vor ${h} Std.`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? 'gestern' : `vor ${d} Tagen`;
+}
+
+/** Ein Spielstand: Welt, was gebaut ist, wann gespeichert - Klick lädt, ✕ löscht. */
+function SaveRow({ info, current, onLoad, onDelete }: {
+  info: SaveInfo; current: boolean; onLoad: () => void; onDelete: () => void;
+}) {
+  const details = [
+    `${info.buildings} Gebäude`,
+    `${info.villagers} Dorfbewohner`,
+    info.savedAt !== undefined ? ago(info.savedAt) : null,
+  ].filter(Boolean).join(' · ');
+  return (
+    <div class="start-save">
+      <button type="button" class="start-save-load" onClick={onLoad}>
+        <span class="start-save-name">{info.seed}{current ? <small> aktuell</small> : null}</span>
+        <span class="start-save-info">{details}</span>
+      </button>
+      <button type="button" class="start-save-delete" title="Spielstand löschen" onClick={onDelete}>✕</button>
+    </div>
   );
 }
 
@@ -54,6 +91,8 @@ export class StartScreen {
   private show(page: Page) {
     const h = this.hooks;
     const save = h.hasSave();
+    h.save();
+    const saves = listSaves();
     // Neu aufbauen statt abgleichen: sonst erbte "Zurück" an zweiter Stelle
     // das disabled von "Mehrspieler".
     this.root.replaceChildren();
@@ -72,8 +111,22 @@ export class StartScreen {
           <nav class="start-list">
             <div class="start-title">Einzelspieler</div>
             {save ? <StartButton label="Weiterspielen" onClick={() => this.play(() => h.continueGame())} /> : null}
+            <StartButton label="Spiel laden" hint={saves.length > 0 ? String(saves.length) : 'keine'}
+              disabled={saves.length === 0} onClick={() => this.show('load')} />
             <StartButton label="Neues Spiel" onClick={() => this.show('new')} />
             <StartButton label="Zurück" onClick={() => this.show('main')} />
+          </nav>
+        ) : page === 'load' ? (
+          <nav class="start-list">
+            <div class="start-title">Spiel laden</div>
+            <div class="start-saves">
+              {saves.map((info) => (
+                <SaveRow info={info} current={info.seed === h.world}
+                  onLoad={() => this.play(() => h.loadGame(info.seed))}
+                  onDelete={() => this.deleteGame(info.seed)} />
+              ))}
+            </div>
+            <StartButton label="Zurück" onClick={() => this.show('single')} />
           </nav>
         ) : (
           <form class="start-list" onSubmit={(e: Event) => { e.preventDefault(); this.newGame(); }}>
@@ -97,6 +150,13 @@ export class StartScreen {
       this.root,
     );
     if (page === 'new') this.seedInput.current.select();
+  }
+
+  private deleteGame(seed: string) {
+    if (!window.confirm(`Spielstand der Welt "${seed}" löschen?`)) return;
+    this.hooks.deleteGame(seed);
+    // Keiner mehr übrig: zurück zu Einzelspieler.
+    this.show(listSaves().length > 0 ? 'load' : 'single');
   }
 
   private newGame() {

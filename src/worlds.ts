@@ -2,13 +2,18 @@
 // Welche Welt (Seed) gespielt wird - nicht mehr in der Adresse, sondern im
 // localStorage: die zuletzt gewählte. Eine andere Welt beginnt mit einem
 // Neuladen der Seite; ein Vermerk im sessionStorage sagt der neuen Seite,
-// dass sie gleich ein neues Spiel startet statt des Hauptmenüs.
+// dass sie gleich ins Spiel geht (neu oder weiter) statt ins Hauptmenü.
+// Dazu die Liste der Spielstände fürs Laden-Menü.
 
 /** Die Welt, wenn noch keine gewählt wurde. */
 export const DEFAULT_SEED = 'Soliva';
 
 const SEED_KEY = 'pgm.seed';
-const NEW_GAME_KEY = 'pgm.newGame';
+const START_KEY = 'pgm.start';
+const SAVE_PREFIX = 'pgm.world.';
+
+/** Wie die Seite nach dem Wechsel der Welt beginnt. */
+export type StartRequest = 'new' | 'continue';
 
 /** Die zuletzt gewählte Welt. */
 export function currentSeed(): string {
@@ -22,18 +27,62 @@ export function currentSeed(): string {
 /** Hat die Welt einen Spielstand mit Gebäuden oder Dorfbewohnern? */
 export function hasProgress(seed: string): boolean {
   try {
-    const data = JSON.parse(localStorage.getItem(`pgm.world.${seed}`) ?? 'null');
+    const data = JSON.parse(localStorage.getItem(SAVE_PREFIX + seed) ?? 'null');
     return (data?.buildings?.length ?? 0) > 0 || (data?.villagers?.length ?? 0) > 0;
   } catch {
     return false;
   }
 }
 
-/** Neues Spiel in einer anderen Welt: Seed merken und die Seite neu laden. */
-export function startInWorld(seed: string) {
+/** Ein Spielstand, wie ihn das Laden-Menü zeigt. */
+export interface SaveInfo {
+  seed: string;
+  buildings: number;
+  villagers: number;
+  /** Wann gespeichert (ms) - fehlt bei älteren Ständen. */
+  savedAt?: number;
+}
+
+/** Alle Spielstände mit Gebäuden oder Dorfbewohnern, der jüngste zuerst. */
+export function listSaves(): SaveInfo[] {
+  const saves: SaveInfo[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(SAVE_PREFIX)) continue;
+      try {
+        const data = JSON.parse(localStorage.getItem(key) ?? 'null');
+        const info = {
+          seed: key.slice(SAVE_PREFIX.length),
+          buildings: data?.buildings?.length ?? 0,
+          villagers: data?.villagers?.length ?? 0,
+          savedAt: typeof data?.savedAt === 'number' ? data.savedAt : undefined,
+        };
+        if (info.buildings > 0 || info.villagers > 0) saves.push(info);
+      } catch {
+        // Kaputter Eintrag - nicht anbieten.
+      }
+    }
+  } catch {
+    return [];
+  }
+  return saves.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+}
+
+/** Spielstand einer Welt löschen. */
+export function deleteSave(seed: string) {
+  try {
+    localStorage.removeItem(SAVE_PREFIX + seed);
+  } catch {
+    // Ohne Speicher gibt es auch nichts zu löschen.
+  }
+}
+
+/** In eine andere Welt wechseln: Seed merken und die Seite neu laden - dort `request`. */
+export function switchWorld(seed: string, request: StartRequest) {
   try {
     localStorage.setItem(SEED_KEY, seed);
-    sessionStorage.setItem(NEW_GAME_KEY, '1');
+    sessionStorage.setItem(START_KEY, request);
   } catch {
     // Ohne Speicher bleibt es bei der jetzigen Welt.
     return;
@@ -41,14 +90,14 @@ export function startInWorld(seed: string) {
   window.location.replace('/');
 }
 
-/** Soll diese Seite gleich ein neues Spiel beginnen? Der Vermerk gilt nur einmal. */
-export function takeNewGameRequest(): boolean {
+/** Wie diese Seite beginnen soll, wenn eine andere Welt gewählt wurde. Der Vermerk gilt nur einmal. */
+export function takeStartRequest(): StartRequest | null {
   try {
-    const requested = sessionStorage.getItem(NEW_GAME_KEY) === '1';
-    sessionStorage.removeItem(NEW_GAME_KEY);
-    return requested;
+    const request = sessionStorage.getItem(START_KEY);
+    sessionStorage.removeItem(START_KEY);
+    return request === 'new' || request === 'continue' ? request : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
