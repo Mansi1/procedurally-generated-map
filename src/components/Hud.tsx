@@ -56,9 +56,9 @@ function DebugPanel() {
       <div>
         Cursor <b id="cursor-coords">-, -</b><span class="sep">|</span>
         Kamera <b id="cam-coords">-, -</b><span class="sep">|</span>
-        MiniMap <b id="hover-coords">-, -</b><span class="sep">|</span>
-        FPS <b id="fps">0</b>
+        MiniMap <b id="hover-coords">-, -</b>
       </div>
+      <div>FPS <b id="fps">0</b></div>
     </div>
   );
 }
