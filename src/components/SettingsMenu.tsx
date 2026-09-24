@@ -63,6 +63,7 @@ export class SettingsMenu {
   private pauseRow = createRef<HTMLDivElement>();
   private gameButtons = createRef<HTMLDivElement>();
   private backButton = createRef<HTMLDivElement>();
+  private title = createRef<HTMLDivElement>();
 
   constructor(private settings: Settings, private hooks: MenuHooks) {
     this.root = document.createElement('div');
@@ -85,7 +86,7 @@ export class SettingsMenu {
     return (
       <div class="menu-board" role="dialog" aria-label="Menü" style={`background-image:url(${woodBar})`}>
         <img class="menu-logo" src="/logo.svg" alt="Soliva" />
-        <div class="menu-title">Menü</div>
+        <div class="menu-title" ref={this.title}>Menü</div>
         <section>
           <h3>Spieler</h3>
           <div class="menu-row">
@@ -180,6 +181,7 @@ export class SettingsMenu {
     this.pauseRow.current.hidden = fromTitle;
     this.gameButtons.current.hidden = fromTitle;
     this.backButton.current.hidden = !fromTitle;
+    this.title.current.textContent = fromTitle ? 'Einstellungen' : 'Menü';
     this.refresh();
   }
 
