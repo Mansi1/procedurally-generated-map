@@ -22,6 +22,7 @@ import type { EntityInstance } from './gl/entityRenderer';
 import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
+  ANIMALS,
   BUILDING_ORDER,
   CROPS,
   FIELD_ROWS,
@@ -1339,17 +1340,38 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   tileInfoEl.textContent =
     `${TILE_TYPE_LABEL[info.tileType]} | h ${info.height.toFixed(2)}` +
     ` | Feuchte ${info.moisture.toFixed(2)} | Temp ${info.temperature.toFixed(2)}`;
-  updateResourceInfo();
+  updateHoverInfo();
 }
 
 /**
- * Was unter dem Zeiger steht, in den Entwickler-Infos: ein Gebäude mit seinen
- * Trefferpunkten, sonst eine Ressource - Art (Baum- oder Strauchart, z. B.
- * "Heidelbeere") und wie viel Nahrung, Holz, Stein oder Gold noch da ist. Läuft auch getaktet mit, weil
- * Sammler leeren und Gebäude Schaden nehmen, während der Zeiger stillsteht.
+ * Was unter dem Zeiger steht, in den Entwickler-Infos - in dieser Reihenfolge:
+ * ein Dorfbewohner (Name, Leben, was er tut), ein Tier (Leben, erlegt: die
+ * Nahrung am Kadaver), ein Gebäude mit seinen Trefferpunkten, sonst eine
+ * Ressource - Art (Baum- oder Strauchart, z. B. "Heidelbeere") und wie viel
+ * Nahrung, Holz, Stein oder Gold noch da ist. Läuft auch getaktet mit, weil
+ * sich Figuren bewegen und Sammler leeren, während der Zeiger stillsteht.
  */
-function updateResourceInfo() {
-  const hovered = mouseTileX !== undefined && mouseTileY !== undefined;
+function updateHoverInfo() {
+  const hovered = mouseTileX !== undefined && mouseTileY !== undefined
+    && mousePixelX !== undefined && mousePixelY !== undefined;
+  const villager = hovered ? villagerAt(mousePixelX!, mousePixelY!) : undefined;
+  if (villager) {
+    const role = villager.female ? 'Dorfbewohnerin' : VILLAGER.label;
+    setText(objectLabelEl, 'Einheit');
+    setText(resourceInfoEl,
+      `${villager.name} (${role}) | Leben ${Math.ceil(villager.hp)}/${VILLAGER.hp} | ${world.describe(villager)}`);
+    return;
+  }
+  const at = hovered ? pick(mousePixelX!, mousePixelY!) : undefined;
+  const animal = at ? world.animalNear(at.x, at.y, 0.6) : undefined;
+  if (animal) {
+    const def = ANIMALS[animal.kind];
+    setText(objectLabelEl, 'Tier');
+    setText(resourceInfoEl, animal.state === 'dead'
+      ? `${def.label} (erlegt) | Nahrung ${Math.ceil(animal.food)}/${def.food}`
+      : `${def.label} | Leben ${Math.ceil(animal.hp)}/${def.hp}`);
+    return;
+  }
   const building = hovered ? world.at(mouseTileX!, mouseTileY!) : undefined;
   if (building) {
     const def = BUILDINGS[building.type];
@@ -1394,7 +1416,7 @@ canvas.addEventListener('mouseleave', () => {
   mousePixelY = undefined;
   cursorCoordsEl.textContent = '-, -';
   tileInfoEl.textContent = '-';
-  updateResourceInfo();
+  updateHoverInfo();
 });
 
 // FPS Counter
@@ -1651,7 +1673,7 @@ function loop(now: number) {
   // je Frame wäre es nur unruhig und würde das Layout ständig neu rechnen.
   if (now - lastUiUpdate > 200) {
     updateResourceUI();
-    updateResourceInfo();
+    updateHoverInfo();
     lastUiUpdate = now;
   }
   if (now - lastSave > SAVE_INTERVAL) {
