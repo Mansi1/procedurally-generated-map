@@ -270,6 +270,7 @@ const menu = new SettingsMenu(settings, {
   },
   // Neues Spiel: im Hauptmenü die Welt wählen.
   newGame: () => start.open('new'),
+  save: () => world.save(),
 });
 
 function startNewGame() {

@@ -23,6 +23,8 @@ export interface MenuHooks {
   musicTitle(): string | null;
   nextTrack(): void;
   newGame(): void;
+  /** Den Spielstand jetzt speichern. */
+  save(): void;
 }
 
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
@@ -65,6 +67,8 @@ export class SettingsMenu {
   private gameButtons = createRef<HTMLDivElement>();
   private backButton = createRef<HTMLDivElement>();
   private title = createRef<HTMLDivElement>();
+  private saveButton = createRef<HTMLButtonElement>();
+  private savedTimer = 0;
 
   constructor(private settings: Settings, private hooks: MenuHooks) {
     this.root = document.createElement('div');
@@ -166,6 +170,7 @@ export class SettingsMenu {
         </section>
         <div class="menu-footer" ref={this.gameButtons}>
           <button type="button" class="menu-btn danger" onClick={() => this.newGame()}>Neues Spiel</button>
+          <button type="button" class="menu-btn" ref={this.saveButton} onClick={() => this.save()}>Speichern</button>
           <button type="button" class="menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
         </div>
         <div class="menu-footer menu-footer-end" ref={this.backButton} hidden>
@@ -173,6 +178,15 @@ export class SettingsMenu {
         </div>
       </div>
     );
+  }
+
+  /** Speichern - der Knopf bestätigt es kurz. */
+  private save() {
+    this.hooks.save();
+    const button = this.saveButton.current;
+    button.textContent = 'Gespeichert ✓';
+    clearTimeout(this.savedTimer);
+    this.savedTimer = window.setTimeout(() => { button.textContent = 'Speichern'; }, 1500);
   }
 
   /** Neues Spiel: die Wahl der Welt übernimmt das Hauptmenü, auch die Rückfrage. */
