@@ -26,15 +26,13 @@ function HelpPanel() {
   );
 }
 
-/** Legende der Geländearten - aus der Palette, damit sie nicht aus dem Tritt gerät. */
+/** Legende der Geländearten - nur die Farben, der Name als Tooltip. Aus der Palette, damit sie nicht aus dem Tritt gerät. */
 function Legend() {
   return (
     <div id="legend">
       {(Object.keys(TILE_TYPE_LABEL) as TileType[]).map((type) => (
-        <span class="legend-item">
-          <i style={`background:${TILE_TYPE_COLOR[type].toRgbString()}`} />
-          {TILE_TYPE_LABEL[type]}
-        </span>
+        <i class="legend-item" title={TILE_TYPE_LABEL[type]}
+          style={`background:${TILE_TYPE_COLOR[type].toRgbString()}`} />
       ))}
     </div>
   );
@@ -44,6 +42,8 @@ function Legend() {
 function DebugPanel() {
   return (
     <div id="debug" class="panel">
+      {/* Schließt das Panel - wie der Schalter im Menü (main.ts). */}
+      <button type="button" id="debug-close" title="Entwickler-Infos ausblenden">×</button>
       <div>
         Pos <b id="pos">0, 0</b><span class="sep">|</span>
         Tiles/Px <b id="sampling">-</b><span class="sep">|</span>

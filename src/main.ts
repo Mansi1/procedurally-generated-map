@@ -231,6 +231,14 @@ function applySettings() {
   document.getElementById('debug')!.hidden = !settings.showDebug;
 }
 
+// × an den Entwickler-Infos: ausblenden wie im Menü - und so gespeichert.
+document.getElementById('debug-close')!.addEventListener('click', () => {
+  settings.showDebug = false;
+  saveSettings(settings);
+  applySettings();
+  menu.refresh();
+});
+
 function togglePause() {
   paused = !paused;
   pausedEl.hidden = !paused;
