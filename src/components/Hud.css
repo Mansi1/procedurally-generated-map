@@ -102,6 +102,13 @@
 #debug b {
   font-variant-numeric: tabular-nums;
 }
+/* Tastenhilfe und Entwickler-Infos: durchsichtiger als die übrigen Panels,
+   damit sie weniger vom Spielfeld verdecken. */
+#ui,
+#debug {
+  background: rgba(10, 14, 18, 0.4);
+  border-color: rgba(120, 220, 150, 0.2);
+}
 /* × zum Ausblenden der Tastenhilfe und der Entwickler-Infos */
 .panel-close {
   position: absolute;
