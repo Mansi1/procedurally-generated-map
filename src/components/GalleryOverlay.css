@@ -155,3 +155,14 @@
   font-size: 11px;
   color: #cdb58a;
 }
+/* Zusatz (Abriss): rot und etwas abgesetzt von den Varianten. */
+.gal-chip.gal-extra {
+  margin-left: 14px;
+  background: linear-gradient(180deg, #8e2e1f, #5a170d);
+}
+.gal-chip.gal-extra.active {
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  background: linear-gradient(180deg, #d8483a, #8e2e1f);
+  box-shadow: 0 0 8px rgba(216, 72, 58, 0.7);
+}

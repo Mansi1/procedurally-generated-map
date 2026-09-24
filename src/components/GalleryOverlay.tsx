@@ -13,6 +13,8 @@ export interface GalleryItem {
   group: string;
   label: string;
   animations: string[];
+  /** Zusatz zur gewählten Animation, z. B. "Abriss" bei Gebäuden - ein- und ausschaltbar. */
+  extras?: string[];
 }
 
 export interface GalleryHooks {
@@ -20,6 +22,8 @@ export interface GalleryHooks {
   select(index: number): void;
   /** Animation des gewählten Modells gewählt. */
   animate(index: number): void;
+  /** Zusatz (Abriss) ein- oder ausschalten. */
+  extra(): void;
   /** Ansicht drehen: -1 links herum, +1 rechts herum. */
   rotate(step: number): void;
 }
@@ -30,8 +34,8 @@ export interface GalleryElements {
   labels: HTMLDivElement[];
   /** Übersicht: je Reihe ihr Titel, in der Reihenfolge von `titles`. */
   titles: HTMLDivElement[];
-  /** Zeigt, was gewählt ist: Modell (-1 = Übersicht) und Animation. */
-  show(item: number, animation: number): void;
+  /** Zeigt, was gewählt ist: Modell (-1 = Übersicht), Animation und ob der Zusatz läuft. */
+  show(item: number, animation: number, extra: boolean): void;
 }
 
 /**
@@ -89,7 +93,7 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
 
   // Die Knöpfe der Liste - Refs in der verschachtelten Liste setzt defuss nicht.
   const itemButtons = [...root.querySelectorAll<HTMLButtonElement>('.gal-item[data-index]')];
-  const show = (item: number, animation: number) => {
+  const show = (item: number, animation: number, extra: boolean) => {
     allRef.current.classList.toggle('active', item < 0);
     for (const b of itemButtons) b.classList.toggle('active', Number(b.dataset.index) === item);
     overview.current.hidden = item >= 0;
@@ -102,6 +106,11 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
       <>
         {it.animations.map((name, i) => (
           <button type="button" class={i === animation ? 'gal-chip active' : 'gal-chip'} onClick={() => hooks.animate(i)}>{name}</button>
+        ))}
+        {/* Zusatz, abgesetzt: gilt für die gewählte Variante. */}
+        {(it.extras ?? []).map((name) => (
+          <button type="button" class={extra ? 'gal-chip gal-extra active' : 'gal-chip gal-extra'} onClick={() => hooks.extra()}
+            title={`${name} der gewählten Variante ein/aus`}>{extra ? `■ ${name}` : `▶ ${name}`}</button>
         ))}
       </>,
       chips.current,

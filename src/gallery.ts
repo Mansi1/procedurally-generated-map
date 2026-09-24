@@ -211,6 +211,8 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
  */
 interface Showcase extends GalleryItem {
   exhibits: Exhibit[];
+  /** Gebäude: Abriss je Variante - als Zusatz zur gewählten Variante. */
+  demolish?: Exhibit[];
   zoom: number;
   lift: number;
 }
@@ -220,6 +222,15 @@ const after = (label: string) => label.split(' · ').pop()!;
 
 function showcase(group: string, label: string, exhibits: Exhibit[], zoom: number, lift: number, names?: string[]): Showcase {
   return { group, label, exhibits, animations: names ?? exhibits.map((e) => after(e.label)), zoom, lift };
+}
+
+/** Gebäude mit Varianten (Stufen) und dem Abriss als Zusatz zur gewählten. */
+function building(label: string, shapes: number[], size: number, zoom: number, lift: number, motion?: (i: number) => [number, number, number, number]): Showcase {
+  return {
+    ...showcase('Gebäude', label, shapes.map((sh, i) => model(shapes.length > 1 ? `Stufe ${i + 1}` : 'steht', sh, size, motion?.(i))), zoom, lift),
+    demolish: shapes.map((sh) => collapse('Abriss', sh, size)),
+    extras: ['Abriss'],
+  };
 }
 
 const walkRate = VILLAGER.speed * Math.PI * 2 / 0.6;
@@ -250,22 +261,11 @@ const SHOWCASE: Showcase[] = [
     animal(kind, 'flieht', ANIMAL_POSE.flee),
     animal(kind, 'erlegt', ANIMAL_POSE.dead),
   ], kind === 'hare' ? 420 : 240, kind === 'hare' ? 0.3 : 0.6)),
-  showcase('Gebäude', 'Hauptgebäude', [
-    model('steht', SHAPE.townCenter, BUILDINGS.town_center.size),
-    collapse('Abriss', SHAPE.townCenter, BUILDINGS.town_center.size),
-  ], 150, 1.1),
-  showcase('Gebäude', 'Haus', [
-    ...[SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4].map((sh, i) => model(`Stufe ${i + 1}`, sh, BUILDINGS.house.size)),
-    collapse('Abriss', SHAPE.house, BUILDINGS.house.size),
-  ], 220, 0.7),
-  showcase('Gebäude', 'Holzlager', [SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4]
-    .map((sh, i) => model(`Stufe ${i + 1}`, sh, BUILDINGS.lumberjack.size)), 220, 0.6),
-  showcase('Gebäude', 'Minenlager', [
-    model('steht', SHAPE.miningCamp, BUILDINGS.mine.size),
-    collapse('Abriss', SHAPE.miningCamp, BUILDINGS.mine.size),
-  ], 200, 0.7),
-  showcase('Gebäude', 'Mühle', [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4]
-    .map((sh, i) => model(`Stufe ${i + 1}`, sh, BUILDINGS.forager.size, millMotion(i, 7))), 150, 1.4),
+  building('Hauptgebäude', [SHAPE.townCenter], BUILDINGS.town_center.size, 150, 1.1),
+  building('Haus', [SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4], BUILDINGS.house.size, 220, 0.7),
+  building('Holzlager', [SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4], BUILDINGS.lumberjack.size, 220, 0.6),
+  building('Minenlager', [SHAPE.miningCamp], BUILDINGS.mine.size, 200, 0.7),
+  building('Mühle', [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4], BUILDINGS.forager.size, 150, 1.4, (i) => millMotion(i, 7)),
   showcase('Gebäude', 'Sammelpunkt', [model('weht', SHAPE.rallyFlag, 0.54)], 420, 0.4),
   ...TREES.map(([label, sh]) => showcase('Bäume', label, [
     model('steht', sh, 0.6, [0.4, 0, 0, 1]),
@@ -299,9 +299,10 @@ const titleAt = ROWS.map((row, r) => {
   return { title: row.title, ...groundToWorld(-width / 2 - 1.2, rowV[r]) };
 });
 
-/** Gewählt: Modell (-1 = Übersicht aller) und Animation. */
+/** Gewählt: Modell (-1 = Übersicht aller), Animation und ob der Abriss läuft. */
 let current = 0;
 let animation = 0;
+let demolishing = false;
 
 const { canvas, labels: labelEls, titles: titleEls, show } = mountGallery(
   document.getElementById('app')!,
@@ -311,6 +312,10 @@ const { canvas, labels: labelEls, titles: titleEls, show } = mountGallery(
   {
     select: (i) => choose(i, 0),
     animate: (i) => choose(current, i),
+    extra: () => {
+      demolishing = !demolishing;
+      choose(current, animation, false);
+    },
     rotate: (step) => {
       setViewRotation(viewRotation() + step);
       if (current >= 0) frame0();
@@ -341,15 +346,18 @@ const LIST_WIDTH = 224;
 
 /** Modell `i` (-1 = Übersicht) mit Animation `a` zeigen, bei einem Wechsel die Kamera darauf, Adresse merken. */
 function choose(i: number, a: number, reframe = i !== current) {
+  // Ein anderes Modell beginnt ohne Abriss.
+  if (i !== current) demolishing = false;
   current = Math.max(-1, Math.min(SHOWCASE.length - 1, i));
   animation = current < 0 ? 0 : Math.max(0, Math.min(SHOWCASE[current].exhibits.length - 1, a));
   if (reframe) frame0();
-  show(current, animation);
+  show(current, animation, demolishing);
   const params = new URLSearchParams();
   if (current < 0) params.set('zeige', 'alle');
   else {
     params.set('zeige', SHOWCASE[current].label);
     params.set('animation', SHOWCASE[current].animations[animation]);
+    if (demolishing) params.set('abriss', '1');
   }
   window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
 }
@@ -465,6 +473,8 @@ const startItem = focus === 'alle' ? -1 : Math.max(0, SHOWCASE.findIndex((s) => 
 const startAnim = startItem >= 0
   ? Math.max(0, SHOWCASE[startItem].animations.findIndex((a) => a.toLowerCase() === params.get('animation')?.toLowerCase()))
   : 0;
+demolishing = params.get('abriss') === '1';
+current = startItem;
 choose(startItem, startAnim, true);
 if (params.has('zoom')) zoom = Number(params.get('zoom'));
 
@@ -475,7 +485,10 @@ function frame(now: number) {
   const t = (now - start) / 1000;
   instances.length = 0;
   if (current < 0) for (const p of placed) p.item.draw(t, p.x, p.y, instances);
-  else SHOWCASE[current].exhibits[animation].draw(t, 0, 0, instances);
+  else {
+    const s = SHOWCASE[current];
+    (demolishing && s.demolish ? s.demolish[animation] : s.exhibits[animation]).draw(t, 0, 0, instances);
+  }
 
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0.125, 0.14, 0.17, 1);
