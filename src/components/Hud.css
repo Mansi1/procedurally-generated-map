@@ -60,12 +60,22 @@
 #debug {
   top: 66px;
   left: 8px;
-  max-width: 360px;
+  /* Feste Größe: wechselnde Werte unter dem Zeiger lassen das Panel nicht
+     springen - jede Zeile einzeilig, zu Langes wird gekürzt. */
+  width: 360px;
   /* Nur für Entwickler - kleiner als die übrigen Panels. */
   font-size: 9px;
   line-height: 1.5;
   /* Platz rechts für das × */
   padding-right: 24px;
+}
+#debug > div:not(#legend) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#debug b {
+  font-variant-numeric: tabular-nums;
 }
 #debug-close {
   position: absolute;
