@@ -707,14 +707,52 @@ window.addEventListener('mouseup', (e) => {
   boxEl.hidden = true;
 });
 
+/**
+ * Rechte Maustaste: gedrückt halten und ziehen verschiebt die Karte (wie
+ * WASD), kurz klicken ist ein Befehl. Entschieden wird erst beim Loslassen -
+ * das Kontextmenü-Ereignis kommt auf dem Mac schon beim Drücken.
+ */
+let rightDrag: { x: number; y: number; moved: boolean } | null = null;
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 2) return;
+  rightDrag = { x: e.clientX, y: e.clientY, moved: false };
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!rightDrag || !(e.buttons & 2)) return;
+  const dx = e.clientX - rightDrag.x;
+  const dy = e.clientY - rightDrag.y;
+  if (!rightDrag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+  rightDrag.moved = true;
+  canvas.style.cursor = 'grabbing';
+  // Die Karte folgt der Maus: die Kamera geht in die Gegenrichtung.
+  const d = panDelta(tileSize, -dx, -dy);
+  camX += d.x;
+  camY += d.y;
+  rightDrag.x = e.clientX;
+  rightDrag.y = e.clientY;
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (e.button !== 2 || !rightDrag) return;
+  const moved = rightDrag.moved;
+  rightDrag = null;
+  if (moved) {
+    updateCursor();
+    return;
+  }
+  if (e.target === canvas) rightClick(canvasPoint(e));
+});
+
 /** Rechtsklick: im Baumodus abbrechen, mit Dorfbewohnern ein Befehl. */
-canvas.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
+function rightClick(p: { x: number; y: number }) {
   if (selected) {
     select(null);
     return;
   }
-  const p = canvasPoint(e);
   // Auf das Objekt gezielt (Baumkrone, Fels) zählt dessen Feld.
   const { x, y } = targetTileAt(p.x, p.y);
 
@@ -744,7 +782,7 @@ canvas.addEventListener('contextmenu', (e) => {
   if (reason) hint(reason);
   else sound.play('click', 0.7);
   updateSelectionUI();
-});
+}
 
 /** Einen Dorfbewohner ausbilden: im ausgewählten Hauptgebäude, sonst im nächstgelegenen. */
 /** Dorfbewohner einreihen - `count` auf einmal (Umschalt: 5, wie in AoE2). */
@@ -1273,14 +1311,36 @@ window.addEventListener('keydown', (e) => {
   if (byKey) select(selected === byKey ? null : byKey);
 });
 
+/**
+ * Mausrad und Trackpad: jede Zoomstufe verdoppelt den Maßstab, also nicht je
+ * Ereignis eine Stufe. Ein Mausrad schickt je Raste ein Ereignis (~100 px),
+ * ein Trackpad beim Wischen Dutzende kleine samt Nachschwung - gesammelt
+ * wird bis etwa eine Raste, dann eine Stufe und kurz Ruhe, damit der
+ * Nachschwung nicht weiterzoomt. Zusammenziehen/Spreizen (Pinch, kommt als
+ * Rad mit Strg) zählt stärker.
+ */
+const WHEEL_STEP = 100;
+const WHEEL_PAUSE = 220;
+let wheelSum = 0;
+let wheelLast = 0;
+let wheelLocked = 0;
+
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  const now = performance.now();
+  // Zeilen bzw. Seiten (Firefox mit Mausrad) in Pixel umrechnen.
+  const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1;
+  const delta = e.deltaY * unit * (e.ctrlKey ? 4 : 1);
+  // Nach längerer Pause oder in die andere Richtung: von vorn zählen.
+  if (now - wheelLast > 250 || Math.sign(delta) !== Math.sign(wheelSum)) wheelSum = 0;
+  wheelLast = now;
+  if (now < wheelLocked) return;
+  wheelSum += delta;
+  if (Math.abs(wheelSum) < WHEEL_STEP) return;
   const rect = canvas.getBoundingClientRect();
-  setZoom(
-      zoomIndex + (e.deltaY < 0 ? 1 : -1),
-      e.clientX - rect.left,
-      e.clientY - rect.top,
-  );
+  setZoom(zoomIndex + (wheelSum < 0 ? 1 : -1), e.clientX - rect.left, e.clientY - rect.top);
+  wheelSum = 0;
+  wheelLocked = now + WHEEL_PAUSE;
 }, { passive: false });
 
 window.addEventListener('keyup', (e) => {
