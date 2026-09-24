@@ -268,8 +268,11 @@ const menu = new SettingsMenu(settings, {
     // Der Titel wechselt sofort - das Menü zeigt ihn gleich an.
     menu.refresh();
   },
-  // Neues Spiel: im Hauptmenü die Welt wählen.
-  newGame: () => start.open('new'),
+  // Vorher speichern - im Hauptmenü steht der Stand dann unter Weiterspielen.
+  mainMenu: () => {
+    world.save();
+    start.open();
+  },
   save: () => world.save(),
 });
 

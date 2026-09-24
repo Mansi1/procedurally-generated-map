@@ -1,8 +1,9 @@
 // SettingsMenu.tsx
 // Menü als Holztafel in der Bildmitte (Zahnrad an der Rohstoffleiste oder
 // F10, wie in AoE2): Spielerfarbe, Pause, Tempo, Ton und Musik, Kamera-Tempo,
-// Anzeigen, neues Spiel. Einmal gerendert; refresh() setzt über Refs, was sich
-// auch von außen ändert (Pause, Ton, laufendes Musikstück).
+// Anzeigen, Speichern, zurück ins Hauptmenü. Einmal gerendert; refresh()
+// setzt über Refs, was sich auch von außen ändert (Pause, Ton, laufendes
+// Musikstück).
 
 import { createRef, render, type Ref } from 'defuss';
 import './SettingsMenu.css';
@@ -22,7 +23,8 @@ export interface MenuHooks {
   /** Titel des Musikstücks, das gerade läuft, oder null. */
   musicTitle(): string | null;
   nextTrack(): void;
-  newGame(): void;
+  /** Zurück ins Hauptmenü - dort geht es weiter, neu oder mit einem anderen Spielstand. */
+  mainMenu(): void;
   /** Den Spielstand jetzt speichern. */
   save(): void;
 }
@@ -169,7 +171,7 @@ export class SettingsMenu {
           </div>
         </section>
         <div class="menu-footer" ref={this.gameButtons}>
-          <button type="button" class="menu-btn danger" onClick={() => this.newGame()}>Neues Spiel</button>
+          <button type="button" class="menu-btn" onClick={() => this.mainMenu()}>Hauptmenü</button>
           <button type="button" class="menu-btn" ref={this.saveButton} onClick={() => this.save()}>Speichern</button>
           <button type="button" class="menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
         </div>
@@ -189,10 +191,9 @@ export class SettingsMenu {
     this.savedTimer = window.setTimeout(() => { button.textContent = 'Speichern'; }, 1500);
   }
 
-  /** Neues Spiel: die Wahl der Welt übernimmt das Hauptmenü, auch die Rückfrage. */
-  private newGame() {
+  private mainMenu() {
     this.close();
-    this.hooks.newGame();
+    this.hooks.mainMenu();
   }
 
   isOpen(): boolean {
