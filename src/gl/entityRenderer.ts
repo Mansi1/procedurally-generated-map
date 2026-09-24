@@ -82,6 +82,10 @@ import berryBush3Mtl from '../models/berry_bush_3.mtl?raw';
 import berryBush4Obj from '../models/berry_bush_4.obj?raw';
 import berryBush4Mtl from '../models/berry_bush_4.mtl?raw';
 import { FARM_KINDS, farmModel } from '../../tools/models/farmsGen.mjs';
+import deerObj from '../models/deer.obj?raw';
+import deerMtl from '../models/deer.mtl?raw';
+import hareObj from '../models/hare.obj?raw';
+import hareMtl from '../models/hare.mtl?raw';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
 
@@ -175,6 +179,12 @@ export const SHAPE = {
    */
   farmWheat: 50,
   farmCorn: 59,
+  /**
+   * Wild zum Jagen (models/deer.obj, hare.obj): motion = [Blickrichtung,
+   * Phase, Pose (ANIMAL_POSE), 0] - siehe "beast" im Shader.
+   */
+  deer: 90,
+  hare: 91,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -217,7 +227,7 @@ export const TREES: number[] = [
 ];
 
 /** Diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
-const NATURAL: number[] = [
+export const NATURAL: number[] = [
   ...TREES,
   SHAPE.stoneRock, SHAPE.stoneRock2, SHAPE.stoneRock3, SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3,
   SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4,
@@ -273,6 +283,17 @@ function animationTime(): number {
  * Gefälle weiter oder weniger weit (siehe "falling").
  */
 export const FALL_LYING = Math.PI / 2 - 0.1;
+
+/** Was ein Tier gerade tut - steuert seine Animation (motion[2]). */
+export const ANIMAL_POSE = {
+  /** Steht und äst, hebt ab und zu den Kopf. */
+  graze: 0,
+  walk: 1,
+  /** Flucht: weite Sprünge. */
+  flee: 5,
+  /** Erlegt: liegt auf der Seite. */
+  dead: 6,
+} as const;
 
 /** Was eine Figur gerade tut - steuert die Animation. */
 export const POSE = {
@@ -361,6 +382,9 @@ uniform float uModelScale;
 uniform float uModelTop;     // Höhe des Modells in Modell-Einheiten (Bäume: Absägen)
 uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
+uniform vec2  uLegs;         // Tiere: Gelenk (vorn) der Vorder- und Hinterbeine
+uniform vec2  uNeck;         // Tiere: Gelenk des Halses (vorn, oben)
+uniform float uSide;         // Tiere: halbe Breite des Körpers - so liegt es tot auf der Seite
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
 // Feldpflanzen: 1 = frisch gesät und grün, 0 = reif in ihrer eigenen Farbe.
@@ -424,6 +448,15 @@ const int P_SOIL = 21;
 const int P_EDGE = 22;
 
 
+// Dreht p in der Ebene aus Blickrichtung (x) und Höhe (z) um ein Gelenk an
+// (vorn, oben) = pivot - positiv schwingt, was unter dem Gelenk hängt, nach vorn.
+vec3 swingAt(vec3 p, vec2 pivot, float angle) {
+  vec2 q = vec2(p.x - pivot.x, p.z - pivot.y);
+  float c = cos(angle);
+  float s = sin(angle);
+  return vec3(pivot.x + q.x * c - q.y * s, p.y, pivot.y + q.x * s + q.y * c);
+}
+
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
 // so schwingen Arme und Beine nach vorn und hinten.
 vec3 swingAround(vec3 p, float pivot, float angle) {
@@ -471,12 +504,14 @@ void main() {
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5 || shape == 18;
+    bool beast = shape == ${SHAPE.deer} || shape == ${SHAPE.hare};
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
     bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
     // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
     float size = natural ? aParams.z
-        : figure ? max(aParams.z, uMinSizeTiles * 0.5) : max(aParams.z, uMinSizeTiles);
+        : figure ? max(aParams.z, uMinSizeTiles * 0.5)
+        : beast ? max(aParams.z, uMinSizeTiles * 0.3) : max(aParams.z, uMinSizeTiles);
     float scale = size * uModelScale;
     int part = int(aCorner.w + 0.5);
     vec3 p = aCorner.xyz;
@@ -634,6 +669,47 @@ void main() {
       }
       p.y += sway;
       p.z += bob;
+    }
+
+    if (beast) {
+      // Tiere: Beine schwingen um ihr oberes Gelenk, der Kopf samt Hals nickt
+      // um den Halsansatz. Rehe gehen im Kreuzgang und springen auf der
+      // Flucht, Hasen hoppeln - Vorder- und Hinterbeine jeweils zusammen.
+      float phase = aMotion.y;
+      int pose = int(aMotion.z + 0.5);
+      bool hare = shape == ${SHAPE.hare};
+      bool front = part == 24 || part == 25;
+      bool leg = part >= 24 && part <= 27;
+      vec2 pivot = vec2(front ? uLegs.x : uLegs.y, uHip);
+      float bob = 0.0;
+      float dip = 0.0;
+      if (pose == 1 || pose == 5) {
+        float amp = pose == 5 ? 0.8 : 0.45;
+        float s = sin(phase);
+        float a = 0.0;
+        if (hare || pose == 5) {
+          // Hoppeln bzw. Springen: vorn und hinten gegengleich, der Körper hebt ab.
+          a = (front ? s : -s) * amp;
+          bob = max(0.0, sin(phase + 1.2)) * (hare ? 0.25 : 0.1);
+        } else {
+          // Kreuzgang: links vorn mit rechts hinten.
+          a = (part == 24 || part == 27 ? s : -s) * amp;
+          bob = abs(cos(phase)) * 0.015;
+        }
+        if (leg) p = swingAt(p, pivot, a);
+        dip = pose == 5 ? 0.15 : -0.1;
+      } else if (pose == 0) {
+        // Äsen: meist mit dem Kopf unten, ab und zu schaut es auf.
+        float up = smoothstep(0.6, 0.9, sin(phase * 0.21 + 1.0));
+        // Weit genug, dass das Maul ans Gras kommt.
+        dip = mix(1.45, 0.0, up) + sin(phase * 2.3) * 0.05 * (1.0 - up);
+      }
+      if (part == P_HEAD) p = swingAt(p, uNeck, -dip);
+      p.z += bob;
+      if (pose == 6) {
+        // Erlegt: auf die Seite gekippt, die Beine zeigen zur Seite.
+        p = vec3(p.x, -p.z, p.y + uSide);
+      }
     }
 
     if (${TREES.map((n) => `shape == ${n}`).join(' || ')}) {
@@ -833,7 +909,7 @@ void main() {
     // fliegt durch die Luft) - die brauchen keinen Sockel.
     // Felder liegen einfach auf dem Gelände - ein Sockel stünde am Hang als
     // Wand unter der Erde heraus.
-    if (!figure && !natural && !field && p.z < 0.001) z = base - 1.0;
+    if (!figure && !natural && !field && !beast && p.z < 0.001) z = base - 1.0;
     world = vec3(xy, z);
   } else if (shape == 17) {
     // Staub: ein zur Kamera gedrehter Fleck. Mitte in der Welt, Ausdehnung
@@ -906,7 +982,7 @@ void main() {
   // höher - es schnitte Füße und Ring ab. Ihre Tiefe wird deshalb um etwa
   // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
   // wo es ist (siehe project: näher = kleinere Tiefe).
-  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING}) gl_Position.z -= 0.5 / uDepthRange;
+  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || shape == ${SHAPE.deer} || shape == ${SHAPE.hare}) gl_Position.z -= 0.5 / uDepthRange;
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
   if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
@@ -1187,6 +1263,11 @@ const PARTS: [prefix: string, part: number][] = [
   ['Arm.R.Lower.Scythe', 23],
   ['Arm.R.Lower', 12],
   ['Berry', 14],
+  // Tiere: die vier Beine (vor 'Leg.L'/'Leg.R' der Figuren - andere Namen).
+  ['Leg.FL', 24],
+  ['Leg.FR', 25],
+  ['Leg.BL', 26],
+  ['Leg.BR', 27],
   ['Crop', 20],
   ['Soil', 21],
   ['Edge', 22],
@@ -1248,6 +1329,10 @@ interface Model {
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
+  /** Tiere: Gelenke (vorn) der Vorder- und Hinterbeine, des Halses (vorn, oben), halbe Breite. */
+  legs: [number, number];
+  neck: [number, number];
+  side: number;
   /** Höchster Punkt in Modell-Einheiten - dort sitzt der Lebensbalken. */
   top: number;
   /** Eingang (Modell-Einheiten: vorn, links), falls das Modell ihn markiert. */
@@ -1359,6 +1444,10 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   let elbow = 0;
   let stump = 0;
   const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+  const legSum = [0, 0];
+  const legCount = [0, 0];
+  let neck: [number, number] = [0, Infinity];
+  let side = 0;
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
   // Bäume: Oberkante des Stumpfs in Datei-Einheiten - dort liegen die beiden
@@ -1405,7 +1494,15 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
-      if (part === 1 || part === 2) hip = Math.max(hip, z);
+      if (part === 1 || part === 2 || (part >= 24 && part <= 27)) hip = Math.max(hip, z);
+      if (part >= 24 && part <= 27) {
+        const i = part <= 25 ? 0 : 1;
+        legSum[i] += x;
+        legCount[i]++;
+      }
+      // Halsansatz: der tiefste Punkt von Kopf und Hals, hinten.
+      if (part === 5 && (z < neck[1] || (z === neck[1] && x < neck[0]))) neck = [x, z];
+      if (part === 0) side = Math.max(side, Math.abs(y));
       if (part === 3 || part === 4) shoulder = Math.max(shoulder, z);
       // Knie und Ellbogen an der Oberkante von Unterschenkel und Unterarm.
       if (part === 9 || part === 10) knee = Math.max(knee, z);
@@ -1442,6 +1539,9 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
     hub: [(sails.y[0] + sails.y[1]) / 2, (sails.z[0] + sails.z[1]) / 2],
+    legs: [legSum[0] / Math.max(1, legCount[0]), legSum[1] / Math.max(1, legCount[1])],
+    neck: Number.isFinite(neck[1]) ? neck : [0, 0],
+    side,
     top: (maxY - minY) / unitLength,
     meters: unitLength,
   };
@@ -1549,6 +1649,9 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   // Nach Höhe gemessen: das Tuch bewegt sich und zählt nicht zur Breite,
   // der Mast allein wäre als Maßstab viel zu schmal.
   { shape: SHAPE.rallyFlag, model: loadModel(rallyFlagObj, rallyFlagMtl, 'height'), scale: 1 },
+  // Tiere: auf Höhe 1 gebracht - die Instanzgröße ist ihre Höhe in Tiles.
+  { shape: SHAPE.deer, model: loadModel(deerObj, deerMtl, 'height'), scale: 1 },
+  { shape: SHAPE.hare, model: loadModel(hareObj, hareMtl, 'height'), scale: 1 },
 ];
 
 /**
@@ -1799,6 +1902,9 @@ export class EntityRenderer {
       gl.uniform1f(this.location('uStumpRadius'), m.model.stumpRadius);
       gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
       gl.uniform2fv(this.location('uHub'), m.model.hub);
+      gl.uniform2fv(this.location('uLegs'), m.model.legs);
+      gl.uniform2fv(this.location('uNeck'), m.model.neck);
+      gl.uniform1f(this.location('uSide'), m.model.side);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
       this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);
     };

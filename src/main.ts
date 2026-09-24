@@ -719,6 +719,15 @@ canvas.addEventListener('contextmenu', (e) => {
   }
 
   if (selectedVillagers.size === 0) return;
+  // Auf ein Tier (lebend oder erlegt): jagen bzw. zerlegen.
+  const at = pick(p.x, p.y);
+  const prey = world.animalNear(at.x, at.y, 0.6);
+  if (prey) {
+    world.hunt(selectedVillagers, prey);
+    sound.play('click', 0.7);
+    updateSelectionUI();
+    return;
+  }
   const reason = world.command(selectedVillagers, x, y);
   if (reason) hint(reason);
   else sound.play('click', 0.7);
@@ -1041,7 +1050,7 @@ function updateSelectionUI() {
         ? `<div>${world.describe(single)}</div>`
         : [...counts].map(([text, n]) => `<div>${n}× ${text}</div>`).join('')) +
       `<div class="muted">Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · ` +
-      `auf ein Feld: bestellen · auf ein Lager: abliefern · sonst: hingehen</div>`;
+      `auf ein Tier: jagen · auf ein Feld: bestellen · auf ein Lager: abliefern · sonst: hingehen</div>`;
   } else if (!world.hasTownCenter()) {
     html = `<div class="title">Los geht's</div>` +
       `<div class="muted">Baue zuerst ein Hauptgebäude (Taste 1). Dort bildest du Dorfbewohner aus.</div>`;
@@ -1114,6 +1123,7 @@ let flatZones: FlatZone[] = [];
 const fieldData = new Uint8Array(FIELD_WINDOW * FIELD_WINDOW * 4);
 let fieldOrigin = { x: NaN, y: NaN };
 let lastFieldUpdate = 0;
+let lastAnimalCheck = 0;
 
 function updateFields(now: number) {
   const snap = 32;
@@ -1378,6 +1388,36 @@ function invalidatePlacementCheck() {
   lastCheck.x = NaN;
 }
 
+/**
+ * Minimap wie in AoE2: jedes Gebäude ein Quadrat, jede Einheit ein Punkt, in
+ * der Spielerfarbe mit dunklem Rand - in fester Pixelgröße, damit man sie bei
+ * jeder Zoomstufe sieht. Felder etwas blasser, sie sind groß und zahlreich.
+ */
+function minimapDots(current: IsoView) {
+  minimapOverlay.length = 0;
+  const rect = minimap.viewRectOf(current);
+  const ppt = minimap.pixelsPerTile(current);
+  const color = player.color.toRGB();
+  const dark: [number, number, number] = [20, 20, 20];
+  const inside = (x: number, y: number) => x >= rect.x - 3 && x <= rect.x + rect.width + 3 && y >= rect.y - 3 && y <= rect.y + rect.height + 3;
+  const dot = (x: number, y: number, px: number, c: [number, number, number], alpha = 1) => {
+    const size = px / ppt;
+    const border = 2 / ppt;
+    minimapOverlay.push({ x, y, size: size + border, color: dark, shape: SHAPE.flat, alpha: 0.8 * alpha });
+    minimapOverlay.push({ x, y, size, color: c, shape: SHAPE.flat, alpha });
+  };
+  for (const b of world.allBuildings()) {
+    if (!inside(b.x, b.y)) continue;
+    const fp = BUILDINGS[b.type].footprint;
+    // Größer von beidem: echte Fläche oder Mindestgröße in Pixeln.
+    dot(b.x, b.y, Math.max(fp * ppt, b.farm ? 4 : 6), color, b.farm ? 0.55 : 1);
+  }
+  for (const v of world.villagers) {
+    if (v.inside > 0 || !inside(v.x, v.y)) continue;
+    dot(v.x - 0.5, v.y - 0.5, 3, color);
+  }
+}
+
 /** Gebäude, erschöpfte Felder und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
@@ -1532,13 +1572,17 @@ function loop(now: number) {
 
   updateFlatZones();
   updateFields(now);
+  // Wild rund um die Kamera - neue Stücke nur ab und zu prüfen.
+  if (now - lastAnimalCheck > 500) {
+    lastAnimalCheck = now;
+    world.ensureAnimals(camX, camY);
+  }
   collectOverlay(tickAccumulator / TICK);
   renderer.setPlayerColor(player.color.toRGB());
   renderer.render(camX, camY, mouseTileX, mouseTileY, overlay);
 
   const current = view();
-  minimapOverlay.length = 0;
-  world.instances(minimap.viewRectOf(current), minimapOverlay, tickAccumulator / TICK);
+  minimapDots(current);
   minimap.render(current, minimapOverlay);
 
   const camCenterTileX = Math.round(camX);

@@ -410,10 +410,15 @@ export class MiniMap {
   private entities: EntityRenderer;
   private cssSize = 300;
 
-  /** Wie viel breiter als der Viewport die Minimap zeigt. */
-  private static readonly OVERVIEW = 1.7;
-  /** So viel Welt (in u-Einheiten) zeigt sie mindestens, damit sie beim Hineinzoomen nützlich bleibt. */
-  private static readonly MIN_COVERAGE = 600;
+  /**
+   * Wie viel breiter als die Hauptansicht die Minimap zeigt - bei jeder
+   * Zoomstufe gleich: das Sichtrechteck ist immer etwa ein Fünftel davon, man
+   * sieht die Umgebung und erkennt darin noch Gebäude und Felder.
+   */
+  private static readonly OVERVIEW = 5;
+  /** Grenzen (u-Einheiten): ganz nah noch die Nachbarschaft, ganz weit nicht der halbe Kontinent. */
+  private static readonly MIN_COVERAGE = 160;
+  private static readonly MAX_COVERAGE = 6000;
 
   constructor(
       private canvas: HTMLCanvasElement,
@@ -439,7 +444,7 @@ export class MiniMap {
 
   /** u-Einheiten, die die Minimap waagerecht abdeckt. */
   private coverage(view: IsoView): number {
-    return Math.max((view.width / view.tileSize) * MiniMap.OVERVIEW, MiniMap.MIN_COVERAGE);
+    return Math.min(Math.max((view.width / view.tileSize) * MiniMap.OVERVIEW, MiniMap.MIN_COVERAGE), MiniMap.MAX_COVERAGE);
   }
 
   /** Dieselbe Mitte wie die Hauptansicht, in CSS-Pixeln der Minimap. */
@@ -478,6 +483,11 @@ export class MiniMap {
   }
 
   /** Welt-Ausschnitt, den die Minimap zeigt - für das Einsammeln der Instanzen. */
+  /** CSS-Pixel der Minimap je Welt-Tile bei dieser Hauptansicht. */
+  pixelsPerTile(view: IsoView): number {
+    return this.miniView(view).tileSize;
+  }
+
   viewRectOf(view: IsoView) {
     return visibleWorldRect({ ...this.miniView(view) });
   }
