@@ -1574,12 +1574,13 @@ function collectOverlay(blend: number) {
   for (const building of chosenBuildings()) {
     if (building.farm) {
       // Ein Feldstück belegt nur die Tiles seiner Maske in den 3x3 - je Tile eine
-      // Fläche, genau so groß wie das Tile: nichts ragt über das Feld hinaus.
+      // Fläche, etwas größer: unter dem Getreide sähe man sie sonst gar nicht,
+      // so bleibt ringsum ein schmaler grüner Rand.
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (!((building.farm.tiles >> ((dx + 1) * 3 + dy + 1)) & 1)) continue;
           overlay.push({
-            x: building.x + dx, y: building.y + dy, size: 1,
+            x: building.x + dx, y: building.y + dy, size: 1.3,
             color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
           });
         }
