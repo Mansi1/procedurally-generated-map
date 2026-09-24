@@ -17,7 +17,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": false,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* defuss JSX für die Oberflächen-Komponenten */
+    "jsx": "react-jsx",
+    "jsxImportSource": "defuss"
   },
   "include": ["src"]
 }
