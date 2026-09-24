@@ -44,13 +44,13 @@ function Legend() {
 function DebugPanel() {
   return (
     <div id="debug" class="panel">
-      <Legend />
-      <div>Tile <b id="tile-info">-</b></div>
       <div>
         Pos <b id="pos">0, 0</b><span class="sep">|</span>
         Tiles/Px <b id="sampling">-</b><span class="sep">|</span>
         Zoom <b id="zoom">8px</b>
       </div>
+      <Legend />
+      <div>Tile <b id="tile-info">-</b></div>
       <div>
         Cursor <b id="cursor-coords">-, -</b><span class="sep">|</span>
         Kamera <b id="cam-coords">-, -</b><span class="sep">|</span>

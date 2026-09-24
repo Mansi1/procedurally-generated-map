@@ -43,8 +43,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 2px 10px;
-  margin-bottom: 4px;
-  padding-bottom: 4px;
+  /* Zwischen Position und den übrigen Infos - Linie oben und unten. */
+  margin: 4px 0;
+  padding: 4px 0;
+  border-top: 1px solid rgba(120, 220, 150, 0.18);
   border-bottom: 1px solid rgba(120, 220, 150, 0.18);
 }
 .legend-item {
