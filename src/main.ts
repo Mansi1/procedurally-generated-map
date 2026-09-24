@@ -1231,10 +1231,15 @@ window.addEventListener('keydown', (e) => {
   }
   if (menu.isOpen()) {
     if (e.key === 'Escape') menu.close();
+    // Ton (M) geht auch mit offenem Menü - dort steht der Schalter ja.
+    if (e.key.toLowerCase() === 'm') toggleSound();
     return;
   }
-  // Im Hauptmenü gibt es noch nichts zu steuern.
-  if (start.isOpen()) return;
+  // Im Hauptmenü gibt es noch nichts zu steuern - nur den Ton (M).
+  if (start.isOpen()) {
+    if (e.key.toLowerCase() === 'm') toggleSound();
+    return;
+  }
   // F3 wie in AoE2: Pause.
   if (e.key === 'F3') {
     e.preventDefault();
