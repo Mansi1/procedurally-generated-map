@@ -269,7 +269,7 @@ const SHOWCASE: Showcase[] = [
   showcase('Gebäude', 'Sammelpunkt', [model('weht', SHAPE.rallyFlag, 0.54)], 420, 0.4),
   ...TREES.map(([label, sh]) => showcase('Bäume', label, [
     model('steht', sh, 0.6, [0.4, 0, 0, 1]),
-    ...(sh === SHAPE.treeOak || sh === SHAPE.tree ? [felling('gefällt', sh)] : []),
+    ...( [felling('gefällt', sh)] ),
   ], 200, 1.2)),
   showcase('Vorkommen', 'Stein', [SHAPE.stoneRock, SHAPE.stoneRock2, SHAPE.stoneRock3]
     .map((sh, i) => depleting(`Fels ${i + 1}`, sh, 0.6, [158, 158, 164], true)), 360, 0.4),
