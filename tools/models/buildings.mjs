@@ -179,8 +179,9 @@ function house({ file, storeys = 2, stone = false, mirror = false, turn = 0 }) {
   const sz = two ? DU + 0.05 : DU + 0.05;
   const sx = two ? 0 : -W - J - 0.08;
   if (two) {
-    m.extrude('Shield', 'Paint', 'z', [sz, sz + 0.05], [[0.3, sy], [0.72, sy], [0.72, sy - 0.28], [0.51, sy - 0.58], [0.3, sy - 0.28]]);
-    beam('Shield.Stripe', 'Canvas', [0.34, sy - 0.04, sz + 0.055], [0.68, sy - 0.38, sz + 0.055], 0.07);
+    // Mittig zwischen den beiden oberen Fenstern, deren Läden bis u = ±0.22 reichen.
+    m.extrude('Shield', 'Paint', 'z', [sz, sz + 0.05], [[-0.2, sy], [0.2, sy], [0.2, sy - 0.28], [0, sy - 0.55], [-0.2, sy - 0.28]]);
+    beam('Shield.Stripe', 'Canvas', [-0.16, sy - 0.04, sz + 0.055], [0.16, sy - 0.36, sz + 0.055], 0.07);
   } else {
     m.extrude('Shield', 'Paint', 'x', [sx - 0.05, sx], [[-0.21, sy], [0.21, sy], [0.21, sy - 0.28], [0, sy - 0.58], [-0.21, sy - 0.28]]);
     beam('Shield.Stripe', 'Canvas', [sx - 0.055, sy - 0.04, -0.17], [sx - 0.055, sy - 0.38, 0.17], 0.07);
@@ -357,7 +358,8 @@ function townCenter() {
     beam('Shield.Stripe', 'Canvas', place(-0.2, 0.26, 0.125), place(0.2, -0.12, 0.125), 0.09);
     beam('Shield.Rim', 'Iron', place(-0.24, 0.3, 0.11), place(0.24, 0.3, 0.11), 0.04);
   };
-  shield('front', -0.95, 3.0 - 0.45);
+  // Links neben den Fenstern (die mit Läden bis u = -1.57 reichen).
+  shield('front', -1.86, 2.5);
   shield('right', 1.35, 3.55);
 
   // Stairs up to the door, with a handrail.
@@ -716,8 +718,14 @@ function lumberCamp({ file, stone = false, open = false, mirror = false }) {
   box('Beam.Front', 'Timber', [-X - 0.15, X + 0.15], [EF - 0.24, EF], [ZF - 0.12, ZF + 0.12]);
   box('Beam.Back', 'Timber', [-X - 0.15, X + 0.15], [EB - 0.24, EB], [ZB - 0.12, ZB + 0.12]);
   for (const x of [-X, 0, X]) box('Beam.Side', 'Timber', [x - 0.09, x + 0.09], [EF - 0.2, EF], [ZB - 0.1, ZF + 0.1]);
-  // Band in the player's colour along the front beam.
-  box('Band', 'Paint', [-X - 0.17, X + 0.17], [EF - 0.22, EF - 0.06], [ZF + 0.12, ZF + 0.16]);
+  // Band in the player's colour along the front beam, a pennant hanging from
+  // it and a shield on each gable - so the camp shows whose it is.
+  box('Band', 'Paint', [-X - 0.17, X + 0.17], [EF - 0.26, EF - 0.02], [ZF + 0.12, ZF + 0.17]);
+  // Über dem Stammstapel - nicht vor Fenster und Tür des Lagerraums.
+  const px = 1.25;
+  m.extrude('Pennant', 'Paint', 'z', [ZF + 0.17, ZF + 0.2], [[px - 0.28, EF - 0.26], [px + 0.28, EF - 0.26], [px + 0.28, EF - 0.95], [px, EF - 1.2], [px - 0.28, EF - 0.95]]);
+  box('Pennant.Stripe', 'Canvas', [px - 0.28, px + 0.28], [EF - 0.55, EF - 0.45], [ZF + 0.2, ZF + 0.21]);
+  box('Pennant.Rod', 'Wood', [px - 0.34, px + 0.34], [EF - 0.3, EF - 0.24], [ZF + 0.15, ZF + 0.21], { axis: 'x', n: 6 });
 
   // Gable roof with shingles, ridge along x; planked gables.
   const RZF = ZF + 0.45, RZB = ZB - 0.45, RX = X + 0.35;
@@ -733,6 +741,11 @@ function lumberCamp({ file, stone = false, open = false, mirror = false }) {
       box('Gable.Seam', 'WoodDark', [x - 0.05, x + 0.05], [EF, Math.max(EF, top - 0.05)], [z - 0.012, z + 0.012]);
     }
     for (const t of [RZF, RZB]) beam('Gable.Barge', 'Timber', [s * (RX + 0.02), EF - 0.1, t], [s * (RX + 0.02), R + 0.08, ZR], 0.12);
+    // Shield on the gable, facing out to the side.
+    const gx = s * (X + 0.1);
+    m.extrude('Shield', 'Paint', 'x', s > 0 ? [gx, gx + 0.05] : [gx - 0.05, gx],
+      [[ZR - 0.24, 3.2], [ZR + 0.24, 3.2], [ZR + 0.24, 2.92], [ZR, 2.62], [ZR - 0.24, 2.92]]);
+    beam('Shield.Stripe', 'Canvas', [gx + s * 0.055, 3.16, ZR - 0.2], [gx + s * 0.055, 2.77, ZR + 0.2], 0.07);
   }
 
   if (!open) {
