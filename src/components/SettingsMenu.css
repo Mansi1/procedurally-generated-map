@@ -189,6 +189,12 @@
 #menu .menu-footer .menu-btn {
   white-space: nowrap;
 }
+/* Unter der Überschrift: zurück ins Hauptmenü (nur im Spiel). */
+#menu .menu-top {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
 #menu .menu-footer-end {
   justify-content: flex-end;
 }

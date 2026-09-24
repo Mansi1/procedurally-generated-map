@@ -64,9 +64,10 @@ export class SettingsMenu {
   private track = createRef<HTMLSpanElement>();
   private showHelp = createRef<HTMLInputElement>();
   private showDebug = createRef<HTMLInputElement>();
-  /** Nur im Spiel: Pause, Neues Spiel, Weiter spielen - aus dem Hauptmenü heraus stattdessen Zurück. */
+  /** Nur im Spiel: Hauptmenü, Pause, Speichern, Weiter spielen - aus dem Hauptmenü heraus stattdessen Zurück. */
   private pauseRow = createRef<HTMLDivElement>();
   private gameButtons = createRef<HTMLDivElement>();
+  private mainMenuRow = createRef<HTMLDivElement>();
   private backButton = createRef<HTMLDivElement>();
   private title = createRef<HTMLDivElement>();
   private saveButton = createRef<HTMLButtonElement>();
@@ -94,6 +95,9 @@ export class SettingsMenu {
       <div class="menu-board" role="dialog" aria-label="Menü" style={`background-image:url(${woodBar})`}>
         <img class="menu-logo" src="/logo.svg" alt="Soliva" />
         <div class="menu-title" ref={this.title}>Menü</div>
+        <div class="menu-top" ref={this.mainMenuRow}>
+          <button type="button" class="menu-btn" onClick={() => this.mainMenu()}>← Hauptmenü</button>
+        </div>
         <section>
           <h3>Spieler</h3>
           <div class="menu-row">
@@ -171,7 +175,6 @@ export class SettingsMenu {
           </div>
         </section>
         <div class="menu-footer" ref={this.gameButtons}>
-          <button type="button" class="menu-btn" onClick={() => this.mainMenu()}>Hauptmenü</button>
           <button type="button" class="menu-btn" ref={this.saveButton} onClick={() => this.save()}>Speichern</button>
           <button type="button" class="menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
         </div>
@@ -200,12 +203,13 @@ export class SettingsMenu {
     return this.opened;
   }
 
-  /** @param fromTitle aus dem Hauptmenü: ohne Pause, Neues Spiel und Weiter spielen - nur Zurück. */
+  /** @param fromTitle aus dem Hauptmenü: ohne Hauptmenü, Pause, Speichern und Weiter spielen - nur Zurück. */
   open(fromTitle = false) {
     this.opened = true;
     this.root.hidden = false;
     this.pauseRow.current.hidden = fromTitle;
     this.gameButtons.current.hidden = fromTitle;
+    this.mainMenuRow.current.hidden = fromTitle;
     this.backButton.current.hidden = !fromTitle;
     this.title.current.textContent = fromTitle ? 'Einstellungen' : 'Menü';
     this.refresh();
