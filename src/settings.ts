@@ -25,7 +25,7 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
-  volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: true, showDebug: true, facing: '', paused: false,
+  volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', paused: false,
   playerColor: 'green',
 };
 const STORAGE_KEY = 'pgm.settings';
