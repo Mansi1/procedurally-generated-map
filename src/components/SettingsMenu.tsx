@@ -194,7 +194,9 @@ export class SettingsMenu {
     this.savedTimer = window.setTimeout(() => { button.textContent = 'Speichern'; }, 1500);
   }
 
+  /** Zurück ins Hauptmenü - nach Rückfrage; der Stand wird vorher gespeichert (main.ts). */
   private mainMenu() {
+    if (!window.confirm('Zurück zum Hauptmenü? Das Spiel wird gespeichert.')) return;
     this.close();
     this.hooks.mainMenu();
   }
