@@ -60,5 +60,7 @@
     <text x="176" y="102" font-size="68" fill="#2b1a0d" stroke="#2b1a0d" stroke-width="7" stroke-linejoin="round">SOLIVA</text>
     <text x="176" y="102" font-size="68" fill="url(#logo-gold)">SOLIVA</text>
   </g>
-  <text x="180" y="128" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="17" fill="#a88452" letter-spacing="1.5">one who wanders alone</text>
+  <!-- Unterzeile: hell mit dunkler Kontur, damit sie auf Holz wie auf hellem Grund lesbar ist -->
+  <text x="182" y="134" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-weight="700" font-size="20" letter-spacing="1.5"
+    fill="#fbe7b5" stroke="#2b1a0d" stroke-width="4" stroke-linejoin="round" paint-order="stroke">one who wanders alone</text>
 </svg>
