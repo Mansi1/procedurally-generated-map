@@ -1,0 +1,9 @@
+/* BuildMenu.css - das Baumenü unten in der Mitte. */
+#build {
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}

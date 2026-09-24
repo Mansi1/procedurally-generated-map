@@ -7,6 +7,7 @@
 // hidden, Klassen) oder rendert die jeweilige Komponente hinein.
 
 import { render } from 'defuss';
+import './Hud.css';
 import { TILE_TYPE_COLOR, TILE_TYPE_LABEL } from '../map';
 import type { TileType } from '../noise';
 

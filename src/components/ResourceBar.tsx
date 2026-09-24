@@ -8,6 +8,7 @@
 // Leiste zuckte.
 
 import { createRef, render, type Props, type Ref } from 'defuss';
+import './ResourceBar.css';
 import type { Stock } from '../world/buildings';
 import { MenuButton } from './MenuButton';
 

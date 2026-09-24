@@ -4,6 +4,8 @@
 // Klasse nur noch, welcher gedrückt ist und welche man sich leisten kann.
 
 import { createRef, render, type Ref } from 'defuss';
+import './BuildMenu.css';
+import './buttons.css';
 import { RESOURCE_TYPE_LABEL } from '../map';
 import { BUILDINGS, BUILDING_ORDER, type BuildingType, type Stock } from '../world/buildings';
 

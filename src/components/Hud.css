@@ -1,0 +1,197 @@
+/* Hud.css - Spielfeld, Panels, Tastenhilfe, Legende, Pause-Schild, Hinweis,
+   Auswahlrechteck, Minimap, Kompass und Ton-Knopf. */
+#game {
+  display: block;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+.panel {
+  position: absolute;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.panel b {
+  color: var(--accent);
+  font-weight: 600;
+}
+.sep {
+  color: rgba(207, 233, 214, 0.3);
+  margin: 0 6px;
+}
+#ui {
+  top: 12px;
+  right: 12px;
+  /* Links oben liegt die Rohstoffleiste - so weit reicht #ui nicht. */
+  max-width: calc(100vw - 770px);
+}
+#ui kbd {
+  background: rgba(110, 231, 160, 0.12);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font: inherit;
+  color: var(--accent);
+}
+#legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(120, 220, 150, 0.18);
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.legend-item i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+}
+/* Legende und Entwickler-Infos oben links unter der Rohstoffleiste */
+#debug {
+  top: 66px;
+  left: 8px;
+  max-width: 420px;
+}
+/* Pause-Schild oben in der Mitte */
+#paused {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 6px 26px;
+  font: bold 22px Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.15em;
+  color: #fbe7b5;
+  text-shadow: 2px 2px 0 #000;
+  background: linear-gradient(180deg, #7a4d29, #4a2c15);
+  border: 3px solid #1a0f07;
+  border-radius: 5px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+#paused[hidden],
+.panel[hidden] {
+  display: none;
+}
+#hint {
+  position: absolute;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: rgba(120, 30, 40, 0.85);
+  border: 1px solid rgba(255, 140, 150, 0.5);
+  font-size: 12px;
+  color: #ffd9dd;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+#hint.show {
+  opacity: 1;
+}
+/* Auswahlrechteck beim Ziehen */
+#select-box {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: rgba(110, 231, 160, 0.12);
+  pointer-events: none;
+}
+#minimap {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #05070a;
+  image-rendering: pixelated;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+/* Kompass über der Minimap: Klick auf eine Himmelsrichtung dreht die
+   Ansicht so, dass sie nach oben zeigt. */
+#compass {
+  position: absolute;
+  bottom: 326px;
+  right: 12px;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+/* Ton an/aus, links neben dem Kompass */
+#sound {
+  position: absolute;
+  bottom: 349px;
+  right: 100px;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+}
+#sound:hover {
+  background: rgba(110, 231, 160, 0.18);
+}
+#sound .off {
+  display: none;
+}
+#sound.muted .on {
+  display: none;
+}
+#sound.muted .off {
+  display: inline;
+}
+#compass button {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  transition: left 0.25s, top 0.25s;
+}
+#compass button:hover {
+  background: rgba(110, 231, 160, 0.18);
+}
+#compass button[data-dir='N'] {
+  color: #ff7a6b;
+}
+#compass .needle {
+  position: absolute;
+  left: 35px;
+  top: 17px;
+  width: 8px;
+  height: 44px;
+  pointer-events: none;
+  transition: transform 0.3s;
+  transform-origin: 4px 22px;
+  background: linear-gradient(#ff7a6b 0 50%, rgba(207, 233, 214, 0.55) 50% 100%);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}

@@ -1,0 +1,18 @@
+/* style.css - Grundlagen für jede Seite: kein Rand, Farben, Schrift. */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+:root {
+  --panel: rgba(10, 14, 18, 0.72);
+  --border: rgba(120, 220, 150, 0.35);
+  --text: #cfe9d6;
+  --accent: #6ee7a0;
+}
+body {
+  background: #0a0d10;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text);
+}

@@ -7,6 +7,8 @@
 // was sich geändert hat.
 
 import { render } from 'defuss';
+import './SelectionPanel.css';
+import './buttons.css';
 import { formatDuration } from '../format';
 import { CROP_ORDER, CROPS, type CropType } from '../world/buildings';
 

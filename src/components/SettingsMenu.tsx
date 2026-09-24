@@ -5,6 +5,7 @@
 // auch von außen ändert (Pause, Ton, laufendes Musikstück).
 
 import { createRef, render, type Ref } from 'defuss';
+import './SettingsMenu.css';
 import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/buildings';
 import { saveSettings, type Settings } from '../settings';

@@ -1,0 +1,45 @@
+/* buttons.css - Knöpfe mit Name und Kostenzeile: Baumenü und Aktionen im Auswahl-Panel. */
+.build-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 104px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(120, 220, 150, 0.22);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.build-btn:hover {
+  background: rgba(110, 231, 160, 0.1);
+}
+.build-btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgba(110, 231, 160, 0.18);
+}
+/* Nicht bezahlbar: sichtbar, aber erkennbar aus dem Spiel genommen. */
+.build-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.build-btn .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.build-btn .name i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.build-btn .cost {
+  color: rgba(207, 233, 214, 0.65);
+  font-size: 11px;
+}

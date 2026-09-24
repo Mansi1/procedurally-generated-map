@@ -1,0 +1,32 @@
+/* SelectionPanel.css - das Auswahl-Panel unten links. */
+#selection {
+  bottom: 96px;
+  left: 12px;
+  width: 300px;
+}
+#selection .title {
+  color: var(--accent);
+  font-weight: 600;
+}
+#selection .muted {
+  color: rgba(207, 233, 214, 0.6);
+  font-size: 12px;
+}
+#selection .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+#selection .bar {
+  height: 5px;
+  margin: 4px 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+#selection .bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}

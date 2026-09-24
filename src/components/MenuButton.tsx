@@ -1,6 +1,8 @@
 // MenuButton.tsx
 // Zahnrad am Ende der Rohstoffleiste - öffnet das Menü (wie F10).
 
+import './MenuButton.css';
+
 export interface MenuButtonProps {
   onClick: () => void;
 }

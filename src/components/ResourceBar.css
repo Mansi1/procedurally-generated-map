@@ -1,0 +1,125 @@
+/* Rohstoffleiste oben links wie in AoE2, aber aus Holz: zwei Reihen
+   Planken mit Maserung, Astlöchern und Nägeln, darunter eine dunkle Kante. */
+#stock {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 18px 9px 10px;
+  white-space: nowrap;
+  /* Holztextur (src/icons/wood-bar.png) setzt resourceBar.ts - so
+     findet Vite das Bild beim Bauen. */
+  background-color: #8a5a32;
+  background-size: auto 100%;
+  background-repeat: repeat-x;
+  border-right: 3px solid #3a2412;
+  border-bottom-right-radius: 5px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 225, 180, 0.3),
+    inset 0 -2px 0 rgba(40, 22, 10, 0.4),
+    inset -2px 0 0 rgba(255, 225, 180, 0.15),
+    0 4px 10px rgba(0, 0, 0, 0.55);
+  font-family: Georgia, 'Times New Roman', serif;
+  z-index: 5;
+}
+/* Untere Kante: dunkler, abgerundeter Holzbalken */
+#stock::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: -3px;
+  bottom: -5px;
+  height: 6px;
+  background: linear-gradient(180deg, #6a4222, #3e2512);
+  border-top: 1px solid #b07a48;
+  border-bottom: 1px solid #1e1209;
+  border-bottom-right-radius: 3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+#stock .rb-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 16px;
+}
+#stock .rb-icon,
+#stock .rb-idle {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  /* Eingelassenes Kästchen: dunkles Holz, innen Schatten, außen eine
+     helle Kante wie ausgestemmt. */
+  background: linear-gradient(180deg, #3e2614, #22150b);
+  border: 2px solid #1a0f07;
+  box-shadow:
+    inset 0 0 7px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 220, 170, 0.35),
+    0 -1px 0 rgba(0, 0, 0, 0.4);
+}
+/* Zahl der Sammler unten links im Symbol */
+#stock .rb-count {
+  font-variant-numeric: tabular-nums lining-nums;
+  position: absolute;
+  left: 2px;
+  bottom: -2px;
+  font: bold 11px Georgia, 'Times New Roman', serif;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+  pointer-events: none;
+}
+/* Feste Breite und gleich breite Ziffern - sonst rückt die Leiste bei
+   jeder neuen Zahl hin und her. */
+#stock .rb-amount {
+  width: 3.4em;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-size: 14px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000, 0 0 2px rgba(0, 0, 0, 0.8);
+}
+#stock .rb-pop {
+  width: 6.6em;
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+/* Bevölkerungsgrenze erreicht - gelb wie in AoE2 */
+#stock .rb-pop.full {
+  background: linear-gradient(180deg, #f0ea5a, #c9c230);
+  color: #fffbe0;
+  text-shadow: 1px 1px 0 #6a5d00;
+}
+/* Untätige Dorfbewohner: runder Knopf, leuchtet, sobald es welche gibt */
+#stock .rb-idle {
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #6e4626, #22150b);
+  cursor: pointer;
+  padding: 0;
+}
+#stock .rb-icon img,
+#stock .rb-idle img {
+  display: block;
+  filter: drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.6));
+}
+#stock .rb-idle img {
+  opacity: 0.45;
+  filter: grayscale(1) drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.6));
+}
+#stock .rb-idle.active {
+  border-color: #e8c25a;
+  box-shadow: 0 0 8px rgba(240, 200, 80, 0.75), inset 0 0 6px rgba(0, 0, 0, 0.6);
+}
+#stock .rb-idle.active img {
+  opacity: 1;
+  filter: drop-shadow(1px 2px 1px rgba(0, 0, 0, 0.6));
+}
+#stock .rb-idle:hover {
+  filter: brightness(1.2);
+}
+#stock .rb-idle .rb-count {
+  left: auto;
+  right: 2px;
+}
