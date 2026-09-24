@@ -42,6 +42,7 @@ import { ResourceBar } from './resourceBar';
 import { loadSettings, saveSettings, SettingsMenu } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
+import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -148,6 +149,9 @@ world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 world.groundAt = (x, y) => flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))), flatZones);
 const resources = new ResourceField(probe, mapGen);
 const sound = new Sound();
+/** Hintergrundmusik aus assets/music/ - der Ton-Schalter (M) gilt auch für sie. */
+const music = new Music();
+music.mute = !sound.enabled;
 
 /**
  * Ab dieser Zoomstufe (CSS-Pixel je Tile) stehen Bäume, Felsen und Sträucher
@@ -250,6 +254,7 @@ document.body.appendChild(pausedEl);
 
 function applySettings() {
   sound.volume = settings.volume;
+  music.volume = settings.music;
   player.color = (PLAYER_COLORS[settings.playerColor] ?? PLAYER_COLORS.green).color;
   // Mühlenflügel und Fahnen laufen mit der Spielgeschwindigkeit.
   setAnimationSpeed(settings.speed);
@@ -274,6 +279,12 @@ const menu = new SettingsMenu(settings, {
   toggleSound: () => toggleSound(),
   paused: () => paused,
   togglePause,
+  musicTitle: () => music.title,
+  nextTrack: () => {
+    music.next();
+    // Der Titel wechselt sofort - das Menü zeigt ihn gleich an.
+    menu.refresh();
+  },
   newGame: () => {
     world.reset();
     clearSelection();
@@ -337,6 +348,7 @@ function updateSoundButton() {
 
 function toggleSound() {
   sound.toggle();
+  music.mute = !sound.enabled;
   updateSoundButton();
   menu.refresh();
 }

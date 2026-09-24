@@ -9,6 +9,8 @@ import { PLAYER_COLORS } from './world/buildings';
 export interface Settings {
   /** Lautstärke 0..1 - an/aus steuert weiterhin Sound.enabled (Taste M). */
   volume: number;
+  /** Lautstärke der Hintergrundmusik 0..1 - der Ton-Schalter (M) gilt auch für sie. */
+  music: number;
   /** Spielgeschwindigkeit: 1 = normal. */
   speed: number;
   /** Kamera-Tempo mit WASD/Pfeiltasten: 1 = normal. */
@@ -26,7 +28,7 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
-  volume: 1, speed: 1, scroll: 1, showHelp: true, showDebug: true, facing: '', paused: false,
+  volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: true, showDebug: true, facing: '', paused: false,
   playerColor: 'green',
 };
 const STORAGE_KEY = 'pgm.settings';
@@ -57,6 +59,9 @@ export interface MenuHooks {
   toggleSound(): void;
   paused(): boolean;
   togglePause(): void;
+  /** Titel des Musikstücks, das gerade läuft, oder null. */
+  musicTitle(): string | null;
+  nextTrack(): void;
   newGame(): void;
 }
 
@@ -112,6 +117,15 @@ export class SettingsMenu {
             <input type="range" min="0" max="100" step="5" data-set="volume">
             <output data-out="volume"></output>
           </div>
+          <div class="menu-row">
+            <span>Musik</span>
+            <input type="range" min="0" max="100" step="5" data-set="music">
+            <output data-out="music"></output>
+          </div>
+          <div class="menu-row">
+            <span class="menu-track" data-out="track"></span>
+            <button type="button" class="menu-btn" data-act="next-track">Nächstes Stück</button>
+          </div>
         </section>
         <section>
           <h3>Steuerung</h3>
@@ -144,6 +158,7 @@ export class SettingsMenu {
       const act = button.dataset.act;
       if (act === 'pause') this.hooks.togglePause();
       if (act === 'sound') this.hooks.toggleSound();
+      if (act === 'next-track') this.hooks.nextTrack();
       if (act === 'close') this.close();
       if (act === 'new' && window.confirm('Neues Spiel beginnen? Der jetzige Stand geht verloren.')) {
         this.hooks.newGame();
@@ -157,6 +172,7 @@ export class SettingsMenu {
       const input = e.target as HTMLInputElement;
       const key = input.dataset.set as keyof Settings | undefined;
       if (key === 'volume') this.change({ volume: Number(input.value) / 100 });
+      if (key === 'music') this.change({ music: Number(input.value) / 100 });
       if (key === 'scroll') this.change({ scroll: Number(input.value) / 100 });
       if (key === 'showHelp' || key === 'showDebug') this.change({ [key]: input.checked });
     });
@@ -194,6 +210,10 @@ export class SettingsMenu {
     }
     q<HTMLInputElement>('[data-set="volume"]').value = String(Math.round(s.volume * 100));
     q<HTMLOutputElement>('[data-out="volume"]').textContent = `${Math.round(s.volume * 100)} %`;
+    q<HTMLInputElement>('[data-set="music"]').value = String(Math.round(s.music * 100));
+    q<HTMLOutputElement>('[data-out="music"]').textContent = `${Math.round(s.music * 100)} %`;
+    const title = this.hooks.musicTitle();
+    q<HTMLElement>('[data-out="track"]').textContent = title ? `♪ ${title}` : 'Musik beginnt mit dem ersten Klick';
     q<HTMLInputElement>('[data-set="scroll"]').value = String(Math.round(s.scroll * 100));
     q<HTMLOutputElement>('[data-out="scroll"]').textContent = `${Math.round(s.scroll * 100)} %`;
     q<HTMLInputElement>('[data-set="showHelp"]').checked = s.showHelp;

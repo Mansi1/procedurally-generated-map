@@ -292,6 +292,17 @@
         min-height: 34px;
         font-size: 15px;
       }
+      /* Das laufende Musikstück - lange Titel werden gekürzt. */
+      #menu .menu-track {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+        font-style: italic;
+        color: #cdb58a;
+      }
       #menu small {
         margin-left: 6px;
         font-size: 11px;
