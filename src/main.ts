@@ -105,7 +105,7 @@ function parseURL(): { seed: string; x: number; y: number; zoom: number } {
   const path = window.location.pathname.split('/').filter(Boolean);
   const params = new URLSearchParams(window.location.search);
 
-  let seed = 'AoE2Factorio1337';
+  let seed = 'Soliva';
   let x = 0;
   let y = 0;
   let zoom = 4;
