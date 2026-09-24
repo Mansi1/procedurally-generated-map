@@ -1,6 +1,6 @@
 // names.ts
 // Vornamen für die Dorfbewohner - mittelalterlich, wie es zu einem Dorf in
-// AoE2 passt. Jeder Lebende trägt einen eigenen Namen.
+// Jeder Lebende trägt einen eigenen Namen.
 
 const MALE = [
   'Albrecht', 'Anselm', 'Arnold', 'Benedikt', 'Bernhard', 'Burkhard', 'Clemens', 'Dietrich',

@@ -1428,6 +1428,12 @@ let fps = 0;
 let lastUrlUpdate = 0;
 let lastUiUpdate = 0;
 let lastSave = 0;
+/**
+ * Einmal je Minute speichern (ms) - der Spielstand wird mit der Welt immer
+ * größer, ihn alle paar Sekunden zu schreiben kostet unnötig. Beim Verlassen
+ * der Seite wird zusätzlich gespeichert (beforeunload).
+ */
+const SAVE_INTERVAL = 60_000;
 
 /**
  * Die Wirtschaft läuft in festen Schritten, unabhängig von der Bildrate. Sonst
@@ -1674,7 +1680,7 @@ function loop(now: number) {
     updateResourceUI();
     lastUiUpdate = now;
   }
-  if (now - lastSave > 3000) {
+  if (now - lastSave > SAVE_INTERVAL) {
     world.save();
     lastSave = now;
   }
