@@ -82,6 +82,7 @@ export class SettingsMenu {
     this.el.hidden = true;
     this.el.innerHTML = `
       <div class="menu-board" role="dialog" aria-label="Menü">
+        <img class="menu-logo" src="/logo.svg" alt="Soliva">
         <div class="menu-title">Menü</div>
         <section>
           <h3>Spieler</h3>

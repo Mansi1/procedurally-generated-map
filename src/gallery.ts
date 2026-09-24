@@ -198,7 +198,7 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
 
 // --- Seite ------------------------------------------------------------------
 
-document.title = 'Galerie - alle Modelle';
+document.title = 'Soliva - Galerie';
 document.body.innerHTML = '';
 document.body.style.cssText = 'margin:0;overflow:hidden;background:#20242b;font:12px ui-monospace,Menlo,monospace;color:#d8dde4';
 const canvas = document.createElement('canvas');
@@ -209,7 +209,7 @@ labels.style.cssText = 'position:fixed;inset:0;pointer-events:none';
 document.body.appendChild(labels);
 const head = document.createElement('div');
 head.style.cssText = 'position:fixed;left:12px;top:10px;padding:6px 10px;border-radius:7px;background:rgba(0,0,0,0.45)';
-head.innerHTML = '<b style="color:#6ee7a0">Galerie</b> · alle Modelle und Animationen · Ziehen verschiebt, Mausrad zoomt · ?zeige=Birke&amp;zoom=300 · <a href="/" style="color:#9ecbff">zum Spiel</a>';
+head.innerHTML = '<b style="color:#6ee7a0">Soliva · Galerie</b> · alle Modelle und Animationen · Ziehen verschiebt, Mausrad zoomt · ?zeige=Birke&amp;zoom=300 · <a href="/" style="color:#9ecbff">zum Spiel</a>';
 document.body.appendChild(head);
 
 const gl = canvas.getContext('webgl2', { antialias: true, depth: true, alpha: false })!;

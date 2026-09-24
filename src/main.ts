@@ -1697,4 +1697,4 @@ if (settings.paused && !paused) togglePause();
 updateCompass();
 updateResourceUI();
 requestAnimationFrame(loop);
-document.title = `Map - ${seed}`;
+document.title = `Soliva - ${seed}`;
