@@ -41,6 +41,7 @@ import { BuildMenu } from './components/BuildMenu';
 import { mountGame } from './components/Hud';
 import { renderSelection, type FarmView, type SelectionView, type TrainView } from './components/SelectionPanel';
 import { SettingsMenu } from './components/SettingsMenu';
+import { StartScreen } from './components/StartScreen';
 import { loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
@@ -294,11 +295,34 @@ const menu = new SettingsMenu(settings, {
     menu.refresh();
   },
   newGame: () => {
-    world.reset();
-    clearSelection();
-    if (paused) togglePause();
-    updateResourceUI();
+    // Auch aus dem Hauptmenü heraus (Einstellungen): danach läuft das Spiel.
+    start.close();
+    startNewGame();
   },
+});
+
+function startNewGame() {
+  world.reset();
+  clearSelection();
+  if (paused) togglePause();
+  updateResourceUI();
+  goToStart();
+}
+
+/** Kamera zurück an den Start - im Hauptmenü ist sie weitergezogen. */
+function goToStart() {
+  const home = startPoint();
+  camX = home.x;
+  camY = home.y;
+}
+
+/** Hauptmenü beim Öffnen der Seite; bis man spielt, steht die Welt. */
+const start = new StartScreen({
+  hasSave: () => world.hasTownCenter() || world.villagers.length > 0,
+  world: seed,
+  continueGame: goToStart,
+  newGame: startNewGame,
+  openSettings: () => menu.open(),
 });
 
 /** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
@@ -1231,6 +1255,8 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') menu.close();
     return;
   }
+  // Im Hauptmenü gibt es noch nichts zu steuern.
+  if (start.isOpen()) return;
   // F3 wie in AoE2: Pause.
   if (e.key === 'F3') {
     e.preventDefault();
@@ -1573,6 +1599,8 @@ function loop(now: number) {
   if (keys['s'] || keys['arrowdown']) dy += speed;
   if (keys['a'] || keys['arrowleft']) dx -= speed;
   if (keys['d'] || keys['arrowright']) dx += speed;
+  // Hinter dem Hauptmenü zieht die Welt langsam vorbei.
+  if (start.isOpen()) dx += 24 * dt;
   // Leertaste halten: Relief sinkt flach, um hinter Berge zu sehen. Weich
   // überblendet, damit man sieht, was wohin gehört. Nie ganz 0 - siehe
   // MapRenderer.relief.
@@ -1594,7 +1622,7 @@ function loop(now: number) {
 
   // Feste Schritte. Der Rest bleibt für den nächsten Frame liegen, damit über
   // die Zeit weder etwas verloren geht noch doppelt gefördert wird.
-  if (!paused) tickAccumulator += dt * settings.speed;
+  if (!paused && !start.isOpen()) tickAccumulator += dt * settings.speed;
   while (tickAccumulator >= TICK) {
     world.tick(TICK);
     tickAccumulator -= TICK;
@@ -1654,7 +1682,7 @@ if (settings.facing in COMPASS) {
 if (settings.paused && !paused) togglePause();
 updateCompass();
 updateResourceUI();
-// Wer die Seite aufmacht, landet im Menü - "Weiter spielen" (Esc) geht ins Spiel.
-menu.open();
+// Wer die Seite aufmacht, landet im Hauptmenü - wie bei einem Spiel.
+start.open();
 requestAnimationFrame(loop);
 document.title = `Soliva - ${seed}`;

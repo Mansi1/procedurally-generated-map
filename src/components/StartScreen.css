@@ -1,0 +1,100 @@
+/* Hauptmenü: Holztafel mit Logo, dahinter die Welt, abgedunkelt zu den Rändern. */
+#start {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.7) 100%);
+}
+#start[hidden] {
+  display: none;
+}
+/* Solange das Hauptmenü offen ist, keine Spieloberfläche - nur die Welt. */
+body.title-screen #app > :not(#game) {
+  visibility: hidden;
+}
+#start .start-board {
+  width: min(380px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 22px 28px 16px;
+  background-color: #8a5a32;
+  background-size: auto 58px;
+  border: 3px solid #3a2412;
+  border-radius: 6px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 225, 180, 0.3),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 18px 50px rgba(0, 0, 0, 0.75);
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+}
+#start .start-logo {
+  display: block;
+  width: min(300px, 90%);
+  margin: 0 auto 14px;
+}
+#start .start-title {
+  margin-bottom: 2px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  color: #fbe7b5;
+  text-shadow: 2px 2px 0 #000;
+}
+#start .start-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#start .start-btn {
+  position: relative;
+  padding: 11px 16px;
+  font: bold 19px Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.04em;
+  color: #fbe7b5;
+  text-shadow: 2px 2px 0 #000;
+  background: linear-gradient(180deg, #7a4d29, #4a2c15);
+  border: 2px solid #1a0f07;
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 170, 0.35),
+    0 3px 0 rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+#start .start-btn:hover:not([disabled]) {
+  filter: brightness(1.2);
+}
+#start .start-btn:active:not([disabled]) {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.35);
+}
+#start .start-btn[disabled] {
+  cursor: default;
+  opacity: 0.55;
+}
+/* Zusatz rechts im Knopf ("bald", "alle Modelle"). */
+#start .start-btn small {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: normal;
+  letter-spacing: 0;
+  color: #cdb58a;
+}
+#start .start-footer {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #cdb58a;
+}
+#start .start-footer b {
+  color: #fbe7b5;
+}
