@@ -1,57 +1,118 @@
 // GalleryOverlay.tsx
-// Die Seite der Galerie (/galerie): das Canvas, die Kopfzeile oben links und
-// die Beschriftungen - je Stück sein Name, je Reihe ihr Titel. Einmal
-// gerendert; wo die Beschriftungen stehen, setzt gallery.ts jedes Bild
-// über die zurückgegebenen Elemente.
+// Die Seite der Galerie (/galerie): das Canvas, links die Liste der Modelle
+// (nach Gruppen), unten die Animationen des gewählten Modells und Knöpfe zum
+// Drehen - dazu für die Übersicht aller Modelle die Beschriftungen. Einmal
+// gerendert; gallery.ts setzt über die zurückgegebenen Funktionen, was
+// gewählt ist, und über die Elemente, wo die Beschriftungen stehen.
 
 import { createRef, render, type Ref } from 'defuss';
+import './GalleryOverlay.css';
 
-function Head() {
-  return (
-    <div style="position:fixed;left:12px;top:10px;padding:6px 10px;border-radius:7px;background:rgba(0,0,0,0.45)">
-      <b style="color:#6ee7a0">Soliva · Galerie</b> · alle Modelle und Animationen · Ziehen verschiebt, Mausrad zoomt ·
-      ?zeige=Birke&amp;zoom=300 · <a href="/" style="color:#9ecbff">zum Spiel</a>
-    </div>
-  );
+/** Ein Eintrag der Liste: Gruppe, Name und seine Animationen (Namen). */
+export interface GalleryItem {
+  group: string;
+  label: string;
+  animations: string[];
+}
+
+export interface GalleryHooks {
+  /** Modell gewählt - Index in `items`, oder -1 für die Übersicht aller. */
+  select(index: number): void;
+  /** Animation des gewählten Modells gewählt. */
+  animate(index: number): void;
+  /** Ansicht drehen: -1 links herum, +1 rechts herum. */
+  rotate(step: number): void;
 }
 
 export interface GalleryElements {
   canvas: HTMLCanvasElement;
-  /** Je Stück seine Beschriftung, in der Reihenfolge von `labels`. */
+  /** Übersicht: je Stück seine Beschriftung, in der Reihenfolge von `labels`. */
   labels: HTMLDivElement[];
-  /** Je Reihe ihr Titel, in der Reihenfolge von `titles`. */
+  /** Übersicht: je Reihe ihr Titel, in der Reihenfolge von `titles`. */
   titles: HTMLDivElement[];
+  /** Zeigt, was gewählt ist: Modell (-1 = Übersicht) und Animation. */
+  show(item: number, animation: number): void;
 }
 
-/** Rendert die Galerie-Seite in `root` und gibt die Elemente zurück, die sich bewegen. */
-export function mountGallery(root: HTMLElement, labels: string[], titles: string[]): GalleryElements {
+/**
+ * Rendert die Galerie-Seite in `root`.
+ * @param labels, titles Beschriftungen der Übersicht
+ */
+export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: string[], titles: string[], hooks: GalleryHooks): GalleryElements {
   const canvas = createRef<HTMLCanvasElement>();
+  const overview = createRef<HTMLDivElement>();
   const labelRefs: Ref<HTMLDivElement>[] = labels.map(() => createRef());
   const titleRefs: Ref<HTMLDivElement>[] = titles.map(() => createRef());
+  const allRef = createRef<HTMLButtonElement>();
+  const stage = createRef<HTMLDivElement>();
+  const heading = createRef<HTMLDivElement>();
+  const chips = createRef<HTMLDivElement>();
+
+  const groups = [...new Set(items.map((it) => it.group))];
   render(
     <>
-      <canvas ref={canvas} style="position:fixed;inset:0;width:100vw;height:100vh;cursor:grab" />
-      <div style="position:fixed;inset:0;pointer-events:none">
-        {labels.map((text, i) => (
-          <div ref={labelRefs[i]}
-            style="position:absolute;transform:translate(-50%,0);white-space:nowrap;font-size:11px;opacity:0.85">
-            {text}
-          </div>
-        ))}
-        {titles.map((text, i) => (
-          <div ref={titleRefs[i]}
-            style="position:absolute;transform:translate(-100%,-50%);white-space:nowrap;font-weight:600;color:#6ee7a0">
-            {text}
-          </div>
-        ))}
+      <canvas ref={canvas} class="gal-canvas" />
+      {/* Übersicht: Beschriftungen, gesetzt je Bild von gallery.ts */}
+      <div class="gal-labels" ref={overview}>
+        {labels.map((text, i) => <div ref={labelRefs[i]} class="gal-label">{text}</div>)}
+        {titles.map((text, i) => <div ref={titleRefs[i]} class="gal-row-title">{text}</div>)}
       </div>
-      <Head />
+
+      <nav class="gal-list">
+        <div class="gal-brand">
+          <b>Soliva</b> · Galerie
+          <a href="/">zum Spiel</a>
+        </div>
+        <button type="button" class="gal-item gal-all" ref={allRef} onClick={() => hooks.select(-1)}>Alle auf einmal</button>
+        {/* Flach, Gruppe für Gruppe - verschachtelte Fragmente rendert defuss nicht. */}
+        {groups.flatMap((group) => [
+          <div class="gal-group">{group}</div>,
+          ...items.flatMap((it, i) => it.group === group
+            ? [<button type="button" class="gal-item" data-index={String(i)} onClick={() => hooks.select(i)}>{it.label}</button>]
+            : []),
+        ])}
+      </nav>
+
+      {/* Unten: Name, Animationen, Drehen - nur für ein einzelnes Modell. */}
+      <div class="gal-stage" ref={stage}>
+        <div class="gal-heading" ref={heading} />
+        <div class="gal-chips" ref={chips} />
+        <div class="gal-rotate">
+          <button type="button" title="Links herum drehen" onClick={() => hooks.rotate(-1)}>⟲</button>
+          <button type="button" title="Rechts herum drehen" onClick={() => hooks.rotate(1)}>⟳</button>
+        </div>
+      </div>
+      <div class="gal-help">Ziehen verschiebt · Mausrad zoomt · ↑/↓ Modell · ←/→ Animation</div>
     </>,
     root,
   );
+
+  // Die Knöpfe der Liste - Refs in der verschachtelten Liste setzt defuss nicht.
+  const itemButtons = [...root.querySelectorAll<HTMLButtonElement>('.gal-item[data-index]')];
+  const show = (item: number, animation: number) => {
+    allRef.current.classList.toggle('active', item < 0);
+    for (const b of itemButtons) b.classList.toggle('active', Number(b.dataset.index) === item);
+    overview.current.hidden = item >= 0;
+    stage.current.hidden = item < 0;
+    if (item < 0) return;
+    const it = items[item];
+    heading.current.textContent = `${it.group} · ${it.label}`;
+    chips.current.replaceChildren();
+    render(
+      <>
+        {it.animations.map((name, i) => (
+          <button type="button" class={i === animation ? 'gal-chip active' : 'gal-chip'} onClick={() => hooks.animate(i)}>{name}</button>
+        ))}
+      </>,
+      chips.current,
+    );
+    itemButtons.find((b) => Number(b.dataset.index) === item)?.scrollIntoView({ block: 'nearest' });
+  };
+
   return {
     canvas: canvas.current,
     labels: labelRefs.map((r) => r.current),
     titles: titleRefs.map((r) => r.current),
+    show,
   };
 }
