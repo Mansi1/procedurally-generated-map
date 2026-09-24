@@ -175,7 +175,7 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
     title: 'Bäume', gap: 2.6, depth: 3.2,
     items: [
       ...([['Fichte', SHAPE.tree], ['Kiefer', SHAPE.treePine], ['Eiche', SHAPE.treeOak], ['Junge Eiche', SHAPE.treeOakYoung],
-        ['Alte Eiche', SHAPE.treeOakOld], ['Birke', SHAPE.treeBirch], ['Ahorn', SHAPE.treeMaple], ['Pappel', SHAPE.treePoplar]] as [string, number][])
+        ['Alte Eiche', SHAPE.treeOakOld], ['Birke', SHAPE.treeBirch], ['Hängebirke', SHAPE.treeBirch2], ['Trauerbirke', SHAPE.treeBirch3], ['Ahorn', SHAPE.treeMaple], ['Pappel', SHAPE.treePoplar]] as [string, number][])
         .map(([label, s]) => model(label, s, 0.6, [0.4, 0, 0, 1])),
       felling('Eiche · gefällt', SHAPE.treeOak),
       felling('Fichte · gefällt', SHAPE.tree),
@@ -209,7 +209,7 @@ labels.style.cssText = 'position:fixed;inset:0;pointer-events:none';
 document.body.appendChild(labels);
 const head = document.createElement('div');
 head.style.cssText = 'position:fixed;left:12px;top:10px;padding:6px 10px;border-radius:7px;background:rgba(0,0,0,0.45)';
-head.innerHTML = '<b style="color:#6ee7a0">Galerie</b> · alle Modelle und Animationen · Ziehen verschiebt, Mausrad zoomt · <a href="/" style="color:#9ecbff">zum Spiel</a>';
+head.innerHTML = '<b style="color:#6ee7a0">Galerie</b> · alle Modelle und Animationen · Ziehen verschiebt, Mausrad zoomt · ?zeige=Birke&amp;zoom=300 · <a href="/" style="color:#9ecbff">zum Spiel</a>';
 document.body.appendChild(head);
 
 const gl = canvas.getContext('webgl2', { antialias: true, depth: true, alpha: false })!;
@@ -260,6 +260,15 @@ const middle = groundToWorld(0, totalV / 2 - 0.5);
 let camX = middle.x;
 let camY = middle.y;
 let zoom = Math.min(window.innerWidth / widest, window.innerHeight / (totalV + 4), 140);
+// ?zeige=Birke&zoom=300: auf ein Stück zeigen (erster passender Name) und nah heran.
+const params = new URLSearchParams(window.location.search);
+const focus = params.get('zeige')?.toLowerCase();
+const target = focus ? placed.find((p) => p.item.label.toLowerCase().includes(focus)) : undefined;
+if (target) {
+  camX = target.x - 0.6;
+  camY = target.y - 0.6;
+}
+if (params.has('zoom')) zoom = Number(params.get('zoom'));
 
 let dragging: { x: number; y: number } | null = null;
 canvas.addEventListener('mousedown', (e) => {

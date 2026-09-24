@@ -146,7 +146,7 @@ function litter(m, rnd, radius, count, mtls) {
  */
 const SIZE = {
   tree_spruce: [18, 5], tree_pine: [17, 5.5], tree_oak: [15, 7.5],
-  tree_birch: [14, 4.5], tree_poplar: [20, 3], tree_maple: [13, 6.5],
+  tree_birch: [14, 4.5], tree_birch_2: [17, 8], tree_birch_3: [15, 8], tree_poplar: [20, 3], tree_maple: [13, 6.5],
   tree_oak_old: [16, 9], tree_oak_young: [9, 4],
 };
 
@@ -180,7 +180,7 @@ function write(file, what, m, note) {
     Birch: '0.920 0.910 0.860', BirchMark: '0.150 0.140 0.130', Moss: '0.360 0.460 0.200',
     Cone: '0.460 0.300 0.170', Soot: '0.100 0.080 0.070', Grass: '0.340 0.560 0.220',
     Autumn: '0.900 0.460 0.140', AutumnDark: '0.740 0.260 0.100', AutumnLight: '0.960 0.700 0.220',
-    LeafDry: '0.620 0.480 0.240', Acorn: '0.550 0.380 0.180', AcornCap: '0.380 0.280 0.160',
+    LeafDry: '0.620 0.480 0.240', LeafCard: '0.000 0.000 0.000', Acorn: '0.550 0.380 0.180', AcornCap: '0.380 0.280 0.160',
   };
   const header = `# ${file}.obj - ${what} (Holz) fuer procedurally-generated-map
 # Einheiten: Meter, Y oben, Vorderseite nach +Z - so wie Blender ein Modell
@@ -262,7 +262,35 @@ function oak() {
   write('tree_oak', 'Eiche', m, PAINT);
 }
 
-// Birch: two slender white trunks with black marks, airy weeping crown.
+/**
+ * Leaf cards for birches: returns cards(at, out) - hangs a long twig as a flat
+ * plane from `at`, down and a little towards `out`. The game paints twig and
+ * leaves on it ("LeafCard", see the shader), like a weeping birch.
+ */
+function leafCards(m, rnd, [minLen, maxLen] = [1.0, 1.5]) {
+  let count = 0;
+  return (at, out) => {
+    const len = minLen + rnd() * (maxLen - minLen), w = 0.42 + rnd() * 0.1;
+    // Hanging down and a little outwards, turned a bit at random.
+    const o = Math.hypot(out[0], out[2]) || 1;
+    const turn = (rnd() - 0.5) * 0.8;
+    const ox = (out[0] / o) * Math.cos(turn) - (out[2] / o) * Math.sin(turn);
+    const oz = (out[0] / o) * Math.sin(turn) + (out[2] / o) * Math.cos(turn);
+    const down = [ox * 0.35, -1, oz * 0.35];
+    const dl = Math.hypot(...down);
+    const a = down.map((v) => v / dl);
+    const bw = [-oz, 0, ox];
+    const corner = (s, t) => at.map((v, j) => v + bw[j] * s * w / 2 + a[j] * t * len);
+    const quad = [corner(-1, 0), corner(1, 0), corner(1, 1), corner(-1, 1)];
+    // Thin slab: the same quad a few millimetres apart.
+    const nrm = [a[1] * bw[2] - a[2] * bw[1], a[2] * bw[0] - a[0] * bw[2], a[0] * bw[1] - a[1] * bw[0]];
+    const top = quad.map((p) => p.map((v, j) => v + nrm[j] * 0.004));
+    m.emit(`Leaves.Card.${count++}`, 'LeafCard', quad, top);
+  };
+}
+
+// Birch: two slender white trunks with black marks, branches with long hanging
+// twigs - leaf cards the game paints the leaves on.
 function birch() {
   const m = model(), rnd = rng(19);
   const stems = [[[0, 0, 0], [0.15, 2.5, 0.05], [0.35, 4.8, 0.1], [0.4, 6.6, 0.1]], [[0.05, 0, 0.05], [-0.2, 2.2, -0.05], [-0.45, 4.2, -0.1], [-0.55, 5.8, -0.15]]];
@@ -278,13 +306,136 @@ function birch() {
       m.box('Bark.Mark', 'BirchMark', [p[0] + Math.cos(a) * r * 0.6 - 0.04, p[0] + Math.cos(a) * r * 0.6 + 0.04], [p[1], p[1] + 0.04 + rnd() * 0.04], [p[2] + Math.sin(a) * r * 0.6 - 0.04, p[2] + Math.sin(a) * r * 0.6 + 0.04]);
     }
   });
-  const masses = [mass(m, rnd, [0, 5.4, 0], 0.95, 2.4, 'Paint', 7)];
-  for (const [x, y, z, r] of [[0.7, 5.9, 0.3, 0.55], [-0.8, 5.0, -0.2, 0.55], [0.4, 4.6, -0.6, 0.5], [-0.3, 6.3, 0.4, 0.45], [0.8, 4.8, 0.5, 0.45], [-0.6, 4.3, 0.5, 0.4]]) {
-    masses.push(mass(m, rnd, [x, y, z], r, r * 1.6, rnd() < 0.3 ? 'LeafLight' : 'Paint', 6));
-  }
-  tufts(m, rnd, masses, 45, 0.45, ['Paint', 'LeafLight', 'Paint'], 0.9);
+  const cards = leafCards(m, rnd);
+  stems.forEach((pts, s) => {
+    const top = pts[pts.length - 1];
+    for (let i = 0; i < 7; i++) {
+      const f = 0.45 + (i / 7) * 0.5;
+      const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
+      const from = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
+      const ang = rnd() * Math.PI * 2 + s * 0.8;
+      const reach = 0.7 + rnd() * 0.6;
+      const to = [from[0] + Math.cos(ang) * reach, from[1] + 0.5 + rnd() * 0.5, from[2] + Math.sin(ang) * reach];
+      m.beam('Branch', 'Birch', from, to, 0.05, { w1: 0.02, n: 5 });
+      // Twigs along the branch, more towards its end.
+      for (let k = 0; k < 4; k++) {
+        const t = 0.35 + (k / 4) * 0.65;
+        cards(from.map((v, j) => v + (to[j] - v) * t), [to[0] - from[0], 0, to[2] - from[2]]);
+      }
+    }
+    // A few twigs round the top of each stem.
+    for (let k = 0; k < 5; k++) {
+      const ang = (k / 5) * Math.PI * 2 + rnd();
+      cards([top[0] + Math.cos(ang) * 0.15, top[1] + 0.1, top[2] + Math.sin(ang) * 0.15], [Math.cos(ang), 0, Math.sin(ang)]);
+    }
+  });
   litter(m, rnd, 1.0, 10, ['Grass', 'Grass', 'LeafDry']);
   write('tree_birch', 'Birke', m, PAINT);
+}
+
+// Weeping birch: one tall white stem, a full egg-shaped crown from half its
+// height up, many branches arching out with long hanging twigs.
+function birch2() {
+  const m = model(), rnd = rng(23);
+  const pts = [[0, 0, 0], [0.08, 2.6, 0.03], [0.02, 5.2, -0.04], [0.1, 7.6, 0.02]];
+  trunk(m, pts, 0.17, 0.05, 'Birch', 6);
+  for (let i = 0; i < 16; i++) {
+    const f = 0.1 + (i / 16) * 0.55;
+    const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
+    const p = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
+    const r = 0.17 * (1 - f * 0.6) + 0.008;
+    const a = rnd() * Math.PI * 2;
+    m.box('Bark.Mark', 'BirchMark', [p[0] + Math.cos(a) * r * 0.6 - 0.05, p[0] + Math.cos(a) * r * 0.6 + 0.05], [p[1], p[1] + 0.04 + rnd() * 0.05], [p[2] + Math.sin(a) * r * 0.6 - 0.05, p[2] + Math.sin(a) * r * 0.6 + 0.05]);
+  }
+  const cards = leafCards(m, rnd, [1.1, 1.8]);
+  // Branches spiral up the stem: short at the bottom and top, longest in the
+  // middle of the crown - the egg shape.
+  const branches = 28;
+  for (let i = 0; i < branches; i++) {
+    const f = 0.38 + (i / branches) * 0.6;
+    const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
+    const from = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
+    const ang = i * 2.4 + rnd() * 0.5;
+    const reach = 0.6 + Math.sin(Math.PI * (i + 0.5) / branches) * 1.6 + rnd() * 0.4;
+    const to = [from[0] + Math.cos(ang) * reach, from[1] + 0.35 + rnd() * 0.5, from[2] + Math.sin(ang) * reach];
+    m.beam('Branch', 'Birch', from, to, 0.06, { w1: 0.02, n: 5 });
+    for (let k = 0; k < 8; k++) {
+      const t = 0.2 + (k / 8) * 0.8;
+      cards(from.map((v, j) => v + (to[j] - v) * t), [to[0] - from[0], 0, to[2] - from[2]]);
+    }
+  }
+  // Inside the crown, close to the stem - so it is full, not hollow.
+  for (let k = 0; k < 16; k++) {
+    const f = 0.45 + (k / 16) * 0.45;
+    const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
+    const p = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
+    const ang = k * 2.1;
+    cards([p[0] + Math.cos(ang) * 0.35, p[1], p[2] + Math.sin(ang) * 0.35], [Math.cos(ang), 0, Math.sin(ang)]);
+  }
+  const top = pts[pts.length - 1];
+  for (let k = 0; k < 8; k++) {
+    const ang = (k / 8) * Math.PI * 2 + rnd();
+    cards([top[0] + Math.cos(ang) * 0.2, top[1] + 0.15, top[2] + Math.sin(ang) * 0.2], [Math.cos(ang), 0, Math.sin(ang)]);
+  }
+  litter(m, rnd, 1.0, 10, ['Grass', 'Grass', 'LeafDry']);
+  write('tree_birch_2', 'Hängebirke', m, PAINT);
+}
+
+// Weeping birch with tiers: a strong white stem forking into a few limbs;
+// from them arch side branches out and down, and long curtains of twigs hang
+// from each arch - dense tiers with gaps between.
+function birch3() {
+  const m = model(), rnd = rng(31);
+  const fork = [0.1, 4.2, 0.05];
+  trunk(m, [[0, 0, 0], [0.12, 2.2, 0.03], fork], 0.22, 0.13, 'Birch', 7);
+  for (let i = 0; i < 14; i++) {
+    const y = 0.4 + (i / 14) * 3.6;
+    const a = rnd() * Math.PI * 2;
+    const r = 0.22 - (y / 4.2) * 0.08 + 0.01;
+    m.box('Bark.Mark', 'BirchMark', [0.1 * y / 4.2 + Math.cos(a) * r * 0.6 - 0.06, 0.1 * y / 4.2 + Math.cos(a) * r * 0.6 + 0.06], [y, y + 0.05 + rnd() * 0.06], [Math.sin(a) * r * 0.6 - 0.06, Math.sin(a) * r * 0.6 + 0.06]);
+  }
+  const cards = leafCards(m, rnd, [1.6, 2.7]);
+  // Limbs from the fork, up and outwards.
+  const limbs = 4;
+  for (let l = 0; l < limbs; l++) {
+    const ang = (l / limbs) * Math.PI * 2 + 0.4;
+    const lean = 0.7 + rnd() * 0.3;
+    const len = 3.0 + rnd() * 1.4;
+    const tip = [fork[0] + Math.cos(ang) * len * lean, fork[1] + len, fork[2] + Math.sin(ang) * len * lean];
+    m.beam('Branch', 'Birch', fork, tip, 0.18, { w1: 0.05, n: 6 });
+    // Arching side branches in tiers along the limb.
+    for (let k = 0; k < 6; k++) {
+      const t = 0.2 + (k / 6) * 0.8;
+      const from = fork.map((v, j) => v + (tip[j] - v) * t);
+      const side = ang + (rnd() - 0.5) * 1.8;
+      const reach = 1.6 + rnd() * 0.9 - t * 0.5;
+      const peak = [from[0] + Math.cos(side) * reach * 0.6, from[1] + 0.35, from[2] + Math.sin(side) * reach * 0.6];
+      const end = [from[0] + Math.cos(side) * reach, from[1] - 0.1, from[2] + Math.sin(side) * reach];
+      m.beam('Branch', 'Birch', from, peak, 0.06, { w1: 0.035, n: 5 });
+      m.beam('Branch', 'Birch', peak, end, 0.035, { w1: 0.015, n: 4 });
+      // The curtain: twigs hanging close together along the arch.
+      for (let c = 0; c < 12; c++) {
+        const u = c / 11;
+        const at = u < 0.5
+          ? from.map((v, j) => v + (peak[j] - v) * (u * 2))
+          : peak.map((v, j) => v + (end[j] - v) * ((u - 0.5) * 2));
+        cards(at, [end[0] - from[0], 0, end[2] - from[2]]);
+      }
+    }
+    // Twigs straight from the limb too - it disappears in the foliage.
+    for (let c = 0; c < 8; c++) {
+      const t = 0.3 + (c / 8) * 0.7;
+      const a = ang + (c % 2 ? 1.6 : -1.6) + (rnd() - 0.5);
+      cards(fork.map((v, j) => v + (tip[j] - v) * t), [Math.cos(a), 0, Math.sin(a)]);
+    }
+    // A tuft of twigs at the tip of the limb.
+    for (let c = 0; c < 4; c++) {
+      const a = rnd() * Math.PI * 2;
+      cards([tip[0] + Math.cos(a) * 0.2, tip[1], tip[2] + Math.sin(a) * 0.2], [Math.cos(a), 0, Math.sin(a)]);
+    }
+  }
+  litter(m, rnd, 1.1, 10, ['Grass', 'Grass', 'LeafDry']);
+  write('tree_birch_3', 'Trauerbirke', m, PAINT);
 }
 
 // Poplar: tall, narrow column of leaves on a short trunk.
@@ -402,6 +553,8 @@ build(spruce, 'tree_spruce');
 build(pine, 'tree_pine');
 build(oak, 'tree_oak');
 build(birch, 'tree_birch');
+build(birch2, 'tree_birch_2');
+build(birch3, 'tree_birch_3');
 build(poplar, 'tree_poplar');
 build(maple, 'tree_maple');
 build(oldOak, 'tree_oak_old');

@@ -41,7 +41,7 @@ const LOOK: Record<GatherType, { shape: number; size: number; color: [number, nu
 const CONIFERS = [SHAPE.tree, SHAPE.treePine];
 /** Laubbäume, jeder so oft, wie er hier steht - Eichen am häufigsten. */
 const BROADLEAF = [
-  SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeBirch, SHAPE.treeBirch,
+  SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeOak, SHAPE.treeBirch, SHAPE.treeBirch2, SHAPE.treeBirch3,
   SHAPE.treeMaple, SHAPE.treePoplar,
 ];
 /**
@@ -85,6 +85,8 @@ const KIND_LABEL: Record<number, string> = {
   [SHAPE.treePine]: 'Kiefer',
   [SHAPE.treeOak]: 'Eiche',
   [SHAPE.treeBirch]: 'Birke',
+  [SHAPE.treeBirch2]: 'Hängebirke',
+  [SHAPE.treeBirch3]: 'Trauerbirke',
   [SHAPE.treePoplar]: 'Pappel',
   [SHAPE.treeMaple]: 'Ahorn',
   [SHAPE.treeOakOld]: 'Alte Eiche',

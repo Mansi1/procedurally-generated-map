@@ -53,6 +53,10 @@ import treeOakObj from '../models/tree_oak.obj?raw';
 import treeOakMtl from '../models/tree_oak.mtl?raw';
 import treeBirchObj from '../models/tree_birch.obj?raw';
 import treeBirchMtl from '../models/tree_birch.mtl?raw';
+import treeBirch2Obj from '../models/tree_birch_2.obj?raw';
+import treeBirch2Mtl from '../models/tree_birch_2.mtl?raw';
+import treeBirch3Obj from '../models/tree_birch_3.obj?raw';
+import treeBirch3Mtl from '../models/tree_birch_3.mtl?raw';
 import treePoplarObj from '../models/tree_poplar.obj?raw';
 import treePoplarMtl from '../models/tree_poplar.mtl?raw';
 import treeMapleObj from '../models/tree_maple.obj?raw';
@@ -185,6 +189,10 @@ export const SHAPE = {
    */
   deer: 90,
   hare: 91,
+  /** Hängebirke: ein Stamm, volle Krone aus hängenden Zweigen (models/tree_birch_2.obj). */
+  treeBirch2: 92,
+  /** Trauerbirke: gegabelter Stamm, Etagen aus Bögen mit langen Zweig-Vorhängen (models/tree_birch_3.obj). */
+  treeBirch3: 93,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -223,7 +231,19 @@ const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale];
 /** Alle Bäume - sie werden gefällt und kippen um. */
 export const TREES: number[] = [
   SHAPE.tree, SHAPE.treePine, SHAPE.treeOak, SHAPE.treeBirch, SHAPE.treePoplar, SHAPE.treeMaple,
-  SHAPE.treeOakOld, SHAPE.treeOakYoung,
+  SHAPE.treeOakOld, SHAPE.treeOakYoung, SHAPE.treeBirch2, SHAPE.treeBirch3,
+];
+
+/** Rolle des Laubs (außer Paint) - es wird im Shader weich schattiert. */
+const FOLIAGE_ROLE = 12;
+/** Rolle der Blattkarten (Birke): der Shader malt Zweig und Blätter darauf. */
+const LEAF_CARD_ROLE = 13;
+/** Materialien, aus denen eine Krone besteht - daraus Mitte und Ausdehnung (Model.canopy). */
+const FOLIAGE_MATERIALS = new Set(['Paint', 'LeafDark', 'LeafLight', 'Needle', 'NeedleDark', 'LeafCard']);
+
+/** Bäume und Sträucher - ihr Laub wird weich schattiert (siehe vFoliage). */
+const FOLIAGE_SHAPES: number[] = [
+  ...TREES, SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4,
 ];
 
 /** Diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
@@ -401,9 +421,16 @@ flat out vec3 vTeam;     // Instanzfarbe (Spielerfarbe) - für den Umriss verdec
 // er umfällt.
 flat out int vTex;
 out vec3 vLocal;
+// Laub von Bäumen und Sträuchern (siehe BUSH_AND_TREE_FOLIAGE): Normale von
+// der Kronenmitte nach außen und wie tief innen bzw. unten es sitzt (0 Mitte,
+// 1 Rand; < 0: kein Laub).
+out vec3 vBent;
+out float vFoliage;
 uniform float uMeters;       // Breite des Modells in Metern (Modell-Einheit)
 uniform vec3  uPlayerColor;  // Spielerfarbe - für Felder, deren aColor das Gefälle trägt
 uniform float uSkirt;        // 1: Gebäude reichen in den Boden (Spiel), 0: ohne Sockel (Galerie ohne Gelände)
+uniform vec3  uCanopy;       // Bäume, Sträucher: Mitte der Krone (Modell-Einheiten)
+uniform vec3  uCanopyHalf;   // ... und ihre halbe Ausdehnung
 flat out float vRoof;   // Gebäude: 1 = Dachfläche. Figuren: Körperteil.
 
 // Körperteile der Figur - aCorner.w im Menschen-Mesh.
@@ -481,6 +508,8 @@ void main() {
   int shape = int(aParams.x + 0.5);
   vec2 center = aTile + 0.5;
   vec3 world;
+  vBent = vec3(0.0, 0.0, 1.0);
+  vFoliage = -1.0;
 
   if (shape == 10) {
     // Lebensbalken: ein Rechteck fester Pixelgroesse ueber dem Kopf der
@@ -844,6 +873,18 @@ void main() {
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
     vec2 offset = (forward * p.x + left * p.y) * scale;
+
+    // Laub wie eine weiche Kugel beleuchten statt Fläche für Fläche: die
+    // Normale zeigt von der Kronenmitte weg ("bent normals"), und was tief
+    // in der Krone oder an ihrer Unterseite sitzt, liegt im Schatten.
+    int matRole = int(aMaterial.w + 0.5);
+    if (${FOLIAGE_SHAPES.map((n) => `shape == ${n}`).join(' || ')}) {
+      if (matRole == 1 || matRole == ${FOLIAGE_ROLE} || matRole == ${LEAF_CARD_ROLE}) {
+        vec3 nb = (aCorner.xyz - uCanopy) / max(uCanopyHalf, vec3(0.01));
+        vFoliage = clamp(length(nb), 0.0, 1.2) * mix(0.65, 1.0, smoothstep(-1.0, 0.7, nb.z));
+        vBent = vec3(forward * nb.x + left * nb.y, nb.z);
+      }
+    }
     float up = p.z * scale;
 
     // Umfallen (Vorkommen): um den Fuss kippen, aMotion.y = Winkel,
@@ -969,7 +1010,7 @@ void main() {
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
-    vTex = role >= 6 ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
+    vTex = role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
     vLocal = aCorner.xyz * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
@@ -998,6 +1039,8 @@ in vec3 vColor;
 flat in vec3 vTeam;
 flat in int vTex;
 in vec3 vLocal;
+in vec3 vBent;
+in float vFoliage;
 
 float texHash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -1113,6 +1156,55 @@ vec3 treeTexture(vec3 base) {
     float kernel = smoothstep(0.0, 0.3, f.x) * smoothstep(1.0, 0.7, f.x) * smoothstep(0.0, 0.3, f.y) * smoothstep(1.0, 0.7, f.y);
     return base * (0.85 + 0.25 * mix(0.45, kernel, texDetail(55.0, px)));
   }
+  if (vTex == ${LEAF_CARD_ROLE}) {
+    // Blattkarte (Birke): ein hängender Zweig, leicht geschwungen, mit
+    // wechselständigen spitz-eiförmigen Blättern an kurzen Stielen. Was kein
+    // Zweig und kein Blatt ist, wird verworfen - die Karte selbst sieht man
+    // nicht. base = (u, v, Zufall); gerechnet in etwa Metern, damit die
+    // Blätter auf der länglichen Karte nicht verzerrt sind.
+    vec2 q = vec2(base.x * 0.47, base.y * 1.25);
+    float seed = base.z;
+    float bend = seed * 6.2832;
+    float twigX = 0.235 + sin(q.y * 2.4 + bend) * 0.035;
+    vec3 col = vec3(0.0);
+    bool hit = false;
+    if (abs(q.x - twigX) < 0.009 + 0.006 * (1.0 - base.y) && base.y < 0.97) {
+      col = vec3(0.34, 0.19, 0.13);
+      hit = true;
+    }
+    for (int i = 0; i < 12; i++) {
+      float fi = float(i);
+      float h = fract(sin((fi + 1.0) * 12.9898 + seed * 78.233) * 43758.5453);
+      float t = 0.07 + fi * 0.098 + (h - 0.5) * 0.03;
+      float side = mod(fi, 2.0) < 1.0 ? -1.0 : 1.0;
+      vec2 stem = vec2(0.235 + sin(t * 2.4 + bend) * 0.035, t);
+      // Schräg nach unten und zur Seite, jedes etwas anders.
+      float ang = side * (0.75 + h * 0.5);
+      vec2 dir = vec2(sin(ang), cos(ang));
+      vec2 d = q - stem;
+      float along = dot(d, dir);
+      float across = dot(d, vec2(-dir.y, dir.x));
+      float len = 0.15 + h * 0.05;
+      float x = along / len;
+      if (x > 0.12 && x < 1.0) {
+        // Breit am Grund, zur Spitze hin zulaufend.
+        float halfW = len * 0.36 * pow(sin(3.1416 * pow((x - 0.12) / 0.88, 0.7)), 0.85);
+        if (abs(across) < halfW) {
+          vec3 leaf = mix(vec3(0.42, 0.62, 0.22), vec3(0.62, 0.78, 0.30), h);
+          if (h > 0.93) leaf = vec3(0.80, 0.72, 0.26);
+          leaf *= 1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.006, abs(across)));
+          leaf *= 0.82 + 0.18 * smoothstep(0.0, 0.5, 1.0 - abs(across) / halfW);
+          col = leaf;
+          hit = true;
+        }
+      } else if (x > -0.02 && x <= 0.12 && abs(across) < 0.005) {
+        col = vec3(0.36, 0.25, 0.12);
+        hit = true;
+      }
+    }
+    if (!hit) discard;
+    return col;
+  }
   // Schnittfläche: helles Holz mit Jahresringen, zum Rand dunkler.
   float rings = 0.5 + 0.5 * sin(r * 70.0 + texNoise(vLocal.xy * 6.0) * 3.0);
   return base * (0.86 + 0.14 * rings);
@@ -1199,6 +1291,20 @@ void main() {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
     // auseinanderhält. Flachdächer bleiben in der Gebäudefarbe.
     base = mix(vColor, vec3(0.42, 0.2, 0.14), 0.55);
+  }
+
+  if (vFoliage >= 0.0) {
+    // Laub: überwiegend die Kugel-Normale der Krone, ein Rest der Fläche
+    // für Struktur. Innen und unten dunkler (Umgebungsverdeckung); wo die
+    // Sonne von hinten durch den Kronenrand scheint, leuchtet es gelbgrün
+    // durch (Durchscheinen).
+    vec3 n = normalize(mix(normal, normalize(vBent), 0.7));
+    float sun = dot(n, normalize(SUN));
+    float occlusion = mix(0.5, 1.05, smoothstep(0.15, 1.0, vFoliage));
+    float lit = (0.42 + 0.72 * max(sun, 0.0)) * occlusion;
+    float through = pow(max(-sun, 0.0), 1.5) * smoothstep(0.6, 1.0, vFoliage) * 0.35;
+    fragColor = vec4(base * lit + base * vec3(0.9, 1.15, 0.45) * through, alpha);
+    return;
   }
 
   float light = 0.45 + 0.75 * max(dot(normal, normalize(SUN)), 0.0);
@@ -1295,6 +1401,13 @@ const MATERIAL_ROLE: Record<string, number> = {
   // Gebäude: Holzschindeln als Textur (siehe treeTexture, vTex 6)
   Shingle: 6,
   ShingleDark: 6,
+  // Laub von Bäumen und Sträuchern: weich schattiert (FOLIAGE_ROLE). Das Laub
+  // in der Instanzfarbe (Paint) zählt auch dazu.
+  LeafDark: FOLIAGE_ROLE,
+  LeafLight: FOLIAGE_ROLE,
+  Needle: FOLIAGE_ROLE,
+  NeedleDark: FOLIAGE_ROLE,
+  LeafCard: LEAF_CARD_ROLE,
   // Felder (tools/models/farmsGen.mjs): Getreide, Blätter, Kolben.
   Wheat: 7,
   WheatDark: 7,
@@ -1330,6 +1443,9 @@ interface Model {
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
+  /** Bäume, Sträucher: Mitte und halbe Ausdehnung der Krone (Modell-Einheiten). */
+  canopy: [number, number, number];
+  canopyHalf: [number, number, number];
   /** Tiere: Gelenke (vorn) der Vorder- und Hinterbeine, des Halses (vorn, oben), halbe Breite. */
   legs: [number, number];
   neck: [number, number];
@@ -1360,6 +1476,42 @@ function furrowValue(object: string): number {
 function edgeValue(object: string): number {
   const m = /^Edge\.(\d+)\.(\d+)/.exec(object);
   return m ? Number(m[1]) * 0.04 + Number(m[2]) * 0.009 : 0;
+}
+
+/**
+ * Achsen einer Blattkarte aus ihren Eckpunkten: Mitte, Längsachse a (zeigt
+ * nach unten, v = 0 am oberen Ende), Querachse b, Wertebereiche und ein Zufall.
+ */
+function frameOf(points: number[][], index: number) {
+  const n = points.length;
+  const c = [0, 1, 2].map((i) => points.reduce((sum, p) => sum + p[i], 0) / n);
+  const cov = [0, 1, 2].map((i) => [0, 1, 2].map((j) => points.reduce((sum, p) => sum + (p[i] - c[i]) * (p[j] - c[j]), 0)));
+  const mul = (v: number[]) => cov.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
+  const norm = (v: number[]) => {
+    const l = Math.hypot(v[0], v[1], v[2]) || 1;
+    return v.map((x) => x / l);
+  };
+  // Größte Hauptachse durch wiederholtes Multiplizieren, die zweite ebenso
+  // nach Abzug der ersten.
+  let a = norm([0.3, 0.1, 1]);
+  for (let i = 0; i < 30; i++) a = norm(mul(a));
+  let b = norm([1, 0.2, 0.1]);
+  for (let i = 0; i < 30; i++) {
+    const m = mul(b);
+    const d = m[0] * a[0] + m[1] * a[1] + m[2] * a[2];
+    b = norm([m[0] - d * a[0], m[1] - d * a[1], m[2] - d * a[2]]);
+  }
+  // Die Karte hängt: v wächst nach unten.
+  if (a[2] > 0) a = a.map((x) => -x);
+  const proj = (axis: number[]) => points.map((p) => (p[0] - c[0]) * axis[0] + (p[1] - c[1]) * axis[1] + (p[2] - c[2]) * axis[2]);
+  const pa = proj(a), pb = proj(b);
+  const a0 = Math.min(...pa), b0 = Math.min(...pb);
+  return {
+    c, a, b, a0, b0,
+    aLen: Math.max(1e-6, Math.max(...pa) - a0),
+    bLen: Math.max(1e-6, Math.max(...pb) - b0),
+    seed: berryRandom(index + 1000),
+  };
 }
 
 /** Fester Zufall 0..1 je Beeren-Nummer - welche Beere zuerst gepflückt wird. */
@@ -1445,6 +1597,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   let elbow = 0;
   let stump = 0;
   const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+  const crown = { lo: [Infinity, Infinity, Infinity], hi: [-Infinity, -Infinity, -Infinity] };
   const legSum = [0, 0];
   const legCount = [0, 0];
   let neck: [number, number] = [0, Infinity];
@@ -1466,13 +1619,43 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   }
   const onCut = (t: ObjTriangle) => t.points.every((q) => Math.abs(q[1] - stumpTop) < 1e-3);
 
+  // Blattkarten: je Karte (Objekt) ihre Achsen - die längste Richtung ist v
+  // (0 oben, wo sie am Ast hängt), die zweitlängste u. Gefunden über die
+  // Hauptachsen ihrer Eckpunkte; die Karte liegt ja beliebig im Raum.
+  const cardPoints = new Map<number, number[][]>();
+  for (const t of triangles) {
+    if (t.material !== 'LeafCard') continue;
+    const list = cardPoints.get(t.index) ?? [];
+    for (const p of t.points) list.push([...local(p)]);
+    cardPoints.set(t.index, list);
+  }
+  const cardFrames = new Map<number, ReturnType<typeof frameOf>>();
+  const cardFrame = (index: number) => {
+    let f = cardFrames.get(index);
+    if (!f) {
+      f = frameOf(cardPoints.get(index) ?? [[0, 0, 0]], index);
+      cardFrames.set(index, f);
+    }
+    return f;
+  };
+
   // Nur ein Teil des Modells (eine Furche eines Felds) - gemessen am ganzen.
   for (const t of only ?? triangles) {
     const part = partOf(t.object);
     const color = colors.get(t.material) ?? [0.6, 0.6, 0.6];
     const role = MATERIAL_ROLE[t.material] ?? 0;
+    // Blattkarte: statt einer Farbe ihre Lage auf der Karte (u, v) und ein
+    // Zufall je Karte - der Shader malt Zweig und Blätter danach.
+    const card = t.material === 'LeafCard' ? cardFrame(t.index) : undefined;
     for (const p of t.points) {
       const [x, y, z] = local(p);
+      let rgb = color;
+      if (card) {
+        const d = [x - card.c[0], y - card.c[1], z - card.c[2]];
+        const along = d[0] * card.a[0] + d[1] * card.a[1] + d[2] * card.a[2];
+        const across = d[0] * card.b[0] + d[1] * card.b[1] + d[2] * card.b[2];
+        rgb = [(across - card.b0) / card.bLen, (along - card.a0) / card.aLen, card.seed];
+      }
       // Beeren: je Beere (Objekt) ein fester Zufall im Nachkomma-Teil, siehe P_BERRY.
       const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45
         // Feldpflanzen: ihre Reihenfolge beim Ernten, siehe P_CROP.
@@ -1487,11 +1670,13 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
         // Stammstück (19 + Ansatzhöhe): über dem Schnitt verschwindet es ganz.
         : sawable ? 19 + (bottom.get(t.index) ?? 0) * 0.45
         : part;
-      v.push(x, y, z, partValue, color[0], color[1], color[2], role);
+      v.push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], role);
       if (lod) {
         LOD_PARTS.forEach((min, i) => {
           // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
-          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk')) lods[i].push(x, y, z, partValue, color[0], color[1], color[2], role);
+          // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
+          // Blattkarten auch: ohne sie stünde die Birke weit draußen kahl da.
+          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) lods[i].push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], role);
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
@@ -1504,6 +1689,12 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       // Halsansatz: der tiefste Punkt von Kopf und Hals, hinten.
       if (part === 5 && (z < neck[1] || (z === neck[1] && x < neck[0]))) neck = [x, z];
       if (part === 0) side = Math.max(side, Math.abs(y));
+      if (FOLIAGE_MATERIALS.has(t.material)) {
+        [x, y, z].forEach((c, i) => {
+          crown.lo[i] = Math.min(crown.lo[i], c);
+          crown.hi[i] = Math.max(crown.hi[i], c);
+        });
+      }
       if (part === 3 || part === 4) shoulder = Math.max(shoulder, z);
       // Knie und Ellbogen an der Oberkante von Unterschenkel und Unterarm.
       if (part === 9 || part === 10) knee = Math.max(knee, z);
@@ -1540,6 +1731,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
     hub: [(sails.y[0] + sails.y[1]) / 2, (sails.z[0] + sails.z[1]) / 2],
+    canopy: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (l + crown.hi[i]) / 2) as [number, number, number] : [0, 0, 0.5],
+    canopyHalf: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (crown.hi[i] - l) / 2) as [number, number, number] : [0.5, 0.5, 0.5],
     legs: [legSum[0] / Math.max(1, legCount[0]), legSum[1] / Math.max(1, legCount[1])],
     neck: Number.isFinite(neck[1]) ? neck : [0, 0],
     side,
@@ -1633,6 +1826,8 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   ...natural(SHAPE.treePine, treePineObj, treePineMtl, TREE_METERS),
   ...natural(SHAPE.treeOak, treeOakObj, treeOakMtl, TREE_METERS),
   ...natural(SHAPE.treeBirch, treeBirchObj, treeBirchMtl, TREE_METERS),
+  ...natural(SHAPE.treeBirch2, treeBirch2Obj, treeBirch2Mtl, TREE_METERS),
+  ...natural(SHAPE.treeBirch3, treeBirch3Obj, treeBirch3Mtl, TREE_METERS),
   ...natural(SHAPE.treePoplar, treePoplarObj, treePoplarMtl, TREE_METERS),
   ...natural(SHAPE.treeMaple, treeMapleObj, treeMapleMtl, TREE_METERS),
   ...natural(SHAPE.treeOakOld, treeOakOldObj, treeOakOldMtl, TREE_METERS),
@@ -1907,6 +2102,8 @@ export class EntityRenderer {
       gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
       gl.uniform2fv(this.location('uHub'), m.model.hub);
       gl.uniform2fv(this.location('uLegs'), m.model.legs);
+      gl.uniform3fv(this.location('uCanopy'), m.model.canopy);
+      gl.uniform3fv(this.location('uCanopyHalf'), m.model.canopyHalf);
       gl.uniform2fv(this.location('uNeck'), m.model.neck);
       gl.uniform1f(this.location('uSide'), m.model.side);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
