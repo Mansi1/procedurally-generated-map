@@ -8,6 +8,7 @@ import {
   ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, millMotion, type EntityInstance,
 } from './gl/entityRenderer';
 import { groundToWorld, snapCamera, worldToScreen, type IsoView } from './gl/iso';
+import { mountGallery } from './components/GalleryOverlay';
 import { ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, VILLAGER, type AnimalKind, type CropType } from './world/buildings';
 
 type RGB = [number, number, number];
@@ -199,18 +200,26 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
 // --- Seite ------------------------------------------------------------------
 
 document.title = 'Soliva - Galerie';
-document.body.innerHTML = '';
 document.body.style.cssText = 'margin:0;overflow:hidden;background:#20242b;font:12px ui-monospace,Menlo,monospace;color:#d8dde4';
-const canvas = document.createElement('canvas');
-canvas.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;cursor:grab';
-document.body.appendChild(canvas);
-const labels = document.createElement('div');
-labels.style.cssText = 'position:fixed;inset:0;pointer-events:none';
-document.body.appendChild(labels);
-const head = document.createElement('div');
-head.style.cssText = 'position:fixed;left:12px;top:10px;padding:6px 10px;border-radius:7px;background:rgba(0,0,0,0.45)';
-head.innerHTML = '<b style="color:#6ee7a0">Soliva · Galerie</b> · alle Modelle und Animationen · Ziehen verschiebt, Mausrad zoomt · ?zeige=Birke&amp;zoom=300 · <a href="/" style="color:#9ecbff">zum Spiel</a>';
-document.body.appendChild(head);
+
+/** Lage jeder Reihe (Boden-Koordinate v, auf dem Bildschirm nach unten). */
+const rowV = ROWS.map((_, r) => ROWS.slice(0, r).reduce((sum, row) => sum + row.depth, 0));
+/** Lage jedes Stücks: Reihen untereinander, die Stücke einer Reihe nebeneinander (auf dem Bildschirm). */
+const placed = ROWS.flatMap((row, r) => {
+  const width = (row.items.length - 1) * row.gap;
+  return row.items.map((item, i) => ({ item, ...groundToWorld(-width / 2 + i * row.gap, rowV[r]) }));
+});
+const titleAt = ROWS.map((row, r) => {
+  const width = (row.items.length - 1) * row.gap;
+  return { title: row.title, ...groundToWorld(-width / 2 - 1.2, rowV[r]) };
+});
+
+// Die Seite (components/GalleryOverlay.tsx): Canvas, Kopfzeile, Beschriftungen.
+const { canvas, labels: labelEls, titles: titleEls } = mountGallery(
+  document.body,
+  placed.map((p) => p.item.label),
+  titleAt.map((t) => t.title),
+);
 
 const gl = canvas.getContext('webgl2', { antialias: true, depth: true, alpha: false })!;
 const renderer = new EntityRenderer(gl);
@@ -225,33 +234,6 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
-
-/** Lage jeder Reihe (Boden-Koordinate v, auf dem Bildschirm nach unten). */
-const rowV = ROWS.map((_, r) => ROWS.slice(0, r).reduce((sum, row) => sum + row.depth, 0));
-/** Lage jedes Stücks: Reihen untereinander, die Stücke einer Reihe nebeneinander (auf dem Bildschirm). */
-const placed = ROWS.flatMap((row, r) => {
-  const width = (row.items.length - 1) * row.gap;
-  return row.items.map((item, i) => ({ item, ...groundToWorld(-width / 2 + i * row.gap, rowV[r]) }));
-});
-const titleAt = ROWS.map((row, r) => {
-  const width = (row.items.length - 1) * row.gap;
-  return { title: row.title, ...groundToWorld(-width / 2 - 1.2, rowV[r]) };
-});
-
-const labelEls = placed.map((p) => {
-  const el = document.createElement('div');
-  el.textContent = p.item.label;
-  el.style.cssText = 'position:absolute;transform:translate(-50%,0);white-space:nowrap;font-size:11px;opacity:0.85';
-  labels.appendChild(el);
-  return el;
-});
-const titleEls = titleAt.map((t) => {
-  const el = document.createElement('div');
-  el.textContent = t.title;
-  el.style.cssText = 'position:absolute;transform:translate(-100%,-50%);white-space:nowrap;font-weight:600;color:#6ee7a0';
-  labels.appendChild(el);
-  return el;
-});
 
 // Kamera: Mitte der Galerie, Zoom in CSS-Pixeln je Tile.
 const totalV = rowV[rowV.length - 1];

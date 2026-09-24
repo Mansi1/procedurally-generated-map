@@ -1,3 +1,4 @@
+
 import { flatten, type FlatZone } from './world/flatten';
 import { MapGenerator, reliefZ } from './noise';
 import {
@@ -14,17 +15,14 @@ import {
   MapRenderer,
   MiniMap,
   RESOURCE_TYPE_LABEL,
-  TILE_TYPE_COLOR,
   TILE_TYPE_LABEL,
   TileProbe,
 } from './map';
-import type { TileType } from './noise';
 import type { EntityInstance } from './gl/entityRenderer';
 import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
   BUILDING_ORDER,
-  CROP_ORDER,
   CROPS,
   FIELD_ROWS,
   MAX_GATHERERS,
@@ -38,12 +36,20 @@ import {
 } from './world/buildings';
 import { World, furrowCells, type Villager } from './world/world';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
-import { ResourceBar } from './resourceBar';
-import { loadSettings, saveSettings, SettingsMenu } from './settings';
+import { ResourceBar } from './components/ResourceBar';
+import { BuildMenu } from './components/BuildMenu';
+import { mountHud } from './components/Hud';
+import { renderSelection, type FarmView, type SelectionView, type TrainView } from './components/SelectionPanel';
+import { SettingsMenu } from './components/SettingsMenu';
+import { loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
 import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
+
+// Erst das Grundgerüst der Oberfläche (components/Hud.tsx) - danach werden
+// seine Teile hier über ihre IDs gefunden.
+mountHud(document.getElementById('hud')!);
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
@@ -54,21 +60,12 @@ const camCoordsEl = document.getElementById('cam-coords')!;
 const cursorCoordsEl = document.getElementById('cursor-coords')!;
 const fpsEl = document.getElementById('fps')!;
 const tileInfoEl = document.getElementById('tile-info')!;
-const legendEl = document.getElementById('legend')!;
 const zoomEl = document.getElementById('zoom')!;
 const stockEl = document.getElementById('stock')!;
 const buildEl = document.getElementById('build')!;
 const hintEl = document.getElementById('hint')!;
 const selectionEl = document.getElementById('selection')!;
 const boxEl = document.getElementById('select-box')!;
-
-// Legende aus der Palette aufbauen - so kann sie nicht aus dem Tritt geraten
-legendEl.innerHTML = (Object.keys(TILE_TYPE_LABEL) as TileType[])
-  .map(
-    (type) =>
-      `<span class="legend-item"><i style="background:${TILE_TYPE_COLOR[type].toRgbString()}"></i>${TILE_TYPE_LABEL[type]}</span>`,
-  )
-  .join('');
 
 /**
  * Sichtfläche in CSS-Pixeln. tileSize und Mauskoordinaten rechnen durchgehend
@@ -101,7 +98,8 @@ function resize() {
 
 applyCanvasSize();
 
-function parseURL(): { seed: string; x: number; y: number; zoom: number } {
+/** Seed, Stelle und Zoom aus der Adresse; `located`: die Stelle stand darin. */
+function parseURL(): { seed: string; x: number; y: number; zoom: number; located: boolean } {
   const path = window.location.pathname.split('/').filter(Boolean);
   const params = new URLSearchParams(window.location.search);
 
@@ -109,6 +107,7 @@ function parseURL(): { seed: string; x: number; y: number; zoom: number } {
   let x = 0;
   let y = 0;
   let zoom = 4;
+  let located = false;
 
   if (path.length >= 2) {
     seed = path[0];
@@ -118,15 +117,17 @@ function parseURL(): { seed: string; x: number; y: number; zoom: number } {
     if (coords) {
       x = Number(coords[1]);
       y = Number(coords[2]);
+      located = true;
     }
   }
 
   if (params.has('seed')) seed = params.get('seed')!;
   if (params.has('x')) x = Number(params.get('x'));
   if (params.has('y')) y = Number(params.get('y'));
+  if (params.has('x') || params.has('y')) located = true;
   if (params.has('zoom')) zoom = Number(params.get('zoom'));
 
-  return { seed, x, y, zoom };
+  return { seed, x, y, zoom, located };
 }
 
 function updateURL(seed: string, tileX: number, tileY: number, zoom: number) {
@@ -139,10 +140,41 @@ function updateURL(seed: string, tileX: number, tileY: number, zoom: number) {
   }
 }
 
-const { seed, x: startX, y: startY, zoom: startZoom } = parseURL();
+const url = parseURL();
+const { seed, zoom: startZoom } = url;
 const mapGen = new MapGenerator(seed);
 const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
+
+/**
+ * Wo es ohne Stelle in der Adresse losgeht: beim ersten Hauptgebäude, sonst
+ * auf der nächsten Wiese um den Ursprung, um die herum fester Boden liegt -
+ * der Ursprung selbst kann mitten im Meer liegen.
+ */
+function startPoint(): { x: number; y: number } {
+  if (url.located) return { x: url.x, y: url.y };
+  const home = world.townCenters()[0];
+  if (home) return { x: home.x, y: home.y };
+  const solid = (x: number, y: number) => {
+    const t = probe.getTile(x, y).tileType;
+    return t !== 'water' && t !== 'deep_water' && t !== 'mountain' && t !== 'snow';
+  };
+  for (let r = 0; r <= 600; r += 3) {
+    const steps = Math.max(1, Math.round((2 * Math.PI * r) / 3));
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const x = Math.round(Math.cos(a) * r);
+      const y = Math.round(Math.sin(a) * r);
+      if (probe.getTile(x, y).tileType !== 'grass') continue;
+      // Genug Platz für ein Dorf: ringsum im Abstand von 5 Tiles kein Wasser, kein Fels.
+      if ([[5, 0], [-5, 0], [0, 5], [0, -5], [4, 4], [-4, 4], [4, -4], [-4, -4]].every(([dx, dy]) => solid(x + dx, y + dy))) {
+        return { x, y };
+      }
+    }
+  }
+  return { x: 0, y: 0 };
+}
+const { x: startX, y: startY } = startPoint();
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 // Mit derselben Feinheit wie das Geländegitter der jetzigen Zoomstufe (wie zAt).
@@ -165,41 +197,13 @@ let selected: BuildingType | null = null;
 
 // --- Baumenü ---------------------------------------------------------------
 
-const RESOURCE_ORDER: (keyof Stock)[] = ['wood', 'stone', 'gold', 'berries'];
-
-const buildButtons = new Map<BuildingType, HTMLButtonElement>();
-
-for (const type of BUILDING_ORDER) {
-  const def = BUILDINGS[type];
-  const cost = RESOURCE_ORDER.filter((r) => def.cost[r])
-    .map((r) => `${def.cost[r]} ${RESOURCE_TYPE_LABEL[r]}`)
-    .join(', ');
-  const pop = def.provides > 0
-    ? `+${def.provides} Platz`
-    : def.accepts.length > 0
-      ? `Lager: ${def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join('/')}`
-      : type === 'farm' ? 'Nahrung' : '';
-
-  const button = document.createElement('button');
-  button.className = 'build-btn';
-  button.type = 'button';
-  button.setAttribute('aria-pressed', 'false');
-  button.innerHTML =
-    `<span class="name"><i style="background:${def.color.toRgbString()}"></i>` +
-    `${def.key} ${def.label}</span>` +
-    `<span class="cost">${[cost || 'kostenlos', pop].filter(Boolean).join(' · ')}</span>`;
-  button.addEventListener('click', () => select(selected === type ? null : type));
-  buildEl.appendChild(button);
-  buildButtons.set(type, button);
-}
+const buildMenu = new BuildMenu(buildEl, (type) => select(selected === type ? null : type));
 
 function select(type: BuildingType | null) {
   selected = type;
   // Wer baut, wählt nicht gleichzeitig aus - sonst tut ein Klick zwei Dinge.
   if (type) clearSelection();
-  for (const [key, button] of buildButtons) {
-    button.setAttribute('aria-pressed', String(key === type));
-  }
+  buildMenu.setPressed(type);
   updateCursor();
 }
 
@@ -239,18 +243,15 @@ function hint(text: string) {
 
 /** Reihenfolge in der Rohstoffleiste - wie in AoE2: Holz, Nahrung, Gold, Stein. */
 const RESOURCE_BAR_ORDER: (keyof Stock)[] = ['wood', 'berries', 'gold', 'stone'];
-const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER);
+// Das Zahnrad am Ende öffnet das Menü (wie F10).
+const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER, () => menu.toggle());
 
 // --- Einstellungen und Menü ------------------------------------------------
 
 const settings = loadSettings();
 /** Angehalten (F3 oder Menü): die Welt steht, Kamera und Auswahl gehen weiter. */
 let paused = false;
-const pausedEl = document.createElement('div');
-pausedEl.id = 'paused';
-pausedEl.textContent = 'Pause';
-pausedEl.hidden = true;
-document.body.appendChild(pausedEl);
+const pausedEl = document.getElementById('paused')!;
 
 function applySettings() {
   sound.volume = settings.volume;
@@ -293,25 +294,6 @@ const menu = new SettingsMenu(settings, {
   },
 });
 
-// Zahnrad am Ende der Rohstoffleiste öffnet das Menü.
-const menuButton = document.createElement('button');
-menuButton.type = 'button';
-menuButton.className = 'rb-menu';
-menuButton.title = 'Menü (F10)';
-menuButton.innerHTML =
-  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>';
-menuButton.addEventListener('click', () => menu.toggle());
-stockEl.appendChild(menuButton);
-
-/** Dauer als "1:35 h", "4:05 min" bzw. "40 s". */
-function formatDuration(seconds: number): string {
-  const s = Math.ceil(seconds);
-  if (s < 60) return `${s} s`;
-  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} min`;
-  const m = Math.ceil(s / 60);
-  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`;
-}
-
 /** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
 function updateResourceUI() {
   const pop = world.population();
@@ -328,9 +310,7 @@ function updateResourceUI() {
     villagerLabel: VILLAGER.label,
   });
 
-  for (const [type, button] of buildButtons) {
-    button.disabled = !world.affordable(type) || (type !== 'town_center' && !world.hasTownCenter());
-  }
+  buildMenu.setEnabled((type) => world.affordable(type) && (type === 'town_center' || world.hasTownCenter()));
   updateSelectionUI();
   // Der Vorrat wächst von allein: was eben noch zu teuer war, ist es jetzt
   // vielleicht nicht mehr - die gemerkte Bauplatz-Prüfung muss also mit.
@@ -926,16 +906,6 @@ selectionEl.addEventListener('mousedown', (e) => {
   }
 });
 
-/** Knöpfe zur Wahl der Frucht; `current` ist gedrückt. */
-function cropButtons(current: CropType | null): string {
-  return CROP_ORDER.map((c) => {
-    const crop = CROPS[c];
-    return `<button class="build-btn" data-action="crop" data-crop="${c}" aria-pressed="${c === current}">` +
-      `<span class="name">${crop.label}</span>` +
-      `<span class="cost">${crop.food} Nahrung · reif in ${formatDuration(crop.growTime)}</span></button>`;
-  }).join('');
-}
-
 /** Was auf einem Feld gerade dran ist - fürs Panel. */
 const FARM_PHASE_TEXT = {
   plough: 'Alle pflügen um',
@@ -949,31 +919,135 @@ const FARM_PHASE_TEXT = {
  * Stand eines Felds fürs Panel - des ganzen zusammenhängenden Felds, auf dem
  * alle gemeinsam arbeiten: Phase, Furchen je Arbeitsschritt, Ernte, Bauern.
  */
-function farmDetails(building: NonNullable<ReturnType<typeof world.building>>): string {
+function farmView(building: NonNullable<ReturnType<typeof world.building>>): FarmView {
   const group = world.farmGroup(building);
   // Nur die Furchen, die es gibt - ein Feldstück hat drei.
   const furrows = group.flatMap((b) => b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0));
-  const rows = furrows.length;
   const count = (test: (f: (typeof furrows)[number]) => boolean) => furrows.filter(test).length;
-  const food = furrows.reduce((sum, f) => sum + (f.sown >= 1 ? f.food : 0), 0);
-  const farmers = group.flatMap((b) => world.farmers(b));
-  const crops = [...new Set(furrows.map((f) => CROPS[f.crop].label))].join(', ');
-  let html = `<div><b>${FARM_PHASE_TEXT[world.farmPhase(building)]}</b>` +
-    `${group.length > 1 ? ` <span class="muted">(${group.length} Tiles)</span>` : ''}</div>` +
-    `<div>${crops} · <b>${Math.ceil(food)}</b> Nahrung auf dem Feld</div>` +
-    `<div class="muted">Furchen: ${count((f) => f.plough >= 1)}/${rows} gepflügt · ` +
-    `${count((f) => f.sown >= 1)}/${rows} gesät · ${count((f) => f.growth >= 1 && f.food > 1e-6)}/${rows} reif</div>`;
   const growing = furrows.filter((f) => f.sown >= 1 && f.growth < 1);
-  if (growing.length > 0) {
-    const next = Math.min(...growing.map((f) => (1 - f.growth) * CROPS[f.crop].growTime));
-    html += `<div class="muted">Nächste Furche reif in ${formatDuration(next)}</div>`;
+  return {
+    phase: FARM_PHASE_TEXT[world.farmPhase(building)],
+    tiles: group.length,
+    crops: [...new Set(furrows.map((f) => CROPS[f.crop].label))].join(', '),
+    food: furrows.reduce((sum, f) => sum + (f.sown >= 1 ? f.food : 0), 0),
+    rows: furrows.length,
+    ploughed: count((f) => f.plough >= 1),
+    sown: count((f) => f.sown >= 1),
+    ripe: count((f) => f.growth >= 1 && f.food > 1e-6),
+    nextRipeIn: growing.length > 0 ? Math.min(...growing.map((f) => (1 - f.growth) * CROPS[f.crop].growTime)) : undefined,
+    farmers: group.flatMap((b) => world.farmers(b)).map((v) => v.name),
+  };
+}
+
+/** Knopf zum Ausbilden: Kosten und ob man sie hat. */
+function trainView(): TrainView {
+  return {
+    label: VILLAGER.label,
+    cost: Object.entries(VILLAGER.cost).map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', '),
+    affordable: world.canAffordVillager(),
+  };
+}
+
+/** Was das Auswahl-Panel zeigt - als reine Daten, gezeichnet von SelectionPanel. */
+function selectionView(): SelectionView {
+  const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
+  const many = chosenBuildings();
+
+  if (many.length > 1) {
+    // Mehrere Gebäude: Anzahl je Art, Trefferpunkte zusammen, Ausbildung und Abriss für alle.
+    const kinds = new Map<string, number>();
+    for (const b of many) kinds.set(BUILDINGS[b.type].label, (kinds.get(BUILDINGS[b.type].label) ?? 0) + 1);
+    const trainers = many.filter((b) => BUILDINGS[b.type].trains);
+    const plans = new Set(many.map((b) => b.farm?.plan));
+    const plan = plans.size === 1 ? [...plans][0] : undefined;
+    return {
+      kind: 'buildings',
+      title: kinds.size === 1 ? `${many.length} × ${[...kinds.keys()][0]}` : `${many.length} Gebäude`,
+      kinds: kinds.size > 1 ? [...kinds].map(([l, n]) => `${n}× ${l}`).join(', ') : undefined,
+      hp: many.reduce((sum, b) => sum + b.hp, 0),
+      maxHp: many.reduce((sum, b) => sum + BUILDINGS[b.type].hp, 0),
+      training: trainers.length > 0
+        ? { queued: trainers.reduce((sum, b) => sum + b.queue, 0), capacity: trainers.length * MAX_TRAINING_QUEUE, train: trainView() }
+        : undefined,
+      farms: many.every((b) => b.farm)
+        ? {
+            farmers: many.reduce((sum, b) => sum + world.farmers(b).length, 0),
+            rows: many.reduce((sum, b) => sum + b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0).length, 0),
+            plan: plan ?? null,
+          }
+        : undefined,
+    };
   }
-  html += `<div>Bauern <b>${farmers.length}/${rows}</b>` +
-    (farmers.length > 0 ? ` <span class="muted">${farmers.map((v) => v.name).join(', ')}</span>` : '') + `</div>`;
-  if (farmers.length === 0) {
-    html += `<div class="muted">Wähle Dorfbewohner und klicke mit rechts auf das Feld - je Furche arbeitet einer.</div>`;
+  if (building) {
+    const def = BUILDINGS[building.type];
+    const pop = world.population();
+    return {
+      kind: 'building',
+      label: def.label,
+      hp: building.hp,
+      maxHp: def.hp,
+      accepts: def.accepts.length > 0 ? def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join(', ') : undefined,
+      provides: def.provides > 0 ? def.provides : undefined,
+      farm: building.farm ? { ...farmView(building), plan: building.farm.plan } : undefined,
+      trainer: def.trains
+        ? {
+            queue: building.queue,
+            max: MAX_TRAINING_QUEUE,
+            full: pop.used >= pop.cap,
+            percent: Math.floor((building.progress / VILLAGER.trainTime) * 100),
+            rally: building.rally !== null,
+            train: trainView(),
+          }
+        : undefined,
+    };
   }
-  return html;
+  if (selectedResource) {
+    const info = world.resourceInfo(selectedResource.x, selectedResource.y);
+    if (!info) {
+      // Leer gesammelt, während es ausgewählt war.
+      selectedResource = null;
+      return { kind: 'empty' };
+    }
+    const left = Math.ceil(info.remaining);
+    const kind = resources.kindAt(selectedResource.x, selectedResource.y);
+    return {
+      kind: 'resource',
+      title: kind ?? RESOURCE_TYPE_LABEL[info.type],
+      subtitle: kind ? RESOURCE_TYPE_LABEL[info.type] : undefined,
+      left,
+      total: info.total,
+      percent: Math.round((info.remaining / info.total) * 100),
+      // Beerensträucher wachsen nach - wie lange noch, bis er wieder voll ist.
+      regrow: info.regrowIn !== undefined && info.regrowIn > 1 ? { empty: left === 0, seconds: info.regrowIn } : undefined,
+      gatherers: info.gatherers,
+      max: MAX_GATHERERS,
+    };
+  }
+  if (selectedVillagers.size > 0) {
+    const chosen = world.villagers.filter((v) => selectedVillagers.has(v.id));
+    // Gleiche Tätigkeiten zusammenfassen: "3x sammelt Holz, 1x untätig".
+    const counts = new Map<string, number>();
+    for (const v of chosen) {
+      const text = world.describe(v).replace(/ \(\d+\)$/, '');
+      counts.set(text, (counts.get(text) ?? 0) + 1);
+    }
+    // Einer: sein Name als Titel. Mehrere: Anzahl und darunter die Namen.
+    const single = chosen.length === 1 ? chosen[0] : undefined;
+    return {
+      kind: 'villagers',
+      single: single
+        ? { name: single.name, role: single.female ? 'Dorfbewohnerin' : VILLAGER.label, doing: world.describe(single) }
+        : undefined,
+      count: chosen.length,
+      label: VILLAGER.label,
+      names: chosen.slice(0, 6).map((v) => v.name).join(', ') + (chosen.length > 6 ? ` +${chosen.length - 6}` : ''),
+      hp: chosen.reduce((sum, v) => sum + v.hp, 0),
+      maxHp: chosen.length * VILLAGER.hp,
+      activities: [...counts],
+    };
+  }
+  if (!world.hasTownCenter()) return { kind: 'start' };
+  return { kind: 'overview', idle: world.villagers.filter((v) => v.task.kind === 'idle').length };
 }
 
 /** Zeigt, was ausgewählt ist und was man damit tun kann. Läuft getaktet mit dem Vorrat. */
@@ -984,136 +1058,7 @@ function updateSelectionUI() {
   }
   for (const a of [...selectedBuildings]) if (!world.building(a)) selectedBuildings.delete(a);
   if (selectedBuilding && !selectedBuildings.has(selectedBuilding)) selectedBuilding = [...selectedBuildings][0] ?? null;
-  const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  const many = chosenBuildings();
-
-  let html: string;
-  if (many.length > 1) {
-    // Mehrere Gebäude: Anzahl je Art, Trefferpunkte zusammen, Ausbildung und Abriss für alle.
-    const kinds = new Map<string, number>();
-    for (const b of many) kinds.set(BUILDINGS[b.type].label, (kinds.get(BUILDINGS[b.type].label) ?? 0) + 1);
-    const hp = many.reduce((sum, b) => sum + b.hp, 0);
-    const max = many.reduce((sum, b) => sum + BUILDINGS[b.type].hp, 0);
-    const title = kinds.size === 1 ? `${many.length} × ${[...kinds.keys()][0]}` : `${many.length} Gebäude`;
-    html = `<div class="title">${title}</div>` +
-      (kinds.size > 1 ? `<div class="muted">${[...kinds].map(([l, n]) => `${n}× ${l}`).join(', ')}</div>` : '') +
-      `<div>Trefferpunkte <b>${Math.ceil(hp)}/${max}</b></div>`;
-    const trainers = many.filter((b) => BUILDINGS[b.type].trains);
-    const actions: string[] = [];
-    if (trainers.length > 0) {
-      const queued = trainers.reduce((sum, b) => sum + b.queue, 0);
-      html += `<div>In Ausbildung <b>${queued}/${trainers.length * MAX_TRAINING_QUEUE}</b></div>` +
-        `<div class="muted">Neue Dorfbewohner kommen in die kürzeste Warteschlange; Rechtsklick setzt den Sammelpunkt für alle.</div>`;
-      const cost = Object.entries(VILLAGER.cost)
-          .map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', ');
-      actions.push(
-          `<button class="build-btn" data-action="train" title="Mit Umschalt: 5 auf einmal"${world.canAffordVillager() ? '' : ' disabled'}>` +
-          `<span class="name">V ${VILLAGER.label}</span><span class="cost">${cost}</span></button>`);
-    }
-    if (many.every((b) => b.farm)) {
-      const plans = new Set(many.map((b) => b.farm!.plan));
-      const farmers = many.reduce((sum, b) => sum + world.farmers(b).length, 0);
-      const rows = many.reduce((sum, b) => sum + b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0).length, 0);
-      html += `<div>Bauern <b>${farmers}/${rows}</b></div>`;
-      actions.push(cropButtons(plans.size === 1 ? [...plans][0] : null));
-    }
-    actions.push(`<button class="build-btn" data-action="demolish">` +
-        `<span class="name">Entf Alle abreißen</span><span class="cost">50 % zurück</span></button>`);
-    html += `<div class="actions">${actions.join('')}</div>`;
-  } else if (building) {
-    const def = BUILDINGS[building.type];
-    html = `<div class="title">${def.label}</div>` +
-      `<div>Trefferpunkte <b>${Math.ceil(building.hp)}/${def.hp}</b></div>`;
-    if (def.accepts.length > 0) {
-      html += `<div class="muted">Lager für ${def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join(', ')}</div>`;
-    }
-    if (def.provides > 0) html += `<div class="muted">+${def.provides} Bevölkerung</div>`;
-    const actions: string[] = [];
-    if (building.farm) {
-      html += farmDetails(building);
-      actions.push(cropButtons(building.farm.plan));
-    }
-    if (def.trains) {
-      const pop = world.population();
-      if (building.queue > 0) {
-        const full = pop.used >= pop.cap;
-        const percent = Math.floor((building.progress / VILLAGER.trainTime) * 100);
-        html += `<div>In Ausbildung <b>${building.queue}/${MAX_TRAINING_QUEUE}</b>` +
-          `${full ? ' - <span class="muted">Bevölkerung voll, baue ein Haus</span>' : ''}</div>` +
-          `<div class="bar"><i style="width:${percent}%"></i></div>`;
-      }
-      html += building.rally
-        ? `<div class="muted">Sammelpunkt gesetzt - Rechtsklick versetzt ihn, auf das Gebäude hebt ihn auf.</div>`
-        : `<div class="muted">Rechtsklick auf die Karte setzt einen Sammelpunkt für neue Dorfbewohner.</div>`;
-      const cost = Object.entries(VILLAGER.cost)
-          .map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', ');
-      actions.push(
-          `<button class="build-btn" data-action="train" title="Mit Umschalt: 5 auf einmal"${world.canAffordVillager() ? '' : ' disabled'}>` +
-          `<span class="name">V ${VILLAGER.label}</span><span class="cost">${cost}</span></button>`);
-    }
-    actions.push(
-        `<button class="build-btn" data-action="demolish">` +
-        `<span class="name">Entf Abreißen</span><span class="cost">50 % zurück</span></button>`);
-    html += `<div class="actions">${actions.join('')}</div>`;
-  } else if (selectedResource) {
-    const info = world.resourceInfo(selectedResource.x, selectedResource.y);
-    if (info) {
-      const left = Math.ceil(info.remaining);
-      const percent = Math.round((info.remaining / info.total) * 100);
-      const kind = resources.kindAt(selectedResource.x, selectedResource.y);
-      html = `<div class="title">${kind ?? RESOURCE_TYPE_LABEL[info.type]}` +
-        `${kind ? ` <span class="muted">${RESOURCE_TYPE_LABEL[info.type]}</span>` : ''}</div>` +
-        `<div>Übrig <b>${left}/${info.total}</b></div>` +
-        `<div class="bar"><i style="width:${percent}%"></i></div>` +
-        // Beerensträucher wachsen nach - wie lange noch, bis er wieder voll ist.
-        (info.regrowIn !== undefined && info.regrowIn > 1
-          ? `<div class="muted">${left === 0 ? 'Leer gepflückt - wächst nach' : 'Wächst nach'}` +
-            ` · voll in ${formatDuration(info.regrowIn)}</div>`
-          : '') +
-        `<div>Sammler <b>${info.gatherers}/${MAX_GATHERERS}</b>` +
-        `${info.gatherers >= MAX_GATHERERS ? ' <span class="muted">- voll besetzt</span>' : ''}</div>` +
-        (info.gatherers === 0 && left > 0
-          ? `<div class="muted">Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.</div>`
-          : '');
-    } else {
-      // Leer gesammelt, während es ausgewählt war.
-      selectedResource = null;
-      html = `<div class="title">Leer</div><div class="muted">Hier ist nichts mehr zu holen.</div>`;
-    }
-  } else if (selectedVillagers.size > 0) {
-    const chosen = world.villagers.filter((v) => selectedVillagers.has(v.id));
-    // Gleiche Tätigkeiten zusammenfassen: "3x sammelt Holz, 1x untätig".
-    const counts = new Map<string, number>();
-    for (const v of chosen) {
-      const text = world.describe(v).replace(/ \(\d+\)$/, '');
-      counts.set(text, (counts.get(text) ?? 0) + 1);
-    }
-    const hp = chosen.reduce((sum, v) => sum + v.hp, 0);
-    // Einer: sein Name als Titel. Mehrere: Anzahl und darunter die Namen.
-    const single = chosen.length === 1 ? chosen[0] : undefined;
-    const names = chosen.slice(0, 6).map((v) => v.name).join(', ') + (chosen.length > 6 ? ` +${chosen.length - 6}` : '');
-    html = (single
-      ? `<div class="title">${single.name} <span class="muted">${single.female ? 'Dorfbewohnerin' : VILLAGER.label}</span></div>`
-      : `<div class="title">${chosen.length} ${VILLAGER.label}</div><div class="muted">${names}</div>`) +
-      `<div>Trefferpunkte <b>${Math.ceil(hp)}/${chosen.length * VILLAGER.hp}</b></div>` +
-      (single
-        ? `<div>${world.describe(single)}</div>`
-        : [...counts].map(([text, n]) => `<div>${n}× ${text}</div>`).join('')) +
-      `<div class="muted">Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · ` +
-      `auf ein Tier: jagen · auf ein Feld: bestellen · auf ein Lager: abliefern · sonst: hingehen</div>`;
-  } else if (!world.hasTownCenter()) {
-    html = `<div class="title">Los geht's</div>` +
-      `<div class="muted">Baue zuerst ein Hauptgebäude (Taste 1). Dort bildest du Dorfbewohner aus.</div>`;
-  } else {
-    const idle = world.villagers.filter((v) => v.task.kind === 'idle').length;
-    html = `<div class="muted">Klicke auf das Hauptgebäude, um Dorfbewohner auszubilden (V), ` +
-      `oder wähle Dorfbewohner aus.</div>` +
-      (idle > 0
-        ? `<div class="actions"><button class="build-btn" data-action="idle">` +
-          `<span class="name">. Untätige</span><span class="cost">${idle} ohne Arbeit</span></button></div>`
-        : '');
-  }
-  if (selectionEl.innerHTML !== html) selectionEl.innerHTML = html;
+  renderSelection(selectionEl, selectionView());
   // Auswahl hat sich vielleicht geändert, oder das Feld unter dem Zeiger ist
   // inzwischen leer gesammelt.
   updateCursor();

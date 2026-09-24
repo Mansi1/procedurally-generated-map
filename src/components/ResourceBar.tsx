@@ -1,21 +1,23 @@
-// resourceBar.tsx
+// ResourceBar.tsx
 // Rohstoffleiste oben links wie in AoE2: ein Steinband, darauf je Rohstoff
 // ein Symbol mit der Zahl der Sammler unten links und daneben der Vorrat,
-// dann die Bevölkerung und ein runder Knopf für untätige Dorfbewohner.
+// dann die Bevölkerung, ein runder Knopf für untätige Dorfbewohner und das
+// Zahnrad fürs Menü.
 // Eine defuss-Komponente: einmal gerendert, danach setzt update() über Refs
 // nur Texte, Titel und Klassen - neu gerendert luden die Bilder neu, und die
 // Leiste zuckte.
 
 import { createRef, render, type Props, type Ref } from 'defuss';
-import type { Stock } from './world/buildings';
+import type { Stock } from '../world/buildings';
+import { MenuButton } from './MenuButton';
 
-import woodIcon from './icons/wood.png';
-import berriesIcon from './icons/berries.png';
-import goldIcon from './icons/gold.png';
-import stoneIcon from './icons/stone.png';
-import populationIcon from './icons/population.png';
-import idleIcon from './icons/idle.png';
-import woodBar from './icons/wood-bar.png';
+import woodIcon from '../icons/wood.png';
+import berriesIcon from '../icons/berries.png';
+import goldIcon from '../icons/gold.png';
+import stoneIcon from '../icons/stone.png';
+import populationIcon from '../icons/population.png';
+import idleIcon from '../icons/idle.png';
+import woodBar from '../icons/wood-bar.png';
 
 /**
  * Symbole: die Modelle aus dem Spiel (Eiche, Beerenstrauch, Goldfels,
@@ -78,7 +80,8 @@ export class ResourceBar {
   private idleButton = createRef<HTMLButtonElement>();
   private idleCount = createRef<HTMLSpanElement>();
 
-  constructor(root: HTMLElement, order: (keyof Stock)[]) {
+  /** @param onMenu Klick aufs Zahnrad */
+  constructor(root: HTMLElement, order: (keyof Stock)[], onMenu: () => void) {
     root.style.backgroundImage = `url(${woodBar})`;
     for (const key of [...order, 'population']) this.cells.set(key, cellRefs());
     render(
@@ -91,6 +94,7 @@ export class ResourceBar {
           <Icon name="idle" />
           <span class="rb-count" ref={this.idleCount} />
         </button>
+        <MenuButton onClick={onMenu} />
       </>,
       root,
     );

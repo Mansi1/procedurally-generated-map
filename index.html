@@ -608,53 +608,8 @@
   </head>
   <body>
     <canvas id="game"></canvas>
-
-    <div id="ui" class="panel">
-      <div>
-        Pos <b id="pos">0, 0</b><span class="sep">|</span>
-        Tiles/Px <b id="sampling">-</b><span class="sep">|</span>
-        Zoom <b id="zoom">8px</b><span class="sep">|</span>
-        <kbd>WASD</kbd> bewegen <kbd>Q</kbd>/<kbd>E</kbd> zoomen<span class="sep">|</span>
-        <kbd>1</kbd>-<kbd>5</kbd> bauen <kbd>Esc</kbd> abbrechen<span class="sep">|</span>
-        <kbd>Klick</kbd>/<kbd>Ziehen</kbd> auswählen <kbd>Rechtsklick</kbd> Befehl
-        <kbd>V</kbd> Dorfbewohner <kbd>H</kbd> Hauptgebäude <kbd>.</kbd> untätige <kbd>M</kbd> Ton <kbd>Entf</kbd> abreißen
-      </div>
-    </div>
-
-    <div id="debug" class="panel">
-      <div id="legend"></div>
-      <div>Tile <b id="tile-info">-</b></div>
-      <div>
-        Cursor <b id="cursor-coords">-, -</b><span class="sep">|</span>
-        Kamera <b id="cam-coords">-, -</b><span class="sep">|</span>
-        MiniMap <b id="hover-coords">-, -</b><span class="sep">|</span>
-        FPS <b id="fps">0</b>
-      </div>
-    </div>
-
-    <div id="stock"></div>
-
-    <div id="selection" class="panel"></div>
-    <div id="select-box" hidden></div>
-
-    <div id="hint"></div>
-    <div id="build" class="panel"></div>
-
-    <canvas id="minimap"></canvas>
-    <button id="sound" type="button">
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 8h3l4-3.5v11L6 12H3z" fill="currentColor" stroke="none"/>
-        <path class="on" d="M13 7.5a3.5 3.5 0 0 1 0 5M15.5 5a7 7 0 0 1 0 10"/>
-        <path class="off" d="M13.5 7.5l4 5M17.5 7.5l-4 5"/>
-      </svg>
-    </button>
-    <div id="compass" title="Blickrichtung - klicke auf eine Himmelsrichtung">
-      <div class="needle"></div>
-      <button type="button" data-dir="N">N</button>
-      <button type="button" data-dir="E">O</button>
-      <button type="button" data-dir="S">S</button>
-      <button type="button" data-dir="W">W</button>
-    </div>
+    <!-- Die Oberfläche darüber rendert components/Hud.tsx hier hinein. -->
+    <div id="hud"></div>
     <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>
