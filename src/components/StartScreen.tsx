@@ -77,6 +77,7 @@ function SaveRow({ info, current, onLoad, onDelete }: {
 export class StartScreen {
   private root: HTMLDivElement;
   private opened = false;
+  private qr: HTMLDivElement;
   private seedInput = createRef<HTMLInputElement>();
   /** Wohin "Zurück" auf der Seite "Neues Spiel" führt - ins Spiel-Menü geöffnet: zum Hauptmenü. */
   private back: Page = 'single';
@@ -86,6 +87,17 @@ export class StartScreen {
     this.root.id = 'start';
     this.root.hidden = true;
     document.body.appendChild(this.root);
+    // Unten rechts: QR-Code zur Webseite - bleibt stehen, die Tafel wechselt.
+    this.qr = document.createElement('div');
+    document.body.appendChild(this.qr);
+    render(
+      <a class="start-qr" href="https://mannseicher.com" target="_blank" rel="noopener" title="mannseicher.com">
+        <img src="/qr-mannseicher.svg" width="96" height="96" alt="QR-Code zu mannseicher.com" />
+        <span>mannseicher.com</span>
+      </a>,
+      this.qr,
+    );
+    this.qr.hidden = true;
   }
 
   private show(page: Page) {
@@ -179,6 +191,7 @@ export class StartScreen {
     this.opened = true;
     this.root.hidden = false;
     document.body.classList.add('title-screen');
+    this.qr.hidden = false;
     if (page === 'new') this.back = 'main';
     this.show(page);
   }
@@ -187,5 +200,6 @@ export class StartScreen {
     this.opened = false;
     this.root.hidden = true;
     document.body.classList.remove('title-screen');
+    this.qr.hidden = true;
   }
 }

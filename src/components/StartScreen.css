@@ -216,3 +216,32 @@ body.title-screen #app > :not(#game) {
 #start .start-save-delete:hover {
   filter: brightness(1.2);
 }
+/* QR-Code zur Webseite unten rechts im Hauptmenü - ein kleines Holzschild. */
+.start-qr {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 6px;
+  background: linear-gradient(180deg, #7a4d29, #4a2c15);
+  border: 2px solid #1a0f07;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 220, 170, 0.3);
+  font: bold 12px Georgia, 'Times New Roman', serif;
+  color: #fbe7b5;
+  text-decoration: none;
+  text-shadow: 1px 1px 0 #000;
+}
+.start-qr img {
+  display: block;
+  border: 2px solid #1a0f07;
+  border-radius: 3px;
+  image-rendering: pixelated;
+}
+.start-qr:hover {
+  filter: brightness(1.15);
+}
