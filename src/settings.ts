@@ -30,6 +30,14 @@ const DEFAULTS: Settings = {
 };
 const STORAGE_KEY = 'pgm.settings';
 
+/**
+ * Was "Zurücksetzen" im Menü zurücksetzt: alles, was man dort einstellt -
+ * Blickrichtung und Pause bleiben, sie gehören zum laufenden Spiel.
+ */
+export function resetSettings(s: Settings) {
+  Object.assign(s, { ...DEFAULTS, facing: s.facing, paused: s.paused });
+}
+
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

@@ -8,7 +8,7 @@ import { createRef, render, type Ref } from 'defuss';
 import './SettingsMenu.css';
 import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/buildings';
-import { saveSettings, type Settings } from '../settings';
+import { resetSettings, saveSettings, type Settings } from '../settings';
 
 /** Was das Menü außer den Einstellungen braucht - main.ts liefert es. */
 export interface MenuHooks {
@@ -153,6 +153,12 @@ export class SettingsMenu {
               onInput={(e: Event) => this.change({ showDebug: (e.target as HTMLInputElement).checked })} />
           </label>
         </section>
+        <section>
+          <div class="menu-row">
+            <span>Alle Einstellungen</span>
+            <button type="button" class="menu-btn" onClick={() => this.reset()}>Zurücksetzen</button>
+          </div>
+        </section>
         <div class="menu-footer" ref={this.gameButtons}>
           <button type="button" class="menu-btn danger" onClick={() => this.newGame()}>Neues Spiel</button>
           <button type="button" class="menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
@@ -213,6 +219,13 @@ export class SettingsMenu {
     this.track.current.textContent = title ? `♪ ${title}` : 'Musik beginnt mit dem ersten Klick';
     this.showHelp.current.checked = s.showHelp;
     this.showDebug.current.checked = s.showDebug;
+  }
+
+  /** Alle Einstellungen auf ihre Vorgaben - nach Rückfrage. */
+  private reset() {
+    if (!window.confirm('Alle Einstellungen zurücksetzen?')) return;
+    resetSettings(this.settings);
+    this.change({});
   }
 
   private change(patch: Partial<Settings>) {
