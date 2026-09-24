@@ -14,15 +14,15 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl Grass
-Kd 0.340 0.560 0.220
+newmtl BranchCard
+Kd 0.000 0.000 0.000
 Ka 0 0 0
 Ks 0 0 0
 d 1
 illum 1
 
-newmtl LeafCard
-Kd 0.000 0.000 0.000
+newmtl Grass
+Kd 0.340 0.560 0.220
 Ka 0 0 0
 Ks 0 0 0
 d 1

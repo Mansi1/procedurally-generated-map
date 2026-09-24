@@ -180,7 +180,7 @@ function write(file, what, m, note) {
     Birch: '0.920 0.910 0.860', BirchMark: '0.150 0.140 0.130', Moss: '0.360 0.460 0.200',
     Cone: '0.460 0.300 0.170', Soot: '0.100 0.080 0.070', Grass: '0.340 0.560 0.220',
     Autumn: '0.900 0.460 0.140', AutumnDark: '0.740 0.260 0.100', AutumnLight: '0.960 0.700 0.220',
-    LeafDry: '0.620 0.480 0.240', LeafCard: '0.000 0.000 0.000', Acorn: '0.550 0.380 0.180', AcornCap: '0.380 0.280 0.160',
+    LeafDry: '0.620 0.480 0.240', LeafCard: '0.000 0.000 0.000', BranchCard: '0.000 0.000 0.000', Acorn: '0.550 0.380 0.180', AcornCap: '0.380 0.280 0.160',
   };
   const header = `# ${file}.obj - ${what} (Holz) fuer procedurally-generated-map
 # Einheiten: Meter, Y oben, Vorderseite nach +Z - so wie Blender ein Modell
@@ -289,6 +289,25 @@ function leafCards(m, rnd, [minLen, maxLen] = [1.0, 1.5]) {
   };
 }
 
+/**
+ * Branch cards for birches: returns card(origin, angle, scale) - a whole
+ * branch with its twigs and leaves as one upright plane from the stem
+ * outwards ("BranchCard"): the game paints branch, hanging twigs and small
+ * leaves on it (see the shader). 2 m out, 2.2 m down at scale 1.
+ */
+function branchCards(m) {
+  let count = 0;
+  return (origin, ang, scale = 1) => {
+    const W = 2.0 * scale, H = 2.2 * scale, top = 0.32 * scale;
+    const out = [Math.cos(ang), 0, Math.sin(ang)];
+    const at = (u, v) => [origin[0] + out[0] * u, origin[1] + top - v, origin[2] + out[2] * u];
+    const quad = [at(0, 0), at(W, 0), at(W, H), at(0, H)];
+    const nrm = [-out[2], 0, out[0]];
+    const back = quad.map((p) => p.map((v, j) => v + nrm[j] * 0.004));
+    m.emit(`Leaves.Branch.${count++}`, 'BranchCard', quad, back);
+  };
+}
+
 // Birch: two slender white trunks with black marks, branches with long hanging
 // twigs - leaf cards the game paints the leaves on.
 function birch() {
@@ -306,28 +325,25 @@ function birch() {
       m.box('Bark.Mark', 'BirchMark', [p[0] + Math.cos(a) * r * 0.6 - 0.04, p[0] + Math.cos(a) * r * 0.6 + 0.04], [p[1], p[1] + 0.04 + rnd() * 0.04], [p[2] + Math.sin(a) * r * 0.6 - 0.04, p[2] + Math.sin(a) * r * 0.6 + 0.04]);
     }
   });
-  const cards = leafCards(m, rnd);
+  // Each branch with its hanging twigs and leaves is one plane (BranchCard).
+  // They spiral up each stem at the golden angle from 40 % of its height to
+  // the top, longest in the middle of the crown; short ones close to the
+  // stems fill it, so it is full and not hollow.
+  const branch = branchCards(m);
   stems.forEach((pts, s) => {
-    const top = pts[pts.length - 1];
-    for (let i = 0; i < 7; i++) {
-      const f = 0.45 + (i / 7) * 0.5;
+    const at = (f) => {
       const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
-      const from = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
-      const ang = rnd() * Math.PI * 2 + s * 0.8;
-      const reach = 0.7 + rnd() * 0.6;
-      const to = [from[0] + Math.cos(ang) * reach, from[1] + 0.5 + rnd() * 0.5, from[2] + Math.sin(ang) * reach];
-      m.beam('Branch', 'Birch', from, to, 0.05, { w1: 0.02, n: 5 });
-      // Twigs along the branch, more towards its end.
-      for (let k = 0; k < 4; k++) {
-        const t = 0.35 + (k / 4) * 0.65;
-        cards(from.map((v, j) => v + (to[j] - v) * t), [to[0] - from[0], 0, to[2] - from[2]]);
-      }
+      return pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
+    };
+    const count = 12;
+    for (let i = 0; i < count; i++) {
+      const f = 0.4 + (i / count) * 0.58;
+      const size = 0.4 + Math.sin(Math.PI * (i + 0.5) / count) * 0.45 + rnd() * 0.1;
+      branch(at(f), i * 2.4 + s * 1.2 + rnd() * 0.4, size);
     }
-    // A few twigs round the top of each stem.
-    for (let k = 0; k < 5; k++) {
-      const ang = (k / 5) * Math.PI * 2 + rnd();
-      cards([top[0] + Math.cos(ang) * 0.15, top[1] + 0.1, top[2] + Math.sin(ang) * 0.15], [Math.cos(ang), 0, Math.sin(ang)]);
-    }
+    for (let k = 0; k < 5; k++) branch(at(0.5 + k * 0.1), k * 2.1 + s, 0.38);
+    const top = pts[pts.length - 1];
+    for (let k = 0; k < 3; k++) branch(top, (k / 3) * Math.PI * 2 + rnd(), 0.42);
   });
   litter(m, rnd, 1.0, 10, ['Grass', 'Grass', 'LeafDry']);
   write('tree_birch', 'Birke', m, PAINT);
@@ -347,36 +363,26 @@ function birch2() {
     const a = rnd() * Math.PI * 2;
     m.box('Bark.Mark', 'BirchMark', [p[0] + Math.cos(a) * r * 0.6 - 0.05, p[0] + Math.cos(a) * r * 0.6 + 0.05], [p[1], p[1] + 0.04 + rnd() * 0.05], [p[2] + Math.sin(a) * r * 0.6 - 0.05, p[2] + Math.sin(a) * r * 0.6 + 0.05]);
   }
-  const cards = leafCards(m, rnd, [1.1, 1.8]);
-  // Branches spiral up the stem: short at the bottom and top, longest in the
-  // middle of the crown - the egg shape.
+  // Branches spiral up the stem, each with its twigs and leaves one plane
+  // (BranchCard): short at the bottom and top, longest in the middle - the
+  // egg shape.
+  const branch = branchCards(m);
   const branches = 28;
   for (let i = 0; i < branches; i++) {
     const f = 0.38 + (i / branches) * 0.6;
     const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
     const from = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
-    const ang = i * 2.4 + rnd() * 0.5;
     const reach = 0.6 + Math.sin(Math.PI * (i + 0.5) / branches) * 1.6 + rnd() * 0.4;
-    const to = [from[0] + Math.cos(ang) * reach, from[1] + 0.35 + rnd() * 0.5, from[2] + Math.sin(ang) * reach];
-    m.beam('Branch', 'Birch', from, to, 0.06, { w1: 0.02, n: 5 });
-    for (let k = 0; k < 8; k++) {
-      const t = 0.2 + (k / 8) * 0.8;
-      cards(from.map((v, j) => v + (to[j] - v) * t), [to[0] - from[0], 0, to[2] - from[2]]);
-    }
+    branch(from, i * 2.4 + rnd() * 0.5, 0.45 + reach * 0.3);
   }
-  // Inside the crown, close to the stem - so it is full, not hollow.
-  for (let k = 0; k < 16; k++) {
-    const f = 0.45 + (k / 16) * 0.45;
+  // Short ones inside the crown - so it is full, not hollow.
+  for (let k = 0; k < 10; k++) {
+    const f = 0.45 + (k / 10) * 0.45;
     const seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg;
-    const p = pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g);
-    const ang = k * 2.1;
-    cards([p[0] + Math.cos(ang) * 0.35, p[1], p[2] + Math.sin(ang) * 0.35], [Math.cos(ang), 0, Math.sin(ang)]);
+    branch(pts[seg].map((v, j) => v + (pts[seg + 1][j] - v) * g), k * 2.1, 0.45);
   }
   const top = pts[pts.length - 1];
-  for (let k = 0; k < 8; k++) {
-    const ang = (k / 8) * Math.PI * 2 + rnd();
-    cards([top[0] + Math.cos(ang) * 0.2, top[1] + 0.15, top[2] + Math.sin(ang) * 0.2], [Math.cos(ang), 0, Math.sin(ang)]);
-  }
+  for (let k = 0; k < 4; k++) branch(top, (k / 4) * Math.PI * 2 + rnd(), 0.5);
   litter(m, rnd, 1.0, 10, ['Grass', 'Grass', 'LeafDry']);
   write('tree_birch_2', 'Hängebirke', m, PAINT);
 }
@@ -394,8 +400,9 @@ function birch3() {
     const r = 0.22 - (y / 4.2) * 0.08 + 0.01;
     m.box('Bark.Mark', 'BirchMark', [0.1 * y / 4.2 + Math.cos(a) * r * 0.6 - 0.06, 0.1 * y / 4.2 + Math.cos(a) * r * 0.6 + 0.06], [y, y + 0.05 + rnd() * 0.06], [Math.sin(a) * r * 0.6 - 0.06, Math.sin(a) * r * 0.6 + 0.06]);
   }
-  const cards = leafCards(m, rnd, [1.6, 2.7]);
-  // Limbs from the fork, up and outwards.
+  // Limbs from the fork, up and outwards, stay real; the side branches with
+  // their curtains of twigs are planes (BranchCard), in tiers along the limbs.
+  const branch = branchCards(m);
   const limbs = 4;
   for (let l = 0; l < limbs; l++) {
     const ang = (l / limbs) * Math.PI * 2 + 0.4;
@@ -403,36 +410,17 @@ function birch3() {
     const len = 3.0 + rnd() * 1.4;
     const tip = [fork[0] + Math.cos(ang) * len * lean, fork[1] + len, fork[2] + Math.sin(ang) * len * lean];
     m.beam('Branch', 'Birch', fork, tip, 0.18, { w1: 0.05, n: 6 });
-    // Arching side branches in tiers along the limb.
     for (let k = 0; k < 6; k++) {
       const t = 0.2 + (k / 6) * 0.8;
       const from = fork.map((v, j) => v + (tip[j] - v) * t);
-      const side = ang + (rnd() - 0.5) * 1.8;
-      const reach = 1.6 + rnd() * 0.9 - t * 0.5;
-      const peak = [from[0] + Math.cos(side) * reach * 0.6, from[1] + 0.35, from[2] + Math.sin(side) * reach * 0.6];
-      const end = [from[0] + Math.cos(side) * reach, from[1] - 0.1, from[2] + Math.sin(side) * reach];
-      m.beam('Branch', 'Birch', from, peak, 0.06, { w1: 0.035, n: 5 });
-      m.beam('Branch', 'Birch', peak, end, 0.035, { w1: 0.015, n: 4 });
-      // The curtain: twigs hanging close together along the arch.
-      for (let c = 0; c < 12; c++) {
-        const u = c / 11;
-        const at = u < 0.5
-          ? from.map((v, j) => v + (peak[j] - v) * (u * 2))
-          : peak.map((v, j) => v + (end[j] - v) * ((u - 0.5) * 2));
-        cards(at, [end[0] - from[0], 0, end[2] - from[2]]);
-      }
+      branch(from, ang + (rnd() - 0.5) * 1.8, 1.0 + rnd() * 0.3 - t * 0.3);
     }
-    // Twigs straight from the limb too - it disappears in the foliage.
-    for (let c = 0; c < 8; c++) {
-      const t = 0.3 + (c / 8) * 0.7;
-      const a = ang + (c % 2 ? 1.6 : -1.6) + (rnd() - 0.5);
-      cards(fork.map((v, j) => v + (tip[j] - v) * t), [Math.cos(a), 0, Math.sin(a)]);
-    }
-    // A tuft of twigs at the tip of the limb.
+    // Short ones along the limb and at its tip - it disappears in the foliage.
     for (let c = 0; c < 4; c++) {
-      const a = rnd() * Math.PI * 2;
-      cards([tip[0] + Math.cos(a) * 0.2, tip[1], tip[2] + Math.sin(a) * 0.2], [Math.cos(a), 0, Math.sin(a)]);
+      const t = 0.35 + (c / 4) * 0.65;
+      branch(fork.map((v, j) => v + (tip[j] - v) * t), ang + (c % 2 ? 1.6 : -1.6) + (rnd() - 0.5), 0.55);
     }
+    branch(tip, ang, 0.6);
   }
   litter(m, rnd, 1.1, 10, ['Grass', 'Grass', 'LeafDry']);
   write('tree_birch_3', 'Trauerbirke', m, PAINT);

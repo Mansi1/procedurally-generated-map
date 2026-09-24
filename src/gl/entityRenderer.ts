@@ -90,6 +90,7 @@ import deerObj from '../models/deer.obj?raw';
 import deerMtl from '../models/deer.mtl?raw';
 import hareObj from '../models/hare.obj?raw';
 import hareMtl from '../models/hare.mtl?raw';
+import birchLeafUrl from '../textures/birch_leaf.png';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
 
@@ -236,10 +237,18 @@ export const TREES: number[] = [
 
 /** Rolle des Laubs (außer Paint) - es wird im Shader weich schattiert. */
 const FOLIAGE_ROLE = 12;
+/** Textur-Einheit der Blatt-Textur - 0..2 belegt das Gelände. */
+const LEAF_TEXTURE_UNIT = 3;
+/** Kantenlänge der Blatt-Textur in Pixeln (textures/birch_leaf.png). */
+const LEAF_TEX_SIZE = 256;
 /** Rolle der Blattkarten (Birke): der Shader malt Zweig und Blätter darauf. */
 const LEAF_CARD_ROLE = 13;
+/** Rolle der Astkarten (Birke): ein ganzer Ast mit hängenden Zweigen und kleinen Blättern. */
+const BRANCH_CARD_ROLE = 14;
+/** Materialien der Karten, auf die der Shader malt - sie tragen (u, v, Zufall) statt einer Farbe. */
+const CARD_MATERIALS = new Set(['LeafCard', 'BranchCard']);
 /** Materialien, aus denen eine Krone besteht - daraus Mitte und Ausdehnung (Model.canopy). */
-const FOLIAGE_MATERIALS = new Set(['Paint', 'LeafDark', 'LeafLight', 'Needle', 'NeedleDark', 'LeafCard']);
+const FOLIAGE_MATERIALS = new Set(['Paint', 'LeafDark', 'LeafLight', 'Needle', 'NeedleDark', 'LeafCard', 'BranchCard']);
 
 /** Bäume und Sträucher - ihr Laub wird weich schattiert (siehe vFoliage). */
 const FOLIAGE_SHAPES: number[] = [
@@ -879,7 +888,7 @@ void main() {
     // in der Krone oder an ihrer Unterseite sitzt, liegt im Schatten.
     int matRole = int(aMaterial.w + 0.5);
     if (${FOLIAGE_SHAPES.map((n) => `shape == ${n}`).join(' || ')}) {
-      if (matRole == 1 || matRole == ${FOLIAGE_ROLE} || matRole == ${LEAF_CARD_ROLE}) {
+      if (matRole == 1 || matRole == ${FOLIAGE_ROLE} || matRole == ${LEAF_CARD_ROLE} || matRole == ${BRANCH_CARD_ROLE}) {
         vec3 nb = (aCorner.xyz - uCanopy) / max(uCanopyHalf, vec3(0.01));
         vFoliage = clamp(length(nb), 0.0, 1.2) * mix(0.65, 1.0, smoothstep(-1.0, 0.7, nb.z));
         vBent = vec3(forward * nb.x + left * nb.y, nb.z);
@@ -1073,6 +1082,50 @@ float texDetail(float freq, float px) {
   return 1.0 - smoothstep(0.25, 0.6, freq * px);
 }
 
+uniform sampler2D uLeafTex;  // Foto eines Birkenblatts (Blatt- und Astkarten)
+
+// Birkenrinde wie am Stamm (treeTexture, vTex 4), für gemalte Äste und Zweige:
+// uv = (um den Ast herum, entlang des Asts) in Metern, s = Lage quer zum Ast
+// (-1..1, für die Rundung), brown = 0 weiße Rinde mit schwarzen Querstrichen
+// und Rissen, 1 die dünne rotbraune Rinde junger Zweige.
+vec3 birchBark(vec2 uv, float s, float brown) {
+  float dash = smoothstep(0.72, 0.8, texNoise(uv * vec2(4.0, 26.0)));
+  float crack = smoothstep(0.86, 0.9, texNoise(uv * vec2(9.0, 2.2)));
+  vec3 white = vec3(0.9, 0.89, 0.84) * (0.9 + 0.1 * texNoise(uv * vec2(30.0, 10.0)));
+  vec3 c = mix(white, vec3(0.12, 0.11, 0.1), max(dash * 0.85, crack));
+  vec3 young = vec3(0.38, 0.22, 0.15) * (0.85 + 0.3 * texNoise(uv * vec2(20.0, 60.0)));
+  c = mix(c, young, brown);
+  // Rund: zu den Rändern hin im Schatten.
+  return c * (0.6 + 0.4 * sqrt(max(0.0, 1.0 - s * s)));
+}
+
+// Birkenblatt an einem Stiel: d = Punkt relativ zum Ansatz am Zweig, dir =
+// Richtung des Blatts, len = Länge samt Stiel (Meter), h = Zufall je Blatt,
+// px = Meter je Bildschirmpixel. Gemalt wird ein Foto eines Birkenblatts
+// (uLeafTex: Spitze oben, Stiel unten in der Mitte), sein Umriss kommt aus
+// der Transparenz. true, wenn der Punkt darauf liegt; col = seine Farbe.
+bool birchLeaf(vec2 d, vec2 dir, float len, float h, float px, out vec3 col) {
+  float along = dot(d, dir) / len;
+  float across = dot(d, vec2(-dir.y, dir.x)) / len;
+  if (along < 0.0 || along > 1.0 || abs(across) > 0.5) return false;
+  // Feste Mipmap-Stufe: in Schleifen und Verzweigungen gibt es keine
+  // verlässlichen Ableitungen für die automatische.
+  float lod = log2(max(px / len * ${LEAF_TEX_SIZE}.0, 1.0));
+  vec2 uv = vec2(0.5 + across, 1.0 - along);
+  // Der Umriss aus einer feinen Stufe - in den groben mittelt sich die
+  // Transparenz weg, und weit draußen verschwänden die Blätter. Die Farbe
+  // aus der passenden Stufe, damit sie nicht flimmert.
+  if (textureLod(uLeafTex, uv, min(lod, 2.0)).a < 0.5) return false;
+  vec4 t = textureLod(uLeafTex, uv, lod);
+  // Das Foto ist recht dunkel - heller und etwas gelbgrüner, wie im Sommer
+  // mit Sonne. Jedes Blatt etwas anders: heller oder dunkler, mal gelblicher.
+  vec3 c = t.rgb / max(t.a, 0.2) * vec3(1.35, 1.4, 1.05) * (0.85 + 0.35 * h);
+  c = mix(c, c * vec3(1.15, 1.1, 0.7), smoothstep(0.7, 1.0, h) * 0.5);
+  if (h > 0.97) c = mix(c, vec3(0.82, 0.72, 0.26), 0.7);
+  col = c;
+  return true;
+}
+
 // Rinde als Textur: Stamm abgewickelt (Umfang, Höhe) in Metern.
 vec3 treeTexture(vec3 base) {
   float r = max(length(vLocal.xy), 0.05);
@@ -1156,6 +1209,75 @@ vec3 treeTexture(vec3 base) {
     float kernel = smoothstep(0.0, 0.3, f.x) * smoothstep(1.0, 0.7, f.x) * smoothstep(0.0, 0.3, f.y) * smoothstep(1.0, 0.7, f.y);
     return base * (0.85 + 0.25 * mix(0.45, kernel, texDetail(55.0, px)));
   }
+  if (vTex == ${BRANCH_CARD_ROLE}) {
+    // Astkarte (Birke): vom Stamm (links, u = 0) ein geschwungener Ast nach
+    // außen, von ihm hängen Zweige herab, an denen viele kleine Blätter
+    // wechselständig sitzen. Gerechnet in Metern der Karte (2 m x 2.2 m).
+    // Je Pixel nur die nächsten Zweige und darin die nächsten Blätter.
+    vec2 q = vec2(base.x * 2.0, base.y * 2.2);
+    float qpx = max(length(fwidth(q)), 1e-5);
+    float seed = base.z;
+    vec3 col = vec3(0.0);
+    bool hit = false;
+    // Der Ast: steigt vom Stamm an, hängt zur Spitze hin durch.
+    float branchY = 0.32 - 0.16 * sin(3.1416 * min(q.x, 1.6) / 1.6) + 0.14 * smoothstep(1.1, 2.0, q.x);
+    float thick = mix(0.035, 0.008, q.x / 2.0);
+    if (abs(q.y - branchY) < thick && q.x < 1.95) {
+      float across = (q.y - branchY) / thick;
+      col = birchBark(vec2(across * thick * 3.1416, q.x), across, smoothstep(0.2, 1.2, q.x));
+      hit = true;
+    }
+    float spacing = 0.12;
+    float nearest = floor((q.x - 0.18) / spacing + 0.5);
+    for (int di = -1; di <= 1; di++) {
+      float fi = nearest + float(di);
+      if (fi < 0.0 || fi > 14.0) continue;
+      float h = fract(sin(fi * 91.7 + seed * 311.3) * 43758.5453);
+      float x0 = 0.18 + fi * spacing + (h - 0.5) * 0.05;
+      float y0 = 0.32 - 0.16 * sin(3.1416 * min(x0, 1.6) / 1.6) + 0.14 * smoothstep(1.1, 2.0, x0);
+      float len = 1.0 + h * 0.8 - fi * 0.03;
+      float along = q.y - y0;
+      if (along < -0.04 || along > len + 0.06) continue;
+      float sway = h * 6.2832;
+      // Der Zweig selbst.
+      float tx = x0 + sin(along * 2.2 + sway) * 0.03;
+      if (along > 0.0 && along < len && abs(q.x - tx) < 0.0045) {
+        float across = (q.x - tx) / 0.0045;
+        col = birchBark(vec2(across * 0.014, along + fi * 1.7), across, 1.0);
+        hit = true;
+      }
+      // Die Blätter daran, klein: die zwei nächsten.
+      float leafGap = 0.05;
+      float k0 = floor((along - 0.03) / leafGap);
+      for (int dk = 0; dk <= 1; dk++) {
+        float k = k0 + float(dk);
+        float ly = 0.03 + k * leafGap;
+        if (k < 0.0 || ly > len) continue;
+        float hk = fract(sin((fi * 37.0 + k) * 12.9898 + seed * 78.233) * 43758.5453);
+        float side = mod(k, 2.0) < 1.0 ? -1.0 : 1.0;
+        vec2 stem = vec2(x0 + sin(ly * 2.2 + sway) * 0.03, y0 + ly);
+        // Birkenblätter hängen steil, die Spitze nach unten.
+        float ang = side * (0.15 + hk * 0.35);
+        vec3 leaf;
+        if (birchLeaf(q - stem, vec2(sin(ang), cos(ang)), 0.08 + hk * 0.025, hk, qpx, leaf)) {
+          // Tiefer im Vorhang etwas dunkler.
+          col = leaf * (1.0 - 0.22 * smoothstep(0.3, 1.6, ly));
+          hit = true;
+        }
+      }
+      // Kätzchen: an manchen Zweigen hängt am Ende eine gelbbraune, geschuppte Ähre.
+      if (h > 0.72) {
+        float cy = along - len;
+        float cx = q.x - (x0 + sin(len * 2.2 + sway) * 0.03);
+        if (cy > 0.0 && cy < 0.09 && abs(cx) < 0.009 * (1.0 - cy / 0.12)) {
+          col = mix(vec3(0.72, 0.6, 0.3), vec3(0.45, 0.3, 0.16), step(0.5, fract(cy * 110.0)));
+          hit = true;
+        }
+      }
+    }
+    if (!hit) discard;
+    return col;
+  }
   if (vTex == ${LEAF_CARD_ROLE}) {
     // Blattkarte (Birke): ein hängender Zweig, leicht geschwungen, mit
     // wechselständigen spitz-eiförmigen Blättern an kurzen Stielen. Was kein
@@ -1163,13 +1285,16 @@ vec3 treeTexture(vec3 base) {
     // nicht. base = (u, v, Zufall); gerechnet in etwa Metern, damit die
     // Blätter auf der länglichen Karte nicht verzerrt sind.
     vec2 q = vec2(base.x * 0.47, base.y * 1.25);
+    float qpx = max(length(fwidth(q)), 1e-5);
     float seed = base.z;
     float bend = seed * 6.2832;
     float twigX = 0.235 + sin(q.y * 2.4 + bend) * 0.035;
     vec3 col = vec3(0.0);
     bool hit = false;
-    if (abs(q.x - twigX) < 0.009 + 0.006 * (1.0 - base.y) && base.y < 0.97) {
-      col = vec3(0.34, 0.19, 0.13);
+    float twigW = 0.009 + 0.006 * (1.0 - base.y);
+    if (abs(q.x - twigX) < twigW && base.y < 0.97) {
+      float across = (q.x - twigX) / twigW;
+      col = birchBark(vec2(across * twigW * 3.1416, q.y + seed * 5.0), across, 0.85);
       hit = true;
     }
     for (int i = 0; i < 12; i++) {
@@ -1179,26 +1304,10 @@ vec3 treeTexture(vec3 base) {
       float side = mod(fi, 2.0) < 1.0 ? -1.0 : 1.0;
       vec2 stem = vec2(0.235 + sin(t * 2.4 + bend) * 0.035, t);
       // Schräg nach unten und zur Seite, jedes etwas anders.
-      float ang = side * (0.75 + h * 0.5);
-      vec2 dir = vec2(sin(ang), cos(ang));
-      vec2 d = q - stem;
-      float along = dot(d, dir);
-      float across = dot(d, vec2(-dir.y, dir.x));
-      float len = 0.15 + h * 0.05;
-      float x = along / len;
-      if (x > 0.12 && x < 1.0) {
-        // Breit am Grund, zur Spitze hin zulaufend.
-        float halfW = len * 0.36 * pow(sin(3.1416 * pow((x - 0.12) / 0.88, 0.7)), 0.85);
-        if (abs(across) < halfW) {
-          vec3 leaf = mix(vec3(0.42, 0.62, 0.22), vec3(0.62, 0.78, 0.30), h);
-          if (h > 0.93) leaf = vec3(0.80, 0.72, 0.26);
-          leaf *= 1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.006, abs(across)));
-          leaf *= 0.82 + 0.18 * smoothstep(0.0, 0.5, 1.0 - abs(across) / halfW);
-          col = leaf;
-          hit = true;
-        }
-      } else if (x > -0.02 && x <= 0.12 && abs(across) < 0.005) {
-        col = vec3(0.36, 0.25, 0.12);
+      float ang = side * (0.2 + h * 0.4);
+      vec3 leaf;
+      if (birchLeaf(q - stem, vec2(sin(ang), cos(ang)), 0.17 + h * 0.05, h, qpx, leaf)) {
+        col = leaf;
         hit = true;
       }
     }
@@ -1408,6 +1517,7 @@ const MATERIAL_ROLE: Record<string, number> = {
   Needle: FOLIAGE_ROLE,
   NeedleDark: FOLIAGE_ROLE,
   LeafCard: LEAF_CARD_ROLE,
+  BranchCard: BRANCH_CARD_ROLE,
   // Felder (tools/models/farmsGen.mjs): Getreide, Blätter, Kolben.
   Wheat: 7,
   WheatDark: 7,
@@ -1501,8 +1611,11 @@ function frameOf(points: number[][], index: number) {
     const d = m[0] * a[0] + m[1] * a[1] + m[2] * a[2];
     b = norm([m[0] - d * a[0], m[1] - d * a[1], m[2] - d * a[2]]);
   }
-  // Die Karte hängt: v wächst nach unten.
+  // v ist die senkrechtere der beiden Achsen und wächst nach unten; u zeigt
+  // vom Stamm weg (Astkarten beginnen am Stamm, bei x = y = 0).
+  if (Math.abs(b[2]) > Math.abs(a[2])) [a, b] = [b, a];
   if (a[2] > 0) a = a.map((x) => -x);
+  if (b[0] * c[0] + b[1] * c[1] < 0) b = b.map((x) => -x);
   const proj = (axis: number[]) => points.map((p) => (p[0] - c[0]) * axis[0] + (p[1] - c[1]) * axis[1] + (p[2] - c[2]) * axis[2]);
   const pa = proj(a), pb = proj(b);
   const a0 = Math.min(...pa), b0 = Math.min(...pb);
@@ -1624,7 +1737,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   // Hauptachsen ihrer Eckpunkte; die Karte liegt ja beliebig im Raum.
   const cardPoints = new Map<number, number[][]>();
   for (const t of triangles) {
-    if (t.material !== 'LeafCard') continue;
+    if (!CARD_MATERIALS.has(t.material)) continue;
     const list = cardPoints.get(t.index) ?? [];
     for (const p of t.points) list.push([...local(p)]);
     cardPoints.set(t.index, list);
@@ -1646,7 +1759,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     const role = MATERIAL_ROLE[t.material] ?? 0;
     // Blattkarte: statt einer Farbe ihre Lage auf der Karte (u, v) und ein
     // Zufall je Karte - der Shader malt Zweig und Blätter danach.
-    const card = t.material === 'LeafCard' ? cardFrame(t.index) : undefined;
+    const card = CARD_MATERIALS.has(t.material) ? cardFrame(t.index) : undefined;
     for (const p of t.points) {
       const [x, y, z] = local(p);
       let rgb = color;
@@ -1896,6 +2009,8 @@ export class EntityRenderer {
     mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
   }[];
   private instanceBuffer: WebGLBuffer;
+  /** Foto eines Birkenblatts für die Blatt- und Astkarten (uLeafTex). */
+  private leafTexture: WebGLTexture;
   private uniforms = new Map<string, WebGLUniformLocation | null>();
   /** Wird nur vergrößert, nie neu belegt - eine Allokation je Frame wäre Müll. */
   private data = new Float32Array(STRIDE * 256);
@@ -1929,6 +2044,27 @@ export class EntityRenderer {
 
     gl.useProgram(this.program);
     uploadTerrainParams(gl, (name) => this.location(name));
+    gl.uniform1i(this.location('uLeafTex'), LEAF_TEXTURE_UNIT);
+
+    // Blatt-Textur: bis das Bild geladen ist, ein einzelnes grünes Pixel.
+    this.leafTexture = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE0 + LEAF_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.leafTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([110, 160, 60, 255]));
+    gl.activeTexture(gl.TEXTURE0);
+    const image = new Image();
+    image.onload = () => {
+      gl.activeTexture(gl.TEXTURE0 + LEAF_TEXTURE_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, this.leafTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.activeTexture(gl.TEXTURE0);
+    };
+    image.src = birchLeafUrl;
   }
 
   /** @param components Floats je Eckpunkt: 4 (aCorner) oder 8 (aCorner + aMaterial). */
@@ -2083,6 +2219,9 @@ export class EntityRenderer {
     gl.uniform1f(this.location('uTime'), animationTime());
     gl.uniform3f(this.location('uPlayerColor'), this.playerColor[0] / 255, this.playerColor[1] / 255, this.playerColor[2] / 255);
     gl.uniform1f(this.location('uSkirt'), this.skirts ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0 + LEAF_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.leafTexture);
+    gl.activeTexture(gl.TEXTURE0);
     // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
