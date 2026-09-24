@@ -26,6 +26,48 @@ export interface MenuHooks {
 
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
 
+/**
+ * Tastenkürzel für die Übersicht unter Steuerung: Tasten (je eine kbd), was
+ * sie tun und was zwischen den Tasten steht - "+" zusammen, "/" oder "-"
+ * eine davon, "" nebeneinander (WASD).
+ */
+const SHORTCUTS: [string[], string, string?][] = [
+  [['W', 'A', 'S', 'D'], 'Kamera bewegen (auch Pfeiltasten)', ''],
+  [['Rechts ziehen'], 'Karte verschieben'],
+  [['Q', 'E'], 'Zoomen (auch Mausrad)', '/'],
+  [['Leertaste'], 'Halten: Gelände flach'],
+  [['H'], 'Zum Hauptgebäude'],
+  [['Klick'], 'Auswählen (Ziehen: Rahmen)'],
+  [['Umschalt', 'Klick'], 'Zur Auswahl hinzu', '+'],
+  [['Doppelklick'], 'Gleiche Gebäude in der Nähe'],
+  [['.'], 'Untätige (Umschalt: einzeln)'],
+  [['Rechtsklick'], 'Befehl: sammeln, jagen, bauen, gehen'],
+  [['1', '6'], 'Gebäude bauen', '-'],
+  [['V'], 'Dorfbewohner ausbilden (Umschalt: 5)'],
+  [['Entf'], 'Abreißen'],
+  [['Esc'], 'Abbrechen, Auswahl aufheben'],
+  [['F3'], 'Pause'],
+  [['F10'], 'Menü'],
+  [['M'], 'Ton an/aus'],
+];
+
+/** Übersicht der Tastenkürzel zum Aufklappen - zweispaltig: Tasten, Wirkung. */
+function Shortcuts() {
+  return (
+    <details class="menu-keys-box">
+      <summary>Tastenkürzel</summary>
+      <dl class="menu-keys">
+      {SHORTCUTS.map(([keys, what, sep = '']) => (
+        <>
+          <dt>{keys.map((k, i) => <>{i > 0 && sep ? sep : null}<kbd>{k}</kbd></>)}</dt>
+          <dd>{what}</dd>
+        </>
+      ))}
+      </dl>
+    </details>
+  );
+}
+
 /** Regler 0..100 % mit der Zahl daneben. */
 interface SliderRefs {
   input: Ref<HTMLInputElement>;
@@ -139,6 +181,7 @@ export class SettingsMenu {
             <span>Kamera-Tempo</span>
             <Slider refs={this.scroll} min={50} max={200} step={10} onInput={(v) => this.change({ scroll: v })} />
           </div>
+          <Shortcuts />
         </section>
         <section>
           <h3>Anzeige</h3>

@@ -195,3 +195,59 @@
 #menu .menu-btn.danger {
   background: linear-gradient(180deg, #8e2e1f, #5a170d);
 }
+/* Tastenkürzel unter Steuerung: Tasten links, Wirkung rechts. */
+#menu .menu-keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 5px 12px;
+  align-items: center;
+  margin: 6px 0 4px;
+  font-size: 13px;
+}
+#menu .menu-keys dt {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #cdb58a;
+}
+#menu .menu-keys dd {
+  color: #f3e3c2;
+}
+#menu kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 1px 6px;
+  text-align: center;
+  font: bold 11px ui-monospace, Menlo, monospace;
+  color: #2a1606;
+  text-shadow: none;
+  background: linear-gradient(180deg, #f4e2bc, #d9bd85);
+  border: 1px solid #1a0f07;
+  border-radius: 3px;
+  box-shadow: 0 2px 0 #1a0f07;
+}
+/* Aufklappbar: zu Beginn nur die Zeile "Tastenkürzel" mit Pfeil. */
+#menu .menu-keys-box summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  font-size: 15px;
+  cursor: pointer;
+  list-style: none;
+}
+#menu .menu-keys-box summary::-webkit-details-marker {
+  display: none;
+}
+#menu .menu-keys-box summary::after {
+  content: '▸';
+  margin-left: auto;
+  color: #e8c878;
+  transition: transform 0.15s;
+}
+#menu .menu-keys-box[open] summary::after {
+  transform: rotate(90deg);
+}
+#menu .menu-keys-box summary:hover {
+  color: #fbe7b5;
+}
