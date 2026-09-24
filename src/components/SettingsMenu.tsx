@@ -59,6 +59,10 @@ export class SettingsMenu {
   private track = createRef<HTMLSpanElement>();
   private showHelp = createRef<HTMLInputElement>();
   private showDebug = createRef<HTMLInputElement>();
+  /** Nur im Spiel: Pause, Neues Spiel, Weiter spielen - aus dem Hauptmenü heraus stattdessen Zurück. */
+  private pauseRow = createRef<HTMLDivElement>();
+  private gameButtons = createRef<HTMLDivElement>();
+  private backButton = createRef<HTMLDivElement>();
 
   constructor(private settings: Settings, private hooks: MenuHooks) {
     this.root = document.createElement('div');
@@ -96,7 +100,7 @@ export class SettingsMenu {
         </section>
         <section>
           <h3>Spiel</h3>
-          <div class="menu-row">
+          <div class="menu-row" ref={this.pauseRow}>
             <span>Pause <small>F3</small></span>
             <button type="button" class="menu-btn" ref={this.pauseButton} onClick={act(() => this.hooks.togglePause())} />
           </div>
@@ -148,9 +152,12 @@ export class SettingsMenu {
               onInput={(e: Event) => this.change({ showDebug: (e.target as HTMLInputElement).checked })} />
           </label>
         </section>
-        <div class="menu-footer">
+        <div class="menu-footer" ref={this.gameButtons}>
           <button type="button" class="menu-btn danger" onClick={() => this.newGame()}>Neues Spiel</button>
           <button type="button" class="menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
+        </div>
+        <div class="menu-footer menu-footer-end" ref={this.backButton} hidden>
+          <button type="button" class="menu-btn" onClick={() => this.close()}>Zurück <small>Esc</small></button>
         </div>
       </div>
     );
@@ -166,9 +173,13 @@ export class SettingsMenu {
     return this.opened;
   }
 
-  open() {
+  /** @param fromTitle aus dem Hauptmenü: ohne Pause, Neues Spiel und Weiter spielen - nur Zurück. */
+  open(fromTitle = false) {
     this.opened = true;
     this.root.hidden = false;
+    this.pauseRow.current.hidden = fromTitle;
+    this.gameButtons.current.hidden = fromTitle;
+    this.backButton.current.hidden = !fromTitle;
     this.refresh();
   }
 

@@ -295,7 +295,7 @@ const start = new StartScreen({
   // Die jetzige Welt steht im Speicher und würde sich neu speichern - also leeren.
   deleteGame: (s) => (s === seed ? startNewGame() : deleteSave(s)),
   save: () => world.save(),
-  openSettings: () => menu.open(),
+  openSettings: () => menu.open(true),
 });
 
 /** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
@@ -1220,7 +1220,9 @@ window.addEventListener('keydown', (e) => {
   // F10 wie in AoE2: Menü. Solange es offen ist, keine Spieltasten.
   if (e.key === 'F10') {
     e.preventDefault();
-    menu.toggle();
+    // Im Hauptmenü ohne die Knöpfe, die nur im Spiel Sinn haben.
+    if (menu.isOpen()) menu.close();
+    else menu.open(start.isOpen());
     return;
   }
   if (menu.isOpen()) {
