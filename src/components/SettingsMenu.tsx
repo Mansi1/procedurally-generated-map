@@ -156,10 +156,10 @@ export class SettingsMenu {
     );
   }
 
+  /** Neues Spiel: die Wahl der Welt übernimmt das Hauptmenü, auch die Rückfrage. */
   private newGame() {
-    if (!window.confirm('Neues Spiel beginnen? Der jetzige Stand geht verloren.')) return;
-    this.hooks.newGame();
     this.close();
+    this.hooks.newGame();
   }
 
   isOpen(): boolean {

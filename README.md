@@ -46,12 +46,13 @@ unter *Settings → Git* „Git Large File Storage (LFS)“ eingeschaltet sein.
 
 | Adresse | Inhalt |
 |---|---|
-| `/` | Welt `Soliva` am Ursprung |
-| `/<seed>/<x>-<y>?zoom=<px>` | eine bestimmte Welt, Stelle und Zoomstufe – so lassen sich Orte teilen |
+| `/` | das Spiel, beginnend im Hauptmenü |
 | `/galerie` | alle Modelle und Animationen ohne Gelände (`?zeige=Birke&zoom=300` zeigt auf ein Modell) |
 
-Der Spielstand liegt im `localStorage` des Browsers, je Seed unter
-`pgm.world.<seed>`.
+Die Welt (Seed) wählt man im Hauptmenü unter Einzelspieler → Neues Spiel;
+gleicher Name, gleiche Welt. Standard ist `Soliva`. Der Spielstand liegt im
+`localStorage` des Browsers, je Seed unter `pgm.world.<seed>`, die zuletzt
+gewählte Welt unter `pgm.seed`.
 
 ## Steuerung
 

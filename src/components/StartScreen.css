@@ -98,3 +98,55 @@ body.title-screen #app > :not(#game) {
 #start .start-footer b {
   color: #fbe7b5;
 }
+/* Neues Spiel: Eingabe der Welt mit Würfel für eine zufällige. */
+#start .start-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(30, 16, 6, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #e8c878;
+}
+#start .start-field small {
+  font-size: 12px;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #cdb58a;
+}
+#start .start-seed {
+  display: flex;
+  gap: 8px;
+}
+#start .start-seed input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: bold 18px Georgia, 'Times New Roman', serif;
+  color: #2a1606;
+  background: linear-gradient(180deg, #f4e2bc, #e2c894);
+  border: 2px solid #1a0f07;
+  border-radius: 4px;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.3);
+  outline: none;
+}
+#start .start-seed input:focus {
+  border-color: #e3b758;
+}
+#start .start-dice {
+  width: 44px;
+  font-size: 20px;
+  background: linear-gradient(180deg, #7a4d29, #4a2c15);
+  border: 2px solid #1a0f07;
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.35);
+  cursor: pointer;
+}
+#start .start-dice:hover {
+  filter: brightness(1.2);
+}

@@ -47,6 +47,7 @@ import { ResourceField } from './world/resources';
 import { Sound, type SoundName } from './audio';
 import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
+import { currentSeed, DEFAULT_SEED, startInWorld, takeNewGameRequest } from './worlds';
 
 // Erst Spielfeld-Canvas und Oberfläche (components/Hud.tsx) - danach werden
 // ihre Teile hier über ihre IDs gefunden.
@@ -99,66 +100,25 @@ function resize() {
 
 applyCanvasSize();
 
-/** Welt, Stelle und Zoom, wenn die Adresse nichts sagt - dort liegt ein guter Platz fürs erste Dorf. */
-const DEFAULT_SEED = 'Soliva';
+/** Wo es in der Standardwelt losgeht - dort liegt ein guter Platz fürs erste Dorf. */
 const DEFAULT_START = { x: 88, y: -59 };
 const DEFAULT_ZOOM = 32;
 
-/** Seed, Stelle und Zoom aus der Adresse; `located`: die Stelle stand darin. */
-function parseURL(): { seed: string; x: number; y: number; zoom: number; located: boolean } {
-  const path = window.location.pathname.split('/').filter(Boolean);
-  const params = new URLSearchParams(window.location.search);
+// Die Adresse bleibt "/": Welt und Stelle stehen nicht mehr darin. Alte Links
+// (/<seed>/<x>-<y>?zoom=) werden aufgeräumt; die Welt wählt man im Hauptmenü.
+if (window.location.pathname !== '/' || window.location.search) window.history.replaceState(null, '', '/');
 
-  let seed = DEFAULT_SEED;
-  let x = 0;
-  let y = 0;
-  let zoom = DEFAULT_ZOOM;
-  let located = false;
-
-  if (path.length >= 2) {
-    seed = path[0];
-    // Nicht an '-' aufteilen: negative Koordinaten bringen ihr eigenes
-    // Minus mit ("-231--600").
-    const coords = /^(-?\d+)-(-?\d+)$/.exec(path[1]);
-    if (coords) {
-      x = Number(coords[1]);
-      y = Number(coords[2]);
-      located = true;
-    }
-  }
-
-  if (params.has('seed')) seed = params.get('seed')!;
-  if (params.has('x')) x = Number(params.get('x'));
-  if (params.has('y')) y = Number(params.get('y'));
-  if (params.has('x') || params.has('y')) located = true;
-  if (params.has('zoom')) zoom = Number(params.get('zoom'));
-
-  return { seed, x, y, zoom, located };
-}
-
-function updateURL(seed: string, tileX: number, tileY: number, zoom: number) {
-  // Der Zoom gehört mit in die Adresse - sonst geht er beim Neuladen oder
-  // Weitergeben des Links verloren, weil hier der Query-Teil ersetzt wird.
-  const newPath = `/${seed}/${tileX}-${tileY}`;
-  const newSearch = `?zoom=${zoom}`;
-  if (window.location.pathname !== newPath || window.location.search !== newSearch) {
-    window.history.replaceState(null, '', newPath + newSearch);
-  }
-}
-
-const url = parseURL();
-const { seed, zoom: startZoom } = url;
+const seed = currentSeed();
 const mapGen = new MapGenerator(seed);
 const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
 
 /**
- * Wo es ohne Stelle in der Adresse losgeht: beim ersten Hauptgebäude, in der
- * Standardwelt bei DEFAULT_START, sonst auf der nächsten Wiese um den Ursprung, um die herum fester Boden liegt -
- * der Ursprung selbst kann mitten im Meer liegen.
+ * Wo es losgeht: beim ersten Hauptgebäude, in der Standardwelt bei
+ * DEFAULT_START, sonst auf der nächsten Wiese um den Ursprung, um die herum
+ * fester Boden liegt - der Ursprung selbst kann mitten im Meer liegen.
  */
 function startPoint(): { x: number; y: number } {
-  if (url.located) return { x: url.x, y: url.y };
   const home = world.townCenters()[0];
   if (home) return { x: home.x, y: home.y };
   if (seed === DEFAULT_SEED) return DEFAULT_START;
@@ -294,11 +254,8 @@ const menu = new SettingsMenu(settings, {
     // Der Titel wechselt sofort - das Menü zeigt ihn gleich an.
     menu.refresh();
   },
-  newGame: () => {
-    // Auch aus dem Hauptmenü heraus (Einstellungen): danach läuft das Spiel.
-    start.close();
-    startNewGame();
-  },
+  // Neues Spiel: im Hauptmenü die Welt wählen.
+  newGame: () => start.open('new'),
 });
 
 function startNewGame() {
@@ -321,7 +278,8 @@ const start = new StartScreen({
   hasSave: () => world.hasTownCenter() || world.villagers.length > 0,
   world: seed,
   continueGame: goToStart,
-  newGame: startNewGame,
+  // Dieselbe Welt beginnt hier von vorn, eine andere nach dem Neuladen.
+  newGame: (s) => (s === seed ? startNewGame() : startInWorld(s)),
   openSettings: () => menu.open(),
 });
 
@@ -1095,8 +1053,7 @@ function updateSelectionUI() {
   updateCursor();
 }
 
-// Der Speicherstand liegt im localStorage, nicht in der Adresse - anders als
-// Seed und Position gehört er zu diesem Browser, nicht zum geteilten Link.
+// Der Speicherstand liegt im localStorage, je Welt einer.
 window.addEventListener('beforeunload', () => world.save());
 
 /**
@@ -1117,7 +1074,7 @@ function nearestZoomIndex(pixelsPerTile: number): number {
   return best;
 }
 
-let zoomIndex = nearestZoomIndex(startZoom || 8);
+let zoomIndex = nearestZoomIndex(DEFAULT_ZOOM);
 let tileSize = ZOOM_LEVELS[zoomIndex];
 const renderer = new MapRenderer(canvas, seed, tileSize, pixelRatio);
 const minimap = new MiniMap(minimapCanvas, seed, pixelRatio);
@@ -1403,7 +1360,6 @@ let lastTime = performance.now();
 let lastFpsUpdate = performance.now();
 let frames = 0;
 let fps = 0;
-let lastUrlUpdate = 0;
 let lastUiUpdate = 0;
 let lastSave = 0;
 /**
@@ -1649,11 +1605,6 @@ function loop(now: number) {
   sampleEl.textContent = (1 / (tileSize * pixelRatio)).toFixed(4);
   camCoordsEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
 
-  if (now - lastUrlUpdate > 500) {
-    updateURL(seed, camCenterTileX, camCenterTileY, tileSize);
-    lastUrlUpdate = now;
-  }
-
   // Der Vorrat wächst kontinuierlich, aber fünfmal je Sekunde abzulesen reicht -
   // je Frame wäre es nur unruhig und würde das Layout ständig neu rechnen.
   if (now - lastUiUpdate > 200) {
@@ -1682,7 +1633,9 @@ if (settings.facing in COMPASS) {
 if (settings.paused && !paused) togglePause();
 updateCompass();
 updateResourceUI();
-// Wer die Seite aufmacht, landet im Hauptmenü - wie bei einem Spiel.
-start.open();
+// Wer die Seite aufmacht, landet im Hauptmenü - wie bei einem Spiel. Nach
+// der Wahl einer anderen Welt geht es dort gleich mit dem neuen Spiel los.
+if (takeNewGameRequest()) startNewGame();
+else start.open();
 requestAnimationFrame(loop);
 document.title = `Soliva - ${seed}`;
