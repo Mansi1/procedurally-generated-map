@@ -1,0 +1,66 @@
+/* Rückfrage: Holzschild über allem, dahinter abgedunkelt. */
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+}
+.confirm-board {
+  width: min(380px, 100%);
+  padding: 20px 22px 16px;
+  background-color: #8a5a32;
+  background-size: auto 58px;
+  border: 3px solid #3a2412;
+  border-radius: 6px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 225, 180, 0.3),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 18px 50px rgba(0, 0, 0, 0.75);
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #fbe7b5;
+  text-shadow: 1px 1px 0 #000;
+}
+.confirm-question {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  font-size: 17px;
+  line-height: 1.4;
+  text-align: center;
+  background: rgba(30, 16, 6, 0.55);
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+}
+.confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.confirm-btn {
+  padding: 7px 16px;
+  font: bold 15px Georgia, 'Times New Roman', serif;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  background: linear-gradient(180deg, #7a4d29, #4a2c15);
+  border: 2px solid #1a0f07;
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.35);
+  cursor: pointer;
+}
+.confirm-btn:hover,
+.confirm-btn:focus-visible {
+  filter: brightness(1.2);
+  outline: none;
+}
+.confirm-ok {
+  background: linear-gradient(180deg, #e3b758, #a8741f);
+  color: #2a1606;
+  text-shadow: none;
+}
+.confirm-ok.danger {
+  background: linear-gradient(180deg, #8e2e1f, #5a170d);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+}

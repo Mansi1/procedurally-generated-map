@@ -8,6 +8,7 @@
 import { createRef, render } from 'defuss';
 import './StartScreen.css';
 import woodBar from '../icons/wood-bar.png';
+import { confirmDialog } from './ConfirmDialog';
 import { DEFAULT_SEED, hasProgress, listSaves, randomSeed, type SaveInfo } from '../worlds';
 
 /** Was das Hauptmenü braucht - main.ts liefert es. */
@@ -164,16 +165,17 @@ export class StartScreen {
     if (page === 'new') this.seedInput.current.select();
   }
 
-  private deleteGame(seed: string) {
-    if (!window.confirm(`Spielstand der Welt "${seed}" löschen?`)) return;
+  private async deleteGame(seed: string) {
+    if (!await confirmDialog(`Spielstand der Welt "${seed}" löschen?`, { ok: 'Löschen', danger: true })) return;
     this.hooks.deleteGame(seed);
     // Keiner mehr übrig: zurück zu Einzelspieler.
     this.show(listSaves().length > 0 ? 'load' : 'single');
   }
 
-  private newGame() {
+  private async newGame() {
     const seed = this.seedInput.current.value.trim() || DEFAULT_SEED;
-    if (hasProgress(seed) && !window.confirm(`Die Welt "${seed}" hat schon einen Spielstand. Neu beginnen? Er geht verloren.`)) return;
+    if (hasProgress(seed) && !await confirmDialog(`Die Welt "${seed}" hat schon einen Spielstand. Neu beginnen? Er geht verloren.`,
+      { ok: 'Neu beginnen', danger: true })) return;
     this.play(() => this.hooks.newGame(seed));
   }
 

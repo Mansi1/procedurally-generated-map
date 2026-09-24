@@ -11,6 +11,7 @@ import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/buildings';
 import { resetSettings, saveSettings, type Settings } from '../settings';
 import { ShortcutList } from './Shortcuts';
+import { confirmDialog } from './ConfirmDialog';
 
 /** Was das Menü außer den Einstellungen braucht - main.ts liefert es. */
 export interface MenuHooks {
@@ -195,8 +196,8 @@ export class SettingsMenu {
   }
 
   /** Zurück ins Hauptmenü - nach Rückfrage; der Stand wird vorher gespeichert (main.ts). */
-  private mainMenu() {
-    if (!window.confirm('Zurück zum Hauptmenü? Das Spiel wird gespeichert.')) return;
+  private async mainMenu() {
+    if (!await confirmDialog('Zurück zum Hauptmenü? Das Spiel wird gespeichert.', { ok: 'Zum Hauptmenü' })) return;
     this.close();
     this.hooks.mainMenu();
   }
@@ -248,8 +249,8 @@ export class SettingsMenu {
   }
 
   /** Alle Einstellungen auf ihre Vorgaben - nach Rückfrage. */
-  private reset() {
-    if (!window.confirm('Alle Einstellungen zurücksetzen?')) return;
+  private async reset() {
+    if (!await confirmDialog('Alle Einstellungen zurücksetzen?', { ok: 'Zurücksetzen' })) return;
     resetSettings(this.settings);
     this.change({});
   }
