@@ -62,6 +62,8 @@ const camCoordsEl = document.getElementById('cam-coords')!;
 const cursorCoordsEl = document.getElementById('cursor-coords')!;
 const fpsEl = document.getElementById('fps')!;
 const tileInfoEl = document.getElementById('tile-info')!;
+const objectLabelEl = document.getElementById('object-label')!;
+const resourceInfoEl = document.getElementById('resource-info')!;
 const zoomEl = document.getElementById('zoom')!;
 const stockEl = document.getElementById('stock')!;
 const buildEl = document.getElementById('build')!;
@@ -1334,17 +1336,44 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   cursorCoordsEl.textContent = `${mouseTileX}, ${mouseTileY}`;
 
   const info = probe.getTile(mouseTileX, mouseTileY);
-  // Baum- oder Straucharten dazu, z. B. "Holz (Eiche)".
-  const kind = resources.kindAt(mouseTileX, mouseTileY);
-  const resource =
-    info.resource === 'none'
-      ? ''
-      : ` | ${RESOURCE_TYPE_LABEL[info.resource]}${kind ? ` (${kind})` : ''} ${info.resourceAmount}`;
-  const building = world.at(mouseTileX, mouseTileY);
-  const built = building ? ` | ${BUILDINGS[building.type].label}` : '';
   tileInfoEl.textContent =
     `${TILE_TYPE_LABEL[info.tileType]} | h ${info.height.toFixed(2)}` +
-    ` | Feuchte ${info.moisture.toFixed(2)} | Temp ${info.temperature.toFixed(2)}${resource}${built}`;
+    ` | Feuchte ${info.moisture.toFixed(2)} | Temp ${info.temperature.toFixed(2)}`;
+  updateResourceInfo();
+}
+
+/**
+ * Was unter dem Zeiger steht, in den Entwickler-Infos: ein Gebäude mit seinen
+ * Trefferpunkten, sonst eine Ressource - Art (Baum- oder Strauchart, z. B.
+ * "Heidelbeere") und wie viel Nahrung, Holz, Stein oder Gold noch da ist. Läuft auch getaktet mit, weil
+ * Sammler leeren und Gebäude Schaden nehmen, während der Zeiger stillsteht.
+ */
+function updateResourceInfo() {
+  const hovered = mouseTileX !== undefined && mouseTileY !== undefined;
+  const building = hovered ? world.at(mouseTileX!, mouseTileY!) : undefined;
+  if (building) {
+    const def = BUILDINGS[building.type];
+    setText(objectLabelEl, 'Gebäude');
+    setText(resourceInfoEl, `${def.label} | Leben ${Math.ceil(building.hp)}/${def.hp}`);
+    return;
+  }
+  setText(objectLabelEl, 'Ressource');
+  const found = hovered ? world.resourceInfo(mouseTileX!, mouseTileY!) : null;
+  if (!found) {
+    setText(resourceInfoEl, '-');
+    return;
+  }
+  // Was man davon bekommt: Beeren sind Nahrung, sonst Holz, Stein oder Gold.
+  const yields = found.type === 'berries' ? 'Nahrung' : RESOURCE_TYPE_LABEL[found.type];
+  const amount = `${yields} ${Math.ceil(found.remaining)}/${found.total}`;
+  // Baum- und Straucharten mit Namen davor; Stein und Gold heißen wie ihr Ertrag.
+  const kind = resources.kindAt(mouseTileX!, mouseTileY!);
+  setText(resourceInfoEl, kind ? `${kind} | ${amount}` : amount);
+}
+
+/** Text nur setzen, wenn er sich ändert - getaktet sonst unnötige Layouts. */
+function setText(el: Element, text: string) {
+  if (el.textContent !== text) el.textContent = text;
 }
 
 canvas.addEventListener('mousemove', (e) => {
@@ -1365,6 +1394,7 @@ canvas.addEventListener('mouseleave', () => {
   mousePixelY = undefined;
   cursorCoordsEl.textContent = '-, -';
   tileInfoEl.textContent = '-';
+  updateResourceInfo();
 });
 
 // FPS Counter
@@ -1621,6 +1651,7 @@ function loop(now: number) {
   // je Frame wäre es nur unruhig und würde das Layout ständig neu rechnen.
   if (now - lastUiUpdate > 200) {
     updateResourceUI();
+    updateResourceInfo();
     lastUiUpdate = now;
   }
   if (now - lastSave > SAVE_INTERVAL) {

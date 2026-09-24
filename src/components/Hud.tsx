@@ -51,6 +51,8 @@ function DebugPanel() {
       </div>
       <Legend />
       <div>Tile <b id="tile-info">-</b></div>
+      {/* "Gebäude" oder "Ressource" - je nachdem, was unter dem Zeiger steht (main.ts). */}
+      <div><span id="object-label">Ressource</span> <b id="resource-info">-</b></div>
       <div>
         Cursor <b id="cursor-coords">-, -</b><span class="sep">|</span>
         Kamera <b id="cam-coords">-, -</b><span class="sep">|</span>
