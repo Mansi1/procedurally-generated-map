@@ -63,7 +63,10 @@
 #debug {
   top: 66px;
   left: 8px;
-  max-width: 420px;
+  max-width: 360px;
+  /* Nur für Entwickler - kleiner als die übrigen Panels. */
+  font-size: 9px;
+  line-height: 1.5;
 }
 /* Pause-Schild oben in der Mitte */
 #paused {
