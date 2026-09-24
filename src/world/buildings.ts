@@ -16,7 +16,8 @@ export type BuildingType =
   | 'house'
   | 'lumberjack'
   | 'mine'
-  | 'forager';
+  | 'forager'
+  | 'farm';
 
 export type Stock = Record<Exclude<ResourceType, 'none'>, number>;
 
@@ -135,6 +136,25 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     hp: 600,
     trains: false,
   },
+  farm: {
+    label: 'Feld',
+    key: '6',
+    color: Color.rgb(196, 168, 82),
+    shape: SHAPE.farmWheat,
+    // Felder werden Tile für Tile angelegt; nebeneinander wachsen sie zu einem
+    // großen Feld zusammen. Das Modell deckt 3x3 Tiles ab und zeigt nur die
+    // eigenen (siehe FarmState.tiles).
+    size: 3,
+    footprint: 1,
+    // Auf Sand und Schnee wächst nichts.
+    terrain: ['grass', 'forest'],
+    // Ein Neuntel eines AoE2-Felds (60 Holz für 3x3).
+    cost: { wood: 7 },
+    provides: 0,
+    accepts: [],
+    hp: 60,
+    trains: false,
+  },
 };
 
 export const BUILDING_ORDER: BuildingType[] = [
@@ -143,7 +163,53 @@ export const BUILDING_ORDER: BuildingType[] = [
   'lumberjack',
   'mine',
   'forager',
+  'farm',
 ];
+
+export type CropType = 'wheat' | 'corn';
+
+export interface CropDef {
+  label: string;
+  shape: number;
+  /** Nahrung je Aussaat. */
+  food: number;
+  /** Sekunden von der Aussaat, bis geerntet werden kann. */
+  growTime: number;
+  /** Faktor auf FARM_RATE - Mais erntet sich langsamer. */
+  rate: number;
+  /** Mit der Sichel (stehend, schlagend) statt kniend von Hand. */
+  scythe: boolean;
+}
+
+/**
+ * Was auf einem Feld wachsen kann - Ertrag je ganzem Feld grob wie ein
+ * AoE2-Feld (175 Nahrung), Wuchs ab der Aussaat einer Furche.
+ */
+export const CROPS: Record<CropType, CropDef> = {
+  wheat: { label: 'Weizen', shape: SHAPE.farmWheat, food: 175, growTime: 40, rate: 1, scythe: true },
+  corn: { label: 'Mais', shape: SHAPE.farmCorn, food: 250, growTime: 70, rate: 0.8, scythe: true },
+};
+
+/**
+ * Furchen je Feld, bei jeder Frucht gleich (ROWS in tools/models/farms.mjs).
+ * Drei je Tile-Reihe; in jeder arbeitet höchstens ein Bauer - ein ganzes Feld
+ * beschäftigt bis zu neun.
+ */
+export const FIELD_ROWS = 9;
+/** Sekunden, bis ein Bauer eine Furche über drei Tiles umgepflügt bzw. eingesät hat. */
+export const PLOUGH_TIME = 12;
+export const SOW_TIME = 8;
+
+export const CROP_ORDER: CropType[] = ['wheat', 'corn'];
+
+/** Nahrung je Sekunde, die ein Bauer erntet (mal CropDef.rate). */
+export const FARM_RATE = 0.7;
+/**
+ * Neu säen kostet - wie in AoE2 - etwa so viel wie das Feld: je abgeernteter
+ * Furche eines Tiles 2 Holz (drei Furchen je Tile). Die erste Aussaat ist im
+ * Preis des Felds enthalten.
+ */
+export const RESEED_COST: Partial<Stock> = { wood: 2 };
 
 /**
  * Startvorrat. Reicht für ein Hauptgebäude, eine Handvoll Dorfbewohner und

@@ -1050,10 +1050,65 @@ uniform vec4  uViewRect;       // Ausschnitt der Hauptansicht (x, y, Breite, Hoe
 uniform float uViewRectActive;
 uniform float uCenterDot;      // Mittelpunktmarke der Minimap
 
+// Umgepflügte Äcker (siehe World.fieldSoil): je Tile ein Texel ab uFieldOrigin,
+// rgb = wie weit die drei Furchen des Tiles entlang y gepflügt sind, a = Feld.
+uniform sampler2D uFields;
+uniform vec2  uFieldOrigin;
+uniform float uFieldSize;
+uniform float uFieldActive;
+
+float soilHash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float soilNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(soilHash(i), soilHash(i + vec2(1, 0)), u.x),
+             mix(soilHash(i + vec2(0, 1)), soilHash(i + vec2(1, 1)), u.x), u.y);
+}
+
+// Acker an diesem Punkt: Furchen entlang y mit hellem Kamm und dunkler Rinne,
+// Pflugspuren, Schollen und Krümel. Schattiert wie das Gelände darunter.
+vec3 soilColor(vec2 world, vec3 ground, float step) {
+  float across = fract(world.x * 3.0);
+  float ridge = 0.5 + 0.5 * cos((across - 0.5) * 6.2832);
+  float lines = 0.5 + 0.5 * sin(world.x * 3.0 * 6.2832 * 4.0 + soilNoise(world * vec2(2.0, 0.6)) * 2.0);
+  float fineLines = 1.0 - smoothstep(0.02, 0.08, step * 12.0);
+  float clods = soilNoise(world * vec2(9.0, 5.0));
+  float crumbs = soilNoise(world * 40.0) * (1.0 - smoothstep(0.01, 0.03, step));
+  float damp = smoothstep(0.4, 0.8, soilNoise(world * 0.35));
+  vec3 dark = vec3(0.30, 0.21, 0.13);
+  vec3 light = vec3(0.50, 0.37, 0.24);
+  vec3 c = mix(dark, light, ridge * 0.75 + clods * 0.25);
+  c *= 0.92 + 0.12 * (lines - 0.5) * fineLines + 0.16 * (crumbs - 0.5);
+  c *= 1.0 - 0.15 * damp;
+  // Licht und Schatten des Geländes übernehmen: Wiese ist im Mittel etwa so hell.
+  float shade = clamp(dot(ground, vec3(0.3, 0.59, 0.11)) / 0.42, 0.55, 1.35);
+  return c * shade;
+}
+
 void main() {
   float step = 1.0 / uPixelsPerTile;
   vec2 tile = vWorld;
   vec3 color = texture(uCache, vCache).rgb;
+
+  if (uFieldActive > 0.5) {
+    vec2 ft = floor(vWorld - uFieldOrigin);
+    if (all(greaterThanEqual(ft, vec2(0.0))) && all(lessThan(ft, vec2(uFieldSize)))) {
+      vec4 f = texelFetch(uFields, ivec2(ft), 0);
+      if (f.a > 0.5) {
+        vec2 inTile = fract(vWorld);
+        int furrow = min(int(inTile.x * 3.0), 2);
+        float ploughed = furrow == 0 ? f.r : furrow == 1 ? f.g : f.b;
+        // Weicher Rand am Ende des Gepflügten - ein halber Pixel.
+        float edge = clamp((ploughed - inTile.y) / max(step, 1e-4) + 0.5, 0.0, 1.0);
+        if (ploughed >= 0.999) edge = 1.0;
+        if (edge > 0.0) color = mix(color, soilColor(vWorld, color, step), edge);
+      }
+    }
+  }
 
   // Markiertes Tile: heller Rahmen mit dunklem Saum nach innen
   if (uHoverActive > 0.5) {

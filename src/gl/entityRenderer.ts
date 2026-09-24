@@ -81,6 +81,7 @@ import berryBush3Obj from '../models/berry_bush_3.obj?raw';
 import berryBush3Mtl from '../models/berry_bush_3.mtl?raw';
 import berryBush4Obj from '../models/berry_bush_4.obj?raw';
 import berryBush4Mtl from '../models/berry_bush_4.mtl?raw';
+import { FARM_KINDS, farmModel } from '../../tools/models/farmsGen.mjs';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
 
@@ -167,6 +168,13 @@ export const SHAPE = {
   lumberCamp2: 40,
   lumberCamp3: 41,
   lumberCamp4: 42,
+  /**
+   * Felder, 3x3 Tiles (tools/models/farmsGen.mjs). Je Furche eine eigene
+   * Form - die hier, plus Furche 0..8 - und eine Instanz: motion = [Furche,
+   * Stand, verbleibender Ertrag 0..1, Tiles] - siehe P_CROP im Shader.
+   */
+  farmWheat: 50,
+  farmCorn: 59,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -217,6 +225,21 @@ const NATURAL: number[] = [
 
 /** Gebäude schauen schräg zur Kamera (die steht bei +x +y). */
 export const BUILDING_HEADING = 0.5;
+
+/** Wo die Pflanzen ansetzen, in Metern (SOIL in tools/models/farmsGen.mjs). */
+const FIELD_SOIL_METERS = '0.02';
+
+/** Furchen je Feld (FIELD_ROWS in world/buildings.ts, ROWS in farmsGen.mjs). */
+const FIELD_FURROWS = 9;
+const FIELD_BASES = [SHAPE.farmWheat, SHAPE.farmCorn];
+
+/** Alle Formen der Felder - sie liegen genau auf ihren Tiles, schräg ragten die Ecken hinaus. */
+export const FIELDS: number[] = FIELD_BASES.flatMap((base) => Array.from({ length: FIELD_FURROWS }, (_, row) => base + row));
+
+/** Blickrichtung eines Gebäudemodells. */
+export function buildingHeading(shape: number): number {
+  return FIELDS.includes(shape) ? 0 : BUILDING_HEADING;
+}
 
 /**
  * Uhr für alles, was sich von selbst bewegt (Mühlenflügel, Fahnen). Sie steht,
@@ -338,6 +361,8 @@ uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
+// Feldpflanzen: 1 = frisch gesät und grün, 0 = reif in ihrer eigenen Farbe.
+float gUnripe = 0.0;
 uniform vec2  uHub;
 uniform float uTime;
 
@@ -381,6 +406,18 @@ const int P_STUMP = 16;
 const int P_STUMP_TOP = 17;
 const int P_LOG_END = 18;
 const int P_TRUNK = 19;
+// Felder: Pflanze (20) und Stück gepflügter Erde (21). aCorner.w = Teil +
+// Furche * 0.04 + Lage in der Furche (0..1) * 0.039. Gezeichnet wird je Furche
+// eine Instanz: aMotion.x = Furche (< 0: alle, Bauvorschau), aMotion.y = Stand
+// (0..1 gepflügt, 1..2 gesät, 2..3 gewachsen), aMotion.z = Rest der Ernte,
+// aMotion.w = welche der 3x3 Tiles zum Feld gehören (Bit x * 3 + y), dazu
+// ab Bit 9 die Tiles ringsum, auf denen ein anderes Feld liegt; die der 3x3
+// mit einem anderen Feld kommen als Bits in aAccent.r (* 255).
+const int P_CROP = 20;
+const int P_SOIL = 21;
+// Schnur mit Pflöcken an einer Kante eines Tiles: aCorner.w = 22 + Tile * 0.04
+// + Seite * 0.009 (0/1: Tile davor/dahinter entlang x, 2/3: entlang y).
+const int P_EDGE = 22;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
@@ -431,6 +468,7 @@ void main() {
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5 || shape == 18;
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
+    bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
     // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
     float size = natural ? aParams.z
@@ -609,6 +647,65 @@ void main() {
       if (keep >= aMotion.w) p = vec3(0.0);
     }
 
+    if (field) {
+      int row = int(floor(aMotion.x + 0.5));
+      float stage = aMotion.y;
+      int tiles = int(aMotion.w + 0.5);
+      bool hide = false;
+      if (part == P_CROP || part == P_SOIL) {
+        float v = aCorner.w - float(part);
+        int own = int(floor(v / 0.04 + 0.001));
+        float q = (v - float(own) * 0.04) / 0.039;
+        // Drei Furchen und drei Stücke je Tile - so liegt jedes Teil in genau einem.
+        int bit = (own / 3) * 3 + min(int(floor(q * 3.0 + 0.001)), 2);
+        hide = (row >= 0 && own != row) || ((tiles >> bit) & 1) == 0;
+        if (part == P_SOIL) {
+          // Erde erscheint, wo schon gepflügt ist.
+          hide = hide || (stage < 1.0 && q >= stage - 0.001);
+        } else {
+          // Pflanzen: gesät bis q, noch nicht geerntet ab dem Rest; sie
+          // wachsen aus der Erde heraus und reifen von Grün zur eigenen Farbe.
+          // Mit etwas Spielraum: q kommt gerundet aus aCorner.w zurück, die
+          // erste Pflanze eines Tiles bliebe sonst abgeerntet stehen.
+          hide = hide || stage < 1.0 || (stage < 2.0 && q >= stage - 1.004) || q >= aMotion.z - 0.004;
+          float grown = clamp(stage - 2.0, 0.0, 1.0);
+          float soil = ${FIELD_SOIL_METERS} / uMeters;
+          p.z = soil + (p.z - soil) * mix(0.15, 1.0, grown);
+          gUnripe = 1.0 - smoothstep(0.5, 1.0, grown);
+        }
+      } else if (part == P_EDGE) {
+        // Abgesteckt: nur die Kanten am Umriss des Felds - das Tile gehört
+        // dazu, sein Nachbar auf dieser Seite nicht.
+        float v = aCorner.w - 22.0;
+        int cell = int(floor(v / 0.04 + 0.001));
+        int side = int(floor((v - float(cell) * 0.04) / 0.009 + 0.5));
+        int ci = cell / 3;
+        int cj = cell - ci * 3;
+        int ni = ci + (side == 0 ? -1 : side == 1 ? 1 : 0);
+        int nj = cj + (side == 2 ? -1 : side == 3 ? 1 : 0);
+        // Außerhalb der 3x3: Bit 9 + Seite * 3 + Lage - dort liegt ein anderes
+        // Feld, und die beiden gehen ohne Schnur ineinander über.
+        int outer = 9 + side * 3 + (side < 2 ? cj : ci);
+        bool inGrid = ni >= 0 && ni < 3 && nj >= 0 && nj < 3;
+        // In den 3x3: eigenes Tile, oder ein anderes Feld dort (aAccent.r * 255
+        // als Bits je Tile - Felder haben keine Last, die die Farbe bräuchte).
+        int others = int(aAccent.r * 255.0 + 0.5);
+        bool neighbour = inGrid
+            ? ((tiles >> (ni * 3 + nj)) & 1) == 1 || ((others >> (ni * 3 + nj)) & 1) == 1
+            : ((tiles >> outer) & 1) == 1;
+        hide = row > 0 || ((tiles >> cell) & 1) == 0 || neighbour;
+      } else {
+        // Sonstiges (die Breiten-Marken): nur einmal je Feld.
+        hide = row > 0;
+      }
+      if (hide) {
+        // Ganz außerhalb des Bildes - die Dreiecke fallen weg, und die
+        // Bodenhöhe muss für sie nicht gerechnet werden.
+        gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+        return;
+      }
+    }
+
     if (part == P_CLOTH) {
       // Fahnentuch weht: eine Welle läuft vom Mast zum freien Ende, das
       // weiter ausschlägt als die Seite am Mast.
@@ -633,7 +730,7 @@ void main() {
     // unten etwas breiter läuft. Erst nach dem Drehen der Mühlenflügel: sonst
     // würden die zusammengedrückten Flügel um die Nabe gedreht und schnellten
     // verzerrt nach oben.
-    if (!figure && !natural && aMotion.w > 0.0) {
+    if (!figure && !natural && !field && aMotion.w > 0.0) {
       float c = aMotion.w;
       float h = fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
       p.z *= mix(1.0, 0.12 + 0.4 * h, c);
@@ -642,7 +739,8 @@ void main() {
       p.z += c * 0.12 * (p.x - 0.4 * p.y);
     }
 
-    float heading = aMotion.x;
+    // Felder liegen auf ihren Tiles; aMotion.x ist bei ihnen die Furche.
+    float heading = field ? 0.0 : aMotion.x;
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
     vec2 offset = (forward * p.x + left * p.y) * scale;
@@ -683,13 +781,36 @@ void main() {
 
     vec2 xy = center + offset;
     float base = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(center);
+    // Felder werden nicht eingeebnet: jede Pflanze steht auf dem Gelände darunter.
+    if (field) {
+      // Felder folgen dem Gelände. Gemessen ist es je Furche an drei Stellen
+      // entlang der Furche (Anfang, Mitte, Ende): die Höhe (aAccent.g,
+      // aGround, aAccent.b) und das Gefälle quer dazu (aColor) - dazwischen
+      // eine Parabel, quer dazu eine Gerade, so schließen die Furchen am Hang
+      // ohne Stufen aneinander. Das Gelände hier je Eckpunkt zu rechnen
+      // kostete bei Tausenden Halmen zu viel. Ohne Messung (Bauvorschau) doch
+      // je Eckpunkt.
+      // Pflöcke und Schnur (wenige Eckpunkte, über das ganze Feld verteilt)
+      // aber genau je Eckpunkt.
+      if (aGround > ${GROUND_UNKNOWN / 10}.0 && part != P_EDGE) {
+        float q = clamp((xy.y - center.y + 1.5) / 3.0, 0.0, 1.0);
+        vec3 w = vec3((2.0 * q - 1.0) * (q - 1.0), 4.0 * q * (1.0 - q), q * (2.0 * q - 1.0));
+        float h = dot(w, vec3(aAccent.g, aGround, aAccent.b));
+        float across = xy.x - (center.x + (float(int(floor(aMotion.x + 0.5))) + 0.5) * ${(3 / FIELD_FURROWS).toFixed(6)} - 1.5);
+        base = (h + dot(w, aColor) * across) * uReliefScale;
+      } else {
+        base = groundZ(xy);
+      }
+    }
     float z = base + up;
     // Gebaeude stehen waagerecht; ihr Sockel reicht in den Boden, damit am
     // Hang keine Luecke darunter aufgeht. Ein kippender Baum nicht - sein
     // Sockel wuerde sonst als Stange aus dem Boden ragen.
     // Vorkommen stehen schon auf dem tiefsten Punkt ihres Fußes (und Schutt
     // fliegt durch die Luft) - die brauchen keinen Sockel.
-    if (!figure && !natural && p.z < 0.001) z = base - 1.0;
+    // Felder liegen einfach auf dem Gelände - ein Sockel stünde am Hang als
+    // Wand unter der Erde heraus.
+    if (!figure && !natural && !field && p.z < 0.001) z = base - 1.0;
     world = vec3(xy, z);
   } else if (shape == 17) {
     // Staub: ein zur Kamera gedrehter Fleck. Mitte in der Welt, Ausdehnung
@@ -743,8 +864,9 @@ void main() {
     int role = int(aMaterial.w + 0.5);
     vColor = role == 1 ? aColor : role == 2 ? aAccent : aMaterial.rgb;
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
+    vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
-    vTex = role == 6 ? 6 : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
+    vTex = role >= 6 ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
     vLocal = aCorner.xyz * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
@@ -759,6 +881,9 @@ void main() {
   // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
   // wo es ist (siehe project: näher = kleinere Tiefe).
   if (shape == 5 || shape == 18 || shape == ${SHAPE_RING}) gl_Position.z -= 0.5 / uDepthRange;
+  // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
+  // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
+  if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
 }
 `;
 
@@ -794,6 +919,12 @@ float texCells(vec2 p, out float id) {
     if (d < d1) { d2 = d1; d1 = d; id = texHash(c + 3.3); } else if (d < d2) d2 = d;
   }
   return d2 - d1;
+}
+
+// 1, solange ein Muster mit freq Wiederholungen je Meter noch größer als
+// ein Pixel (px Meter) ist, 0, wenn es darunter fällt.
+float texDetail(float freq, float px) {
+  return 1.0 - smoothstep(0.25, 0.6, freq * px);
 }
 
 // Rinde als Textur: Stamm abgewickelt (Umfang, Höhe) in Metern.
@@ -835,6 +966,49 @@ vec3 treeTexture(vec3 base) {
     vec3 c = base * (0.78 + 0.4 * tone) * (0.62 + 0.38 * shade);
     c *= 0.9 + 0.2 * texNoise(vec2(q.x * 7.0, q.y * 1.5));
     return mix(base * 0.35, c, gapX);
+  }
+  // Felder: Muster in Metern. Was feiner ist als etwa ein Pixel, wird zum
+  // Mittelwert ausgeblendet - sonst flimmert es als Rauschen.
+  float px = max(length(fwidth(vLocal)), 1e-4);
+  if (vTex == 7) {
+    // Getreide: Halme als feine senkrechte Streifen, unten im Bestand
+    // dunkel, oben hell; helle Ähren und dunkle Grannen als Sprenkel.
+    vec2 h = vec2(vLocal.x * 0.8 + vLocal.y * 0.6, vLocal.y * 0.8 - vLocal.x * 0.6);
+    float stalks = mix(0.5, texNoise(vec2(h.x * 40.0, vLocal.z * 3.0)) * 0.6 + texNoise(vec2(h.y * 55.0, vLocal.z * 4.0)) * 0.4, texDetail(55.0, px));
+    float ears = smoothstep(0.62, 0.8, texNoise(vec2(h.x * 22.0, vLocal.z * 16.0) + h.y * 9.0)) * texDetail(22.0, px);
+    float depth = smoothstep(0.2, 1.1, vLocal.z);
+    vec3 c = base * (0.78 + 0.4 * stalks);
+    c = mix(c, base * 1.2 + vec3(0.05), ears * 0.45);
+    return c * (0.6 + 0.45 * depth);
+  }
+  if (vTex == 8) {
+    // Blätter (Mais): feine Längsadern, dazu sanft fleckig.
+    float mottle = texNoise(vLocal.xy * 4.0 + vLocal.z * 3.0);
+    float lines = 0.5 + 0.5 * sin((vLocal.x - vLocal.y) * 90.0 + vLocal.z * 25.0);
+    vec3 c = base * (0.82 + 0.3 * mottle);
+    return c * (1.0 + 0.12 * (lines - 0.5) * texDetail(15.0, px));
+  }
+  if (vTex == 9) {
+    // Umgepflügte Erde: Pflugspuren entlang der Furchen, darin Schollen mit
+    // dunklen Spalten, Krümel, feuchtere dunkle Stellen und helle Steinchen.
+    float id;
+    float e = texCells(vLocal.xy * vec2(3.0, 6.0), id);
+    float crack = (1.0 - smoothstep(0.02, 0.12, e)) * texDetail(6.0, px);
+    float streak = 0.5 + 0.5 * sin(vLocal.x * 14.0 + texNoise(vLocal.xy * vec2(2.0, 0.5)) * 3.0);
+    float crumbs = mix(0.5, texNoise(vLocal.xy * 30.0), texDetail(30.0, px));
+    float damp = smoothstep(0.35, 0.75, texNoise(vLocal.xy * 0.6));
+    float pebble = smoothstep(0.9, 0.95, texNoise(vLocal.xy * 12.0 + 3.7)) * texDetail(12.0, px);
+    vec3 c = base * (0.85 + 0.25 * id) * (0.88 + 0.22 * crumbs) * (0.9 + 0.2 * streak * texDetail(14.0, px));
+    c *= 1.0 - 0.18 * damp;
+    c = mix(c, base * 0.5, crack * 0.7);
+    return mix(c, vec3(0.6, 0.57, 0.52), pebble * 0.6);
+  }
+  if (vTex == 11) {
+    // Maiskolben: Körner in Reihen.
+    vec2 q = vec2((vLocal.x + vLocal.y) * 55.0, vLocal.z * 50.0);
+    vec2 f = fract(q);
+    float kernel = smoothstep(0.0, 0.3, f.x) * smoothstep(1.0, 0.7, f.x) * smoothstep(0.0, 0.3, f.y) * smoothstep(1.0, 0.7, f.y);
+    return base * (0.85 + 0.25 * mix(0.45, kernel, texDetail(55.0, px)));
   }
   // Schnittfläche: helles Holz mit Jahresringen, zum Rand dunkler.
   float rings = 0.5 + 0.5 * sin(r * 70.0 + texNoise(vLocal.xy * 6.0) * 3.0);
@@ -985,6 +1159,9 @@ const PARTS: [prefix: string, part: number][] = [
   ['Arm.R.Lower.Tool', 13],
   ['Arm.R.Lower', 12],
   ['Berry', 14],
+  ['Crop', 20],
+  ['Soil', 21],
+  ['Edge', 22],
   ['Leg.L', 1],
   ['Leg.R', 2],
   ['Arm.L', 3],
@@ -1008,6 +1185,20 @@ const MATERIAL_ROLE: Record<string, number> = {
   // Gebäude: Holzschindeln als Textur (siehe treeTexture, vTex 6)
   Shingle: 6,
   ShingleDark: 6,
+  // Felder (tools/models/farmsGen.mjs): Getreide, Blätter, Kolben.
+  Wheat: 7,
+  WheatDark: 7,
+  WheatEar: 7,
+  Tassel: 7,
+  WheatStem: 8,
+  CornStalk: 8,
+  CornLeaf: 8,
+  CornHusk: 8,
+  Vine: 8,
+  Soil: 9,
+  SoilDark: 9,
+  SoilLight: 9,
+  CornCob: 11,
 };
 
 interface Model {
@@ -1042,6 +1233,21 @@ function berryNumber(object: string): number {
   return Number(/^Berry\.(\d+)/.exec(object)?.[1] ?? 0);
 }
 
+/**
+ * Furche und Lage darin aus dem Objektnamen einer Feldpflanze oder eines
+ * Stücks Erde ("Crop.3.5.14": Furche 3, Pflanze 5 von 14), siehe P_CROP.
+ */
+function furrowValue(object: string): number {
+  const m = /^(?:Crop|Soil)\.(\d+)\.(\d+)\.(\d+)/.exec(object);
+  return m ? Number(m[1]) * 0.04 + (Number(m[2]) / Number(m[3])) * 0.039 : 0;
+}
+
+/** Tile und Seite einer Schnur am Feldrand ("Edge.4.2": Tile 4, Seite 2), siehe P_EDGE. */
+function edgeValue(object: string): number {
+  const m = /^Edge\.(\d+)\.(\d+)/.exec(object);
+  return m ? Number(m[1]) * 0.04 + Number(m[2]) * 0.009 : 0;
+}
+
 /** Fester Zufall 0..1 je Beeren-Nummer - welche Beere zuerst gepflückt wird. */
 function berryRandom(index: number): number {
   let h = Math.imul(index + 1, 2654435761);
@@ -1057,9 +1263,10 @@ function berryRandom(index: number): number {
  * mitzählen. Der Boden liegt danach bei 0. Blender hängt beim Export manchmal
  * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
  */
-function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = false, sawable = false): Model {
+function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'width', lod = false, sawable = false,
+                   only?: ObjTriangle[]): Model {
   // Das Objekt "Entry" markiert nur den Eingang - nicht zeichnen, nicht mitmessen.
-  const all = parseObj(obj);
+  const all = typeof obj === 'string' ? parseObj(obj) : obj;
   const entryPoints = all.filter((t) => t.object.startsWith('Entry')).flatMap((t) => t.points);
   const triangles = all.filter((t) => !t.object.startsWith('Entry'));
   const colors = parseMtl(mtl);
@@ -1141,7 +1348,8 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
   }
   const onCut = (t: ObjTriangle) => t.points.every((q) => Math.abs(q[1] - stumpTop) < 1e-3);
 
-  for (const t of triangles) {
+  // Nur ein Teil des Modells (eine Furche eines Felds) - gemessen am ganzen.
+  for (const t of only ?? triangles) {
     const part = partOf(t.object);
     const color = colors.get(t.material) ?? [0.6, 0.6, 0.6];
     const role = MATERIAL_ROLE[t.material] ?? 0;
@@ -1149,6 +1357,10 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
       const [x, y, z] = local(p);
       // Beeren: je Beere (Objekt) ein fester Zufall im Nachkomma-Teil, siehe P_BERRY.
       const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45
+        // Feldpflanzen: ihre Reihenfolge beim Ernten, siehe P_CROP.
+        : part === 20 || part === 21 ? part + furrowValue(t.object)
+        // Schnur an einer Tile-Kante, siehe P_EDGE.
+        : part === 22 ? 22 + edgeValue(t.object)
         // Bäume: alles außer dem Stamm verschwindet beim Absägen als Ganzes.
         : sawable && !t.object.startsWith('Trunk') ? 15 + (bottom.get(t.index) ?? 0) * 0.45
         // Stumpf (16), sein Deckel (17), der Boden des Stamms (18).
@@ -1215,6 +1427,11 @@ function loadModel(obj: string, mtl: string, unit: 'height' | 'width', lod = fal
  */
 const LOD_PARTS = [0.12, 0.45];
 const LOD_ZOOM = [32, 12];
+/**
+ * Felder wechseln früher: Tausende Halme lohnen sich nur ganz nah; schon ab
+ * 32 CSS-Pixeln je Tile reicht die Fassung mit weniger (FIELD_DETAIL).
+ */
+const FIELD_LOD_ZOOM = [48, 24];
 
 /**
  * Bäume und Sträucher in Metern: so breit ist einer der Instanzgröße 1.
@@ -1224,6 +1441,35 @@ const TREE_METERS = 3;
 const BUSH_METERS = 2.25;
 const STONE_METERS = 3;
 const GOLD_METERS = 2.8;
+
+/**
+ * Ein Feld als eine Form je Furche: jede enthält nur deren Pflanzen und Erde
+ * (die Pflöcke gehören zur ersten). Gezeichnet wird so je Furche nur, was
+ * zu ihr gehört - ein Weizenfeld hat Tausende Halme.
+ */
+function fieldModels(kind: (typeof FARM_KINDS)[number], base: number) {
+  // Die volle Fassung und zwei einfachere fürs Herauszoomen (LOD_ZOOM) - mit
+  // weniger Halmen, die man von weit weg ohnehin nicht einzeln sieht.
+  // Je Fassung einmal nach Furchen aufgeteilt (Pflöcke und Schnur zur ersten).
+  const versions = FIELD_DETAIL.map((detail) => {
+    const { obj, mtl } = farmModel(kind, detail);
+    const triangles = parseObj(obj);
+    const rows: ObjTriangle[][] = Array.from({ length: FIELD_FURROWS }, () => []);
+    for (const t of triangles) {
+      const m = /^(?:Crop|Soil)\.(\d+)\./.exec(t.object);
+      rows[m ? Number(m[1]) : 0].push(t);
+    }
+    return { triangles, rows, mtl };
+  });
+  return Array.from({ length: FIELD_FURROWS }, (_, row) => {
+    const [model, ...simpler] = versions.map((v) => loadModel(v.triangles, v.mtl, 'width', false, false, v.rows[row]));
+    model.lods = simpler.map((m) => m.vertices);
+    return { shape: base + row, model, scale: 1 };
+  });
+}
+
+/** Wie viele Pflanzen die Fassungen eines Felds zeigen: voll, dann für die beiden LOD-Stufen. */
+const FIELD_DETAIL = [1, 0.3, 0.1];
 
 /** Ein Vorkommen: mit vereinfachten Fassungen, in seiner echten Breite. */
 function natural(shape: number, obj: string, mtl: string, meters: number) {
@@ -1253,6 +1499,7 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.house4, model: loadModel(house4Obj, house4Mtl, 'width'), scale: 1 },
   { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
   { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
+  ...FARM_KINDS.flatMap((kind, i) => fieldModels(kind, FIELD_BASES[i])),
   ...natural(SHAPE.tree, treeSpruceObj, treeSpruceMtl, TREE_METERS),
   ...natural(SHAPE.treePine, treePineObj, treePineMtl, TREE_METERS),
   ...natural(SHAPE.treeOak, treeOakObj, treeOakMtl, TREE_METERS),
@@ -1460,10 +1707,12 @@ export class EntityRenderer {
         d[o + 6] = e.alpha;
         d[o + 7] = e.size;
         const m = e.motion;
-        d[o + 8] = m ? m[0] : BUILDING_HEADING;
-        d[o + 9] = m ? m[1] : 0;
-        d[o + 10] = m ? m[2] : 0;
-        d[o + 11] = m ? m[3] : 0;
+        // Ohne Angabe: Gebäude in ihrer Blickrichtung, Felder mit allen Furchen reif.
+        const field = !m && FIELDS.includes(e.shape);
+        d[o + 8] = m ? m[0] : field ? -1 : buildingHeading(e.shape);
+        d[o + 9] = m ? m[1] : field ? 3 : 0;
+        d[o + 10] = m ? m[2] : field ? 1 : 0;
+        d[o + 11] = m ? m[3] : field ? 511 : 0;
         const a = e.accent ?? e.color;
         d[o + 12] = a[0] / 255;
         d[o + 13] = a[1] / 255;
@@ -1504,6 +1753,7 @@ export class EntityRenderer {
     // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
+    const fieldLod = FIELD_LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     let first = flats.length + solids.length;
     const drawModel = (m: (typeof this.models)[number], offset: number) => {
       gl.uniform1f(this.location('uModelScale'), m.scale);
@@ -1518,7 +1768,8 @@ export class EntityRenderer {
       gl.uniform1f(this.location('uStumpRadius'), m.model.stumpRadius);
       gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
       gl.uniform2fv(this.location('uHub'), m.model.hub);
-      this.draw(lod > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[lod - 1] : m.mesh, offset, m.list.length);
+      const level = FIELDS.includes(m.shape) ? fieldLod : lod;
+      this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);
     };
     // Erst alles außer den Figuren, dann die Figuren - dazwischen ihr Umriss,
     // wo etwas vor ihnen steht (wie in AoE2). Die Figuren sind dann noch nicht

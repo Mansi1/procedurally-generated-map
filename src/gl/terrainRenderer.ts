@@ -148,6 +148,9 @@ const mod = (a: number, n: number) => ((a % n) + n) % n;
  * 2. Anzeigen: Das Gitter wird auf Geländehöhe gehoben und liest nur noch aus
  *    dem Cache. Dazu kommen die Overlays, die sich je Bild ändern.
  */
+/** Kantenlänge (Tiles) des Ausschnitts, in dem Äcker gezeichnet werden - um die Kamera. */
+export const FIELD_WINDOW = 256;
+
 export class TerrainRenderer {
   private gl: WebGL2RenderingContext;
   private program: WebGLProgram;
@@ -213,12 +216,21 @@ export class TerrainRenderer {
 
     this.cache = gl.createTexture()!;
     this.framebuffer = gl.createFramebuffer()!;
+    this.fields = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.fields);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, FIELD_WINDOW, FIELD_WINDOW, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.activeTexture(gl.TEXTURE0);
 
     this.uploadPermutations(seed);
 
     gl.useProgram(this.program);
     uploadTerrainParams(gl, (name) => this.location(name));
     gl.uniform1i(this.location('uCache'), 1);
+    gl.uniform1i(this.location('uFields'), 2);
+    gl.uniform1f(this.location('uFieldSize'), FIELD_WINDOW);
 
     gl.useProgram(this.fillProgram);
     uploadTerrainParams(gl, (name) => this.fillLocation(name));
@@ -312,6 +324,26 @@ export class TerrainRenderer {
 
   /** Nur für Tests: 0 = Bild, 1 = Höhe, 2 = Hangneigung. */
   debugMode = 0;
+
+  /** Äcker (siehe setFields): Textur, ihre linke obere Ecke in Tiles, ob welche da sind. */
+  private fields: WebGLTexture;
+  private fieldOrigin = { x: 0, y: 0 };
+  private fieldActive = false;
+
+  /**
+   * Umgepflügte Äcker: je Tile ab (x, y) vier Bytes, FIELD_WINDOW x
+   * FIELD_WINDOW Tiles (siehe World.fieldSoil) - oder null, wenn keine da sind.
+   */
+  setFields(x: number, y: number, data: Uint8Array | null) {
+    this.fieldActive = data !== null;
+    if (!data) return;
+    const gl = this.gl;
+    this.fieldOrigin = { x, y };
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.fields);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_WINDOW, FIELD_WINDOW, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.activeTexture(gl.TEXTURE0);
+  }
 
   /** Markiertes Tile in Weltkoordinaten, oder null. */
   hoverTile: { x: number; y: number } | null = null;
@@ -601,7 +633,11 @@ export class TerrainRenderer {
 
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.cache);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.fields);
     gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1f(this.location('uFieldActive'), this.fieldActive ? 1 : 0);
+    gl.uniform2f(this.location('uFieldOrigin'), this.fieldOrigin.x, this.fieldOrigin.y);
 
     const ppt = camera.pixelsPerTile;
     const win = this.window!;

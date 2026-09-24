@@ -24,15 +24,20 @@ import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from 
 import {
   BUILDINGS,
   BUILDING_ORDER,
+  CROP_ORDER,
+  CROPS,
+  FIELD_ROWS,
   MAX_GATHERERS,
   MAX_TRAINING_QUEUE,
   player,
   PLAYER_COLORS,
   VILLAGER,
   type BuildingType,
+  type CropType,
   type Stock,
 } from './world/buildings';
-import { World, type Villager } from './world/world';
+import { World, furrowCells, type Villager } from './world/world';
+import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './resourceBar';
 import { loadSettings, saveSettings, SettingsMenu } from './settings';
 import { ResourceField } from './world/resources';
@@ -169,7 +174,7 @@ for (const type of BUILDING_ORDER) {
     ? `+${def.provides} Platz`
     : def.accepts.length > 0
       ? `Lager: ${def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join('/')}`
-      : '';
+      : type === 'farm' ? 'Nahrung' : '';
 
   const button = document.createElement('button');
   button.className = 'build-btn';
@@ -590,7 +595,8 @@ function clickSelect(px: number, py: number, add: boolean, same = false) {
     if (building) {
       const anchor = world.anchorOf(building);
       if (same) {
-        const near = [...world.allBuildings()].filter((b) => b.type === building.type
+        // Felder: das ganze zusammenhängende Feld, sonst gleichartige in der Nähe.
+        const near = building.farm ? world.farmGroup(building) : [...world.allBuildings()].filter((b) => b.type === building.type
           && Math.hypot(b.x - building.x, b.y - building.y) <= SAME_TYPE_RADIUS);
         selectBuildings([...(add ? selectedBuildings : []), ...near.map((b) => world.anchorOf(b))], anchor);
       } else if (add) {
@@ -626,6 +632,25 @@ function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean)
 /** Ab so vielen Pixeln Bewegung wird aus dem Klick ein Auswahlrechteck. */
 const DRAG_THRESHOLD = 5;
 let drag: { x: number; y: number; active: boolean } | null = null;
+/** Felder werden Tile für Tile markiert - mit gedrückter Taste auch im Ziehen. */
+let sowing = false;
+
+/** Im Baumodus ein Gebäude bzw. Feldstück setzen; false, wenn es nicht ging. */
+function placeHere(x: number, y: number, quiet = false): boolean {
+  if (!selected) return false;
+  const reason = world.place(x, y, selected);
+  invalidatePlacementCheck();
+  if (reason) {
+    if (!quiet) hint(reason);
+    return false;
+  }
+  sound.play('place');
+  updateResourceUI();
+  // Reicht der Vorrat nicht für ein weiteres, zurück in den Ansichtsmodus -
+  // sonst klickt man ins Leere und bekommt nur Fehlermeldungen.
+  if (!world.affordable(selected)) select(null);
+  return true;
+}
 
 function canvasPoint(e: MouseEvent) {
   const rect = canvas.getBoundingClientRect();
@@ -638,17 +663,8 @@ canvas.addEventListener('mousedown', (e) => {
 
   if (selected) {
     const { x, y } = tileAt(p.x, p.y);
-    const reason = world.place(x, y, selected);
-    invalidatePlacementCheck();
-    if (reason) {
-      hint(reason);
-      return;
-    }
-    sound.play('place');
-    updateResourceUI();
-    // Reicht der Vorrat nicht für ein weiteres, zurück in den Ansichtsmodus -
-    // sonst klickt man ins Leere und bekommt nur Fehlermeldungen.
-    if (!world.affordable(selected)) select(null);
+    sowing = selected === 'farm';
+    placeHere(x, y);
     return;
   }
   drag = { x: p.x, y: p.y, active: false };
@@ -669,6 +685,7 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
+  if (e.button === 0) sowing = false;
   if (e.button !== 0 || !drag) return;
   const p = canvasPoint(e);
   if (drag.active) boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
@@ -839,7 +856,66 @@ selectionEl.addEventListener('mousedown', (e) => {
   const action = (e.target as HTMLElement).closest('button')?.dataset.action;
   if (action === 'train') trainVillager(e.shiftKey ? 5 : 1);
   if (action === 'demolish') demolishSelected();
+  if (action === 'crop') {
+    const crop = (e.target as HTMLElement).closest('button')?.dataset.crop as CropType | undefined;
+    if (!crop || !CROPS[crop]) return;
+    // Für das ganze Feld - darauf wird gemeinsam gesät.
+    const fields = new Set(chosenBuildings().flatMap((b) => (b.farm ? world.farmGroup(b) : [])));
+    for (const b of fields) world.setCrop(b, crop);
+    sound.play('click');
+    updateSelectionUI();
+  }
 });
+
+/** Knöpfe zur Wahl der Frucht; `current` ist gedrückt. */
+function cropButtons(current: CropType | null): string {
+  return CROP_ORDER.map((c) => {
+    const crop = CROPS[c];
+    return `<button class="build-btn" data-action="crop" data-crop="${c}" aria-pressed="${c === current}">` +
+      `<span class="name">${crop.label}</span>` +
+      `<span class="cost">${crop.food} Nahrung · reif in ${formatDuration(crop.growTime)}</span></button>`;
+  }).join('');
+}
+
+/** Was auf einem Feld gerade dran ist - fürs Panel. */
+const FARM_PHASE_TEXT = {
+  plough: 'Alle pflügen um',
+  sow: 'Alle säen',
+  grow: 'Wächst - die Bauern jäten',
+  harvest: 'Alle ernten',
+  done: 'Abgeerntet - wird neu gesät',
+} as const;
+
+/**
+ * Stand eines Felds fürs Panel - des ganzen zusammenhängenden Felds, auf dem
+ * alle gemeinsam arbeiten: Phase, Furchen je Arbeitsschritt, Ernte, Bauern.
+ */
+function farmDetails(building: NonNullable<ReturnType<typeof world.building>>): string {
+  const group = world.farmGroup(building);
+  // Nur die Furchen, die es gibt - ein Feldstück hat drei.
+  const furrows = group.flatMap((b) => b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0));
+  const rows = furrows.length;
+  const count = (test: (f: (typeof furrows)[number]) => boolean) => furrows.filter(test).length;
+  const food = furrows.reduce((sum, f) => sum + (f.sown >= 1 ? f.food : 0), 0);
+  const farmers = group.flatMap((b) => world.farmers(b));
+  const crops = [...new Set(furrows.map((f) => CROPS[f.crop].label))].join(', ');
+  let html = `<div><b>${FARM_PHASE_TEXT[world.farmPhase(building)]}</b>` +
+    `${group.length > 1 ? ` <span class="muted">(${group.length} Tiles)</span>` : ''}</div>` +
+    `<div>${crops} · <b>${Math.ceil(food)}</b> Nahrung auf dem Feld</div>` +
+    `<div class="muted">Furchen: ${count((f) => f.plough >= 1)}/${rows} gepflügt · ` +
+    `${count((f) => f.sown >= 1)}/${rows} gesät · ${count((f) => f.growth >= 1 && f.food > 1e-6)}/${rows} reif</div>`;
+  const growing = furrows.filter((f) => f.sown >= 1 && f.growth < 1);
+  if (growing.length > 0) {
+    const next = Math.min(...growing.map((f) => (1 - f.growth) * CROPS[f.crop].growTime));
+    html += `<div class="muted">Nächste Furche reif in ${formatDuration(next)}</div>`;
+  }
+  html += `<div>Bauern <b>${farmers.length}/${rows}</b>` +
+    (farmers.length > 0 ? ` <span class="muted">${farmers.map((v) => v.name).join(', ')}</span>` : '') + `</div>`;
+  if (farmers.length === 0) {
+    html += `<div class="muted">Wähle Dorfbewohner und klicke mit rechts auf das Feld - je Furche arbeitet einer.</div>`;
+  }
+  return html;
+}
 
 /** Zeigt, was ausgewählt ist und was man damit tun kann. Läuft getaktet mit dem Vorrat. */
 function updateSelectionUI() {
@@ -875,6 +951,13 @@ function updateSelectionUI() {
           `<button class="build-btn" data-action="train" title="Mit Umschalt: 5 auf einmal"${world.canAffordVillager() ? '' : ' disabled'}>` +
           `<span class="name">V ${VILLAGER.label}</span><span class="cost">${cost}</span></button>`);
     }
+    if (many.every((b) => b.farm)) {
+      const plans = new Set(many.map((b) => b.farm!.plan));
+      const farmers = many.reduce((sum, b) => sum + world.farmers(b).length, 0);
+      const rows = many.reduce((sum, b) => sum + b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0).length, 0);
+      html += `<div>Bauern <b>${farmers}/${rows}</b></div>`;
+      actions.push(cropButtons(plans.size === 1 ? [...plans][0] : null));
+    }
     actions.push(`<button class="build-btn" data-action="demolish">` +
         `<span class="name">Entf Alle abreißen</span><span class="cost">50 % zurück</span></button>`);
     html += `<div class="actions">${actions.join('')}</div>`;
@@ -887,6 +970,10 @@ function updateSelectionUI() {
     }
     if (def.provides > 0) html += `<div class="muted">+${def.provides} Bevölkerung</div>`;
     const actions: string[] = [];
+    if (building.farm) {
+      html += farmDetails(building);
+      actions.push(cropButtons(building.farm.plan));
+    }
     if (def.trains) {
       const pop = world.population();
       if (building.queue > 0) {
@@ -954,7 +1041,7 @@ function updateSelectionUI() {
         ? `<div>${world.describe(single)}</div>`
         : [...counts].map(([text, n]) => `<div>${n}× ${text}</div>`).join('')) +
       `<div class="muted">Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · ` +
-      `auf ein Lager: abliefern · sonst: hingehen</div>`;
+      `auf ein Feld: bestellen · auf ein Lager: abliefern · sonst: hingehen</div>`;
   } else if (!world.hasTownCenter()) {
     html = `<div class="title">Los geht's</div>` +
       `<div class="muted">Baue zuerst ein Hauptgebäude (Taste 1). Dort bildest du Dorfbewohner aus.</div>`;
@@ -1018,11 +1105,32 @@ function view(): IsoView {
  * neu zusammengestellt; die Höhe je Gebäude wird nur einmal gemessen.
  */
 let flatZones: FlatZone[] = [];
+
+/**
+ * Äcker für den Gelände-Shader: ein Ausschnitt von FIELD_WINDOW Tiles um die
+ * Kamera, neu zusammengestellt ein paarmal je Sekunde (gepflügt wird langsam)
+ * oder wenn die Kamera aus dem Ausschnitt herausläuft.
+ */
+const fieldData = new Uint8Array(FIELD_WINDOW * FIELD_WINDOW * 4);
+let fieldOrigin = { x: NaN, y: NaN };
+let lastFieldUpdate = 0;
+
+function updateFields(now: number) {
+  const snap = 32;
+  const x = Math.floor((camX - FIELD_WINDOW / 2) / snap) * snap;
+  const y = Math.floor((camY - FIELD_WINDOW / 2) / snap) * snap;
+  if (x === fieldOrigin.x && y === fieldOrigin.y && now - lastFieldUpdate < 250) return;
+  fieldOrigin = { x, y };
+  lastFieldUpdate = now;
+  renderer.setFields(x, y, world.fieldSoil(x, y, FIELD_WINDOW, fieldData));
+}
 const flatHeights = new Map<string, number>();
 
 function updateFlatZones() {
   const zones: FlatZone[] = [];
   for (const b of world.allBuildings()) {
+    // Felder bleiben, wie das Gelände ist - Pflanzen wachsen auch am Hang.
+    if (b.farm) continue;
     const fp = BUILDINGS[b.type].footprint;
     const k = `${b.type}:${b.x},${b.y}`;
     let z = flatHeights.get(k);
@@ -1212,7 +1320,13 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
 
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
+  const [before, beforeY] = [mouseTileX, mouseTileY];
   updateHoveredTile(e.clientX - rect.left, e.clientY - rect.top);
+  // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
+  if (sowing && selected === 'farm' && (e.buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
+      && (mouseTileX !== before || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
+    placeHere(mouseTileX, mouseTileY, true);
+  }
 });
 
 canvas.addEventListener('mouseleave', () => {
@@ -1314,6 +1428,19 @@ function collectOverlay(blend: number) {
 
   if (selected === null || mouseTileX === undefined || mouseTileY === undefined) return;
   const def = BUILDINGS[selected];
+
+  // Felder: rund um den Zeiger zeigen, wo gesät werden kann.
+  if (selected === 'farm') {
+    const R = 9;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx * dx + dy * dy > R * R) continue;
+        const [x, y] = [mouseTileX + dx, mouseTileY + dy];
+        if (!world.sowable(x, y)) continue;
+        overlay.push({ x, y, size: 0.92, color: [150, 220, 90], shape: SHAPE.flat, alpha: 0.16 });
+      }
+    }
+  }
   const blocked = placementCheck(mouseTileX, mouseTileY, selected);
 
   // Die belegte Fläche wird mit eingefärbt: bei einem 3x3-Gebäude sieht man
@@ -1326,6 +1453,19 @@ function collectOverlay(blend: number) {
     shape: SHAPE.flat,
     alpha: 0.22,
   });
+  if (selected === 'farm') {
+    // Felder zeigen die Frucht, die gesät wird - Furche für Furche, nur auf
+    // den Tiles, die sie bekämen.
+    const outline = world.fieldOutline(mouseTileX, mouseTileY, world.farmTiles(mouseTileX, mouseTileY) || 16);
+    for (let row = 0; row < FIELD_ROWS; row++) {
+      overlay.push({
+        x: mouseTileX, y: mouseTileY, size: def.size, color: player.color.toRGB(),
+        shape: CROPS[world.farmCrop].shape + row, alpha: 0.7, motion: [row, 3, 1, outline.mask],
+        accent: [outline.others, 0, 0],
+      });
+    }
+    return;
+  }
   overlay.push({
     x: mouseTileX,
     y: mouseTileY,
@@ -1391,6 +1531,7 @@ function loop(now: number) {
   }
 
   updateFlatZones();
+  updateFields(now);
   collectOverlay(tickAccumulator / TICK);
   renderer.render(camX, camY, mouseTileX, mouseTileY, overlay);
 

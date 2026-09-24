@@ -276,6 +276,9 @@ export class ResourceField {
           // abgesägt (motion[3] = Rest), leer bleibt ein Stumpf stehen.
           const tree = TREES.includes(node.shape);
           if (share <= 0 && !bush && !tree) continue;
+          // Liegt auf dem Tile ein Feld, ist der Stumpf ausgegraben - Felder
+          // gibt es nur auf abgebauten Vorkommen, gefragt wird also nur dort.
+          if (share <= 0 && world.at(node.x, node.y)?.farm) continue;
           node.instance.size = bush || tree ? node.size : node.size * (0.45 + 0.55 * share);
           // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
           // Falls stecken in motion[1] und motion[2].

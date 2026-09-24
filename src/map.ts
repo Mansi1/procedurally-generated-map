@@ -352,6 +352,11 @@ export class MapRenderer {
   /**
    * @param centerX Welt-Tile in der Bildmitte
    */
+  /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */
+  setFields(x: number, y: number, data: Uint8Array | null) {
+    this.terrain.setFields(x, y, data);
+  }
+
   /** Flächen, die unter Gebäuden eingeebnet werden - Gelände und Gebäude gleich. */
   setFlatZones(zones: readonly FlatZone[]) {
     const data = packZones(zones);
