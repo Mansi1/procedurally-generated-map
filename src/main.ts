@@ -98,15 +98,20 @@ function resize() {
 
 applyCanvasSize();
 
+/** Welt, Stelle und Zoom, wenn die Adresse nichts sagt - dort liegt ein guter Platz fürs erste Dorf. */
+const DEFAULT_SEED = 'Soliva';
+const DEFAULT_START = { x: 88, y: -59 };
+const DEFAULT_ZOOM = 32;
+
 /** Seed, Stelle und Zoom aus der Adresse; `located`: die Stelle stand darin. */
 function parseURL(): { seed: string; x: number; y: number; zoom: number; located: boolean } {
   const path = window.location.pathname.split('/').filter(Boolean);
   const params = new URLSearchParams(window.location.search);
 
-  let seed = 'Soliva';
+  let seed = DEFAULT_SEED;
   let x = 0;
   let y = 0;
-  let zoom = 4;
+  let zoom = DEFAULT_ZOOM;
   let located = false;
 
   if (path.length >= 2) {
@@ -147,14 +152,15 @@ const probe = new TileProbe(mapGen, seed);
 const world = new World(probe, seed);
 
 /**
- * Wo es ohne Stelle in der Adresse losgeht: beim ersten Hauptgebäude, sonst
- * auf der nächsten Wiese um den Ursprung, um die herum fester Boden liegt -
+ * Wo es ohne Stelle in der Adresse losgeht: beim ersten Hauptgebäude, in der
+ * Standardwelt bei DEFAULT_START, sonst auf der nächsten Wiese um den Ursprung, um die herum fester Boden liegt -
  * der Ursprung selbst kann mitten im Meer liegen.
  */
 function startPoint(): { x: number; y: number } {
   if (url.located) return { x: url.x, y: url.y };
   const home = world.townCenters()[0];
   if (home) return { x: home.x, y: home.y };
+  if (seed === DEFAULT_SEED) return DEFAULT_START;
   const solid = (x: number, y: number) => {
     const t = probe.getTile(x, y).tileType;
     return t !== 'water' && t !== 'deep_water' && t !== 'mountain' && t !== 'snow';
