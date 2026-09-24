@@ -49,12 +49,14 @@
   white-space: nowrap;
 }
 #ui kbd {
-  background: rgba(110, 231, 160, 0.12);
-  border: 1px solid var(--border);
-  border-radius: 4px;
   padding: 0 4px;
   font: inherit;
-  color: var(--accent);
+  font-weight: bold;
+  color: #2a1606;
+  background: linear-gradient(180deg, #f4e2bc, #d9bd85);
+  border: 1px solid #1a0f07;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 #1a0f07;
 }
 #ui .key-mouse {
   width: 10px;
@@ -106,8 +108,20 @@
    damit sie weniger vom Spielfeld verdecken. */
 #ui,
 #debug {
-  background: rgba(10, 14, 18, 0.4);
-  border-color: rgba(120, 220, 150, 0.2);
+  /* Farben wie im Menü: dunkles Holz, Gold, helle Tasten. */
+  --text: #f3e3c2;
+  --accent: #e8c878;
+  --border: rgba(232, 200, 120, 0.3);
+  color: var(--text);
+  background: rgba(30, 16, 6, 0.45);
+  border-color: var(--border);
+}
+#ui .sep,
+#debug .sep {
+  color: rgba(232, 200, 120, 0.35);
+}
+#debug #legend {
+  border-color: rgba(232, 200, 120, 0.2);
 }
 /* × zum Ausblenden der Tastenhilfe und der Entwickler-Infos */
 .panel-close {
