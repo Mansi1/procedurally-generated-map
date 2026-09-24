@@ -109,9 +109,10 @@
   font-size: 11px;
   color: #cdb58a;
 }
+/* Regler rechtsbündig vor ihrer Zahl, alle gleich breit. */
 #menu input[type='range'] {
-  flex: 1;
-  max-width: 170px;
+  width: 170px;
+  margin-left: auto;
   accent-color: #d9a441;
 }
 #menu input[type='checkbox'] {
