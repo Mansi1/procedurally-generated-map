@@ -1,16 +1,15 @@
 // modelIcons.ts
 // Symbole, gezeichnet aus den Modellen des Spiels: für die Rohstoffleiste
 // (Eiche, Beerenstrauch, Goldfels, Steinhaufen, Dorfbewohner) und für die
-// Befehlsleiste (Gebäude, Felder, Tiere - Knöpfe und Porträts). Ein eigener
+// Befehlsleiste (Gebäude, Tiere - Knöpfe und Porträts; Felder zeichnet cropIcons.ts). Ein eigener
 // EntityRenderer auf einem Canvas außerhalb der Seite zeichnet jedes Motiv
 // einmal; der Ausschnitt um das, was gezeichnet wurde, wird als Bild-URL
 // zurückgegeben. Die Dorfbewohner tragen die Spielerfarbe.
 
 import { ANIMAL_POSE, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
 import { groundToWorld, snapCamera } from '../gl/iso';
-import {
-  ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, type AnimalKind, type BuildingType, type CropType, type Stock,
-} from '../world/buildings';
+import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type Stock } from '../world/buildings';
+import { cropIcon } from './cropIcons';
 
 export type IconName = keyof Stock | 'population' | 'idle';
 
@@ -154,24 +153,11 @@ function cached(key: string, player: RGB, instances: () => EntityInstance[]): st
   return url;
 }
 
-/** Ein Feld mit reifer Frucht - alle Furchen. */
-function field(crop: CropType, player: RGB): EntityInstance[] {
-  return Array.from({ length: FIELD_ROWS }, (_, row) => ({
-    x: -0.5, y: -0.5, size: BUILDINGS.farm.size, color: player, shape: CROPS[crop].shape + row, alpha: 1,
-    motion: [row, 3, 1, 511] as [number, number, number, number], accent: [0, 0, 0] as RGB,
-  }));
-}
-
-/** Gebäude in Spielerfarbe - das Feld mit reifem Weizen. */
+/** Gebäude in Spielerfarbe - das Feld als Weizengarbe (siehe cropIcons.ts). */
 export function buildingIcon(type: BuildingType, player: RGB): string {
-  return cached(`building:${type}`, player, () => type === 'farm'
-    ? field('wheat', player)
-    : [{ x: -0.5, y: -0.5, size: BUILDINGS[type].size, color: player, shape: BUILDINGS[type].shape, alpha: 1 }]);
-}
-
-/** Feld mit reifer Frucht - Knöpfe zur Wahl der Frucht. */
-export function cropIcon(crop: CropType, player: RGB): string {
-  return cached(`crop:${crop}`, player, () => field(crop, player));
+  if (type === 'farm') return cropIcon('wheat');
+  return cached(`building:${type}`, player, () =>
+    [{ x: -0.5, y: -0.5, size: BUILDINGS[type].size, color: player, shape: BUILDINGS[type].shape, alpha: 1 }]);
 }
 
 /** Dorfbewohner(in) in Spielerfarbe. */

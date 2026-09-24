@@ -47,6 +47,13 @@
 #command-bar .cmd-grid[hidden] {
   display: none;
 }
+/* Seiten des Baumenüs (Gebäude, Felder) - ihre Knöpfe liegen direkt im Raster. */
+#command-bar .cmd-page {
+  display: contents;
+}
+#command-bar .cmd-page[hidden] {
+  display: none;
+}
 
 /* --- Pergament ----------------------------------------------------------- */
 #selection {

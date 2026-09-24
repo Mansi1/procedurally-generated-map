@@ -13,7 +13,8 @@ import { formatDuration } from '../format';
 import {
   CROP_ORDER, CROPS, player, type BuildingType, type CropType, type Stock,
 } from '../world/buildings';
-import { buildingIcon, cropIcon, resourceIcon, villagerIcon } from './modelIcons';
+import { buildingIcon, resourceIcon, villagerIcon } from './modelIcons';
+import { cropIcon } from './cropIcons';
 
 /** Stand eines zusammenhängenden Felds. */
 export interface FarmView {
@@ -299,7 +300,7 @@ function trainCommand(train: TrainView): Command {
 
 function cropCommands(current: CropType | null): Command[] {
   return CROP_ORDER.map((c) => ({
-    action: 'crop', crop: c, pressed: c === current, icon: cropIcon(c, rgb()),
+    action: 'crop', crop: c, pressed: c === current, icon: cropIcon(c),
     title: `${CROPS[c].label} säen - ${CROPS[c].food} Nahrung, reif in ${formatDuration(CROPS[c].growTime)}`,
   }));
 }

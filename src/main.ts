@@ -24,6 +24,7 @@ import {
   BUILDINGS,
   ANIMALS,
   BUILDING_ORDER,
+  CROP_ORDER,
   CROPS,
   FIELD_ROWS,
   MAX_GATHERERS,
@@ -168,13 +169,26 @@ let selected: BuildingType | null = null;
 
 // --- Baumenü ---------------------------------------------------------------
 
-const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), (type) => select(selected === type ? null : type));
+const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), {
+  build: (type) => select(selected === type ? null : type),
+  // Feld aus dem Untermenü: mit dieser Frucht abstecken.
+  crop: (crop) => {
+    world.farmCrop = crop;
+    select('farm');
+  },
+  back: () => {
+    buildMenu.showFarms(false);
+    if (selected === 'farm') select(null);
+  },
+});
 
 function select(type: BuildingType | null) {
   selected = type;
   // Wer baut, wählt nicht gleichzeitig aus - sonst tut ein Klick zwei Dinge.
   if (type) clearSelection();
-  buildMenu.setPressed(type);
+  // Kein Feld mehr: zurück vom Untermenü der Felder zum Baumenü.
+  if (type !== 'farm') buildMenu.showFarms(false);
+  buildMenu.setPressed(type, world.farmCrop);
   updateCursor();
 }
 
@@ -1264,7 +1278,10 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'e') setZoom(zoomIndex + 1);
   if (e.key === 'q') setZoom(zoomIndex - 1);
   if (e.key === 'Escape') {
-    if (selected) select(null);
+    if (buildMenu.farmsOpen) {
+      buildMenu.showFarms(false);
+      if (selected === 'farm') select(null);
+    } else if (selected) select(null);
     else clearSelection();
   }
   if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
@@ -1285,8 +1302,19 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key.toLowerCase() === VILLAGER.key) trainVillager(e.shiftKey ? 5 : 1);
 
+  // Im Untermenü der Felder wählen 1, 2, ... die Frucht.
+  if (buildMenu.farmsOpen) {
+    const crop = CROP_ORDER[Number(e.key) - 1];
+    if (crop && world.affordable('farm')) {
+      world.farmCrop = crop;
+      select('farm');
+    }
+    return;
+  }
   const byKey = BUILDING_ORDER.find((type) => BUILDINGS[type].key === e.key);
-  if (byKey) select(selected === byKey ? null : byKey);
+  // Das Feld öffnet das Untermenü (Weizen, Mais).
+  if (byKey === 'farm') buildMenu.showFarms(true);
+  else if (byKey) select(selected === byKey ? null : byKey);
 });
 
 /**
