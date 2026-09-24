@@ -35,6 +35,8 @@ const SHORTCUTS: Shortcut[] = [
   { keys: ['F3'], what: 'Pause', short: 'Pause' },
   { keys: ['F10'], what: 'Menü', short: 'Menü' },
   { keys: ['M'], what: 'Ton an/aus', short: 'Ton' },
+  { keys: ['I'], what: 'Tastenhilfe ein/aus', short: 'Tastenhilfe' },
+  { keys: ['P'], what: 'Entwickler-Infos ein/aus', short: 'Entwickler' },
 ];
 
 /** Maus mit hervorgehobener linker oder rechter Taste. */

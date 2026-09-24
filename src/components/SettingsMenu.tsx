@@ -148,12 +148,12 @@ export class SettingsMenu {
         <section>
           <h3>Anzeige</h3>
           <label class="menu-row">
-            <span>Tastenhilfe</span>
+            <span>Tastenhilfe <small>I</small></span>
             <input type="checkbox" ref={this.showHelp}
               onInput={(e: Event) => this.change({ showHelp: (e.target as HTMLInputElement).checked })} />
           </label>
           <label class="menu-row">
-            <span>Legende und Entwickler-Infos</span>
+            <span>Legende und Entwickler-Infos <small>P</small></span>
             <input type="checkbox" ref={this.showDebug}
               onInput={(e: Event) => this.change({ showDebug: (e.target as HTMLInputElement).checked })} />
           </label>

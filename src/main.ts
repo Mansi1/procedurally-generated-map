@@ -234,15 +234,16 @@ function applySettings() {
   document.getElementById('debug')!.hidden = !settings.showDebug;
 }
 
-// × an Tastenhilfe und Entwickler-Infos: ausblenden wie im Menü - und so gespeichert.
-function hidePanel(patch: Partial<typeof settings>) {
+// × an Tastenhilfe und Entwickler-Infos sowie die Tasten I und P: ein- und
+// ausblenden wie im Menü - und so gespeichert.
+function setPanels(patch: Partial<typeof settings>) {
   Object.assign(settings, patch);
   saveSettings(settings);
   applySettings();
   menu.refresh();
 }
-document.getElementById('help-close')!.addEventListener('click', () => hidePanel({ showHelp: false }));
-document.getElementById('debug-close')!.addEventListener('click', () => hidePanel({ showDebug: false }));
+document.getElementById('help-close')!.addEventListener('click', () => setPanels({ showHelp: false }));
+document.getElementById('debug-close')!.addEventListener('click', () => setPanels({ showDebug: false }));
 
 function togglePause() {
   paused = !paused;
@@ -1250,6 +1251,9 @@ window.addEventListener('keydown', (e) => {
   // H wie in AoE2 - "Home".
   if (e.key.toLowerCase() === 'h') cycleTownCenter();
   if (e.key.toLowerCase() === 'm') toggleSound();
+  // I: Tastenhilfe (Info), P: Entwickler-Infos (Programmierer).
+  if (e.key.toLowerCase() === 'i') setPanels({ showHelp: !settings.showHelp });
+  if (e.key.toLowerCase() === 'p') setPanels({ showDebug: !settings.showDebug });
   // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
   if (e.key === '.' || e.key === ':') selectIdleVillager(!e.shiftKey);
   if (e.key === ' ') {
