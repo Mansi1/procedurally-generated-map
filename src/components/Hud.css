@@ -169,7 +169,8 @@
 }
 #hint {
   position: absolute;
-  bottom: 96px;
+  /* Über der Befehlsleiste. */
+  bottom: 184px;
   left: 50%;
   transform: translateX(-50%);
   padding: 5px 12px;

@@ -1,13 +1,16 @@
 // modelIcons.ts
-// Symbole der Rohstoffleiste, gezeichnet aus den Modellen des Spiels: Eiche,
-// Beerenstrauch, Goldfels, Steinhaufen und Dorfbewohner. Ein eigener
+// Symbole, gezeichnet aus den Modellen des Spiels: für die Rohstoffleiste
+// (Eiche, Beerenstrauch, Goldfels, Steinhaufen, Dorfbewohner) und für die
+// Befehlsleiste (Gebäude, Felder, Tiere - Knöpfe und Porträts). Ein eigener
 // EntityRenderer auf einem Canvas außerhalb der Seite zeichnet jedes Motiv
 // einmal; der Ausschnitt um das, was gezeichnet wurde, wird als Bild-URL
 // zurückgegeben. Die Dorfbewohner tragen die Spielerfarbe.
 
-import { EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
+import { ANIMAL_POSE, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
 import { groundToWorld, snapCamera } from '../gl/iso';
-import type { Stock } from '../world/buildings';
+import {
+  ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, type AnimalKind, type BuildingType, type CropType, type Stock,
+} from '../world/buildings';
 
 export type IconName = keyof Stock | 'population' | 'idle';
 
@@ -131,4 +134,61 @@ export function renderIcons(player: RGB): Record<IconName, string> {
 export function renderVillagerIcons(player: RGB): Pick<Record<IconName, string>, 'population' | 'idle'> {
   if (!getStage()) return { population: '', idle: '' };
   return { population: draw(scene('population', player)), idle: draw(scene('idle', player)) };
+}
+
+// --- Befehlsleiste --------------------------------------------------------
+
+/** Schon gezeichnete Motive - jedes nur einmal je Spielerfarbe. */
+const cache = new Map<string, string>();
+
+/** Motiv als Bild-URL, zwischengespeichert unter `key`; ohne WebGL2 leer. */
+function cached(key: string, player: RGB, instances: () => EntityInstance[]): string {
+  const full = `${key}|${player.join(',')}`;
+  const hit = cache.get(full);
+  if (hit !== undefined) return hit;
+  const st = getStage();
+  if (!st) return '';
+  st.renderer.playerColor = player;
+  const url = draw(instances());
+  cache.set(full, url);
+  return url;
+}
+
+/** Ein Feld mit reifer Frucht - alle Furchen. */
+function field(crop: CropType, player: RGB): EntityInstance[] {
+  return Array.from({ length: FIELD_ROWS }, (_, row) => ({
+    x: -0.5, y: -0.5, size: BUILDINGS.farm.size, color: player, shape: CROPS[crop].shape + row, alpha: 1,
+    motion: [row, 3, 1, 511] as [number, number, number, number], accent: [0, 0, 0] as RGB,
+  }));
+}
+
+/** Gebäude in Spielerfarbe - das Feld mit reifem Weizen. */
+export function buildingIcon(type: BuildingType, player: RGB): string {
+  return cached(`building:${type}`, player, () => type === 'farm'
+    ? field('wheat', player)
+    : [{ x: -0.5, y: -0.5, size: BUILDINGS[type].size, color: player, shape: BUILDINGS[type].shape, alpha: 1 }]);
+}
+
+/** Feld mit reifer Frucht - Knöpfe zur Wahl der Frucht. */
+export function cropIcon(crop: CropType, player: RGB): string {
+  return cached(`crop:${crop}`, player, () => field(crop, player));
+}
+
+/** Dorfbewohner(in) in Spielerfarbe. */
+export function villagerIcon(female: boolean, player: RGB): string {
+  return cached(`villager:${female}`, player, () => [villager(female, 0, player)]);
+}
+
+/** Tier, äsend - erlegt liegend. */
+export function animalIcon(kind: AnimalKind, dead = false): string {
+  const def = ANIMALS[kind];
+  return cached(`animal:${kind}:${dead}`, [0, 0, 0], () => [{
+    x: -0.5, y: -0.5, size: def.height, color: [0, 0, 0], shape: def.shape, alpha: 1,
+    motion: [-Math.PI / 4, 0, dead ? ANIMAL_POSE.dead : ANIMAL_POSE.graze, 0],
+  }]);
+}
+
+/** Vorkommen: Eiche, Beerenstrauch, Gold- oder Steinfels. */
+export function resourceIcon(type: keyof Stock): string {
+  return cached(`resource:${type}`, [0, 0, 0], () => scene(type, [0, 0, 0]));
 }

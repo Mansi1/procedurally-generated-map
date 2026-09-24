@@ -1,16 +1,19 @@
 // SelectionPanel.tsx
-// Auswahl-Panel unten links: was ausgewählt ist und was man damit tun kann.
-// main.ts fragt die Welt ab und beschreibt das Ergebnis als SelectionView
-// (reine Daten); diese Komponente zeichnet es. Die Knöpfe tragen data-action
-// (train, demolish, crop, idle) - ausgewertet per Delegation in main.ts.
-// Neu gerendert wird getaktet mit dem Vorrat; defuss gleicht dabei nur ab,
-// was sich geändert hat.
+// Was ausgewählt ist, in der Befehlsleiste unten - wie in AoE2: rechts das
+// Pergament mit Porträt, Lebensbalken und Angaben, links in der Steintafel
+// die Befehle als Bildknöpfe (Ausbilden, Frucht, Abreißen). main.ts fragt die
+// Welt ab und beschreibt das Ergebnis als SelectionView (reine Daten); diese
+// Komponente zeichnet es. Die Knöpfe tragen data-action (train, demolish,
+// crop) - ausgewertet per Delegation in main.ts.
 
 import { render } from 'defuss';
 import './SelectionPanel.css';
 import './buttons.css';
 import { formatDuration } from '../format';
-import { CROP_ORDER, CROPS, type CropType } from '../world/buildings';
+import {
+  CROP_ORDER, CROPS, player, type BuildingType, type CropType, type Stock,
+} from '../world/buildings';
+import { buildingIcon, cropIcon, resourceIcon, villagerIcon } from './modelIcons';
 
 /** Stand eines zusammenhängenden Felds. */
 export interface FarmView {
@@ -38,6 +41,8 @@ export interface TrainView {
 export type SelectionView =
   | {
       kind: 'buildings';
+      /** Art fürs Porträt - die häufigste. */
+      type: BuildingType;
       title: string;
       /** "2× Haus, 1× Mühle" - bei verschiedenen Arten. */
       kinds?: string;
@@ -48,6 +53,7 @@ export type SelectionView =
     }
   | {
       kind: 'building';
+      type: BuildingType;
       label: string;
       hp: number;
       maxHp: number;
@@ -66,6 +72,7 @@ export type SelectionView =
     }
   | {
       kind: 'resource';
+      type: keyof Stock;
       title: string;
       subtitle?: string;
       left: number;
@@ -78,6 +85,8 @@ export type SelectionView =
   | { kind: 'empty' }
   | {
       kind: 'villagers';
+      /** Fürs Porträt: Frau oder Mann (der erste). */
+      female: boolean;
       /** Genau einer: Name, Frau oder Mann, was er gerade tut. */
       single?: { name: string; role: string; doing: string };
       count: number;
@@ -91,44 +100,26 @@ export type SelectionView =
   | { kind: 'start' }
   | { kind: 'overview'; idle: number };
 
+const rgb = () => player.color.toRGB();
+
+// --- Pergament --------------------------------------------------------------
+
 function Bar({ percent }: { percent: number }) {
-  return <div class="bar"><i style={`width:${percent}%`} /></div>;
+  return <div class="bar"><i style={`width:${Math.max(0, Math.min(100, percent))}%`} /></div>;
 }
 
-function ActionButton({ action, name, cost, title, disabled, crop, pressed }: {
-  action: string;
-  name: string;
-  cost: string;
-  title?: string;
-  disabled?: boolean;
-  crop?: CropType;
-  pressed?: boolean;
-}) {
+/** Porträt links auf dem Pergament, darunter Lebensbalken und Zahl. */
+function Portrait({ src, hp, maxHp }: { src: string; hp?: number; maxHp?: number }) {
   return (
-    <button class="build-btn" data-action={action} data-crop={crop} title={title} disabled={disabled}
-      aria-pressed={pressed === undefined ? undefined : String(pressed)}>
-      <span class="name">{name}</span>
-      <span class="cost">{cost}</span>
-    </button>
-  );
-}
-
-function TrainButton({ train }: { train: TrainView }) {
-  return (
-    <ActionButton action="train" name={`V ${train.label}`} cost={train.cost}
-      title="Mit Umschalt: 5 auf einmal" disabled={!train.affordable} />
-  );
-}
-
-/** Knöpfe zur Wahl der Frucht; `current` ist gedrückt. */
-function CropButtons({ current }: { current: CropType | null }) {
-  return (
-    <>
-      {CROP_ORDER.map((c) => (
-        <ActionButton action="crop" crop={c} pressed={c === current} name={CROPS[c].label}
-          cost={`${CROPS[c].food} Nahrung · reif in ${formatDuration(CROPS[c].growTime)}`} />
-      ))}
-    </>
+    <div class="sel-portrait">
+      <div class="sel-frame"><img src={src} alt="" draggable={false} /></div>
+      {hp !== undefined && maxHp ? (
+        <>
+          <div class="hp"><i style={`width:${Math.max(0, Math.min(100, (hp / maxHp) * 100))}%`} /></div>
+          <div class="hp-text">{Math.ceil(hp)}/{maxHp}</div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -161,22 +152,21 @@ function FarmDetails({ farm }: { farm: FarmView }) {
 function Buildings({ v }: { v: Extract<SelectionView, { kind: 'buildings' }> }) {
   return (
     <>
-      <div class="title">{v.title}</div>
-      {v.kinds ? <div class="muted">{v.kinds}</div> : null}
-      <div>Trefferpunkte <b>{Math.ceil(v.hp)}/{v.maxHp}</b></div>
-      {v.training ? (
-        <>
-          <div>In Ausbildung <b>{v.training.queued}/{v.training.capacity}</b></div>
-          <div class="muted">
-            Neue Dorfbewohner kommen in die kürzeste Warteschlange; Rechtsklick setzt den Sammelpunkt für alle.
-          </div>
-        </>
-      ) : null}
-      {v.farms ? <div>Bauern <b>{v.farms.farmers}/{v.farms.rows}</b></div> : null}
-      <div class="actions">
-        {v.training ? <TrainButton train={v.training.train} /> : null}
-        {v.farms ? <CropButtons current={v.farms.plan} /> : null}
-        <ActionButton action="demolish" name="Entf Alle abreißen" cost="50 % zurück" />
+      <div class="sel-title">{v.title}</div>
+      <div class="sel-body">
+        <Portrait src={buildingIcon(v.type, rgb())} hp={v.hp} maxHp={v.maxHp} />
+        <div class="sel-info">
+          {v.kinds ? <div class="muted">{v.kinds}</div> : null}
+          {v.training ? (
+            <>
+              <div>In Ausbildung <b>{v.training.queued}/{v.training.capacity}</b></div>
+              <div class="muted">
+                Neue Dorfbewohner kommen in die kürzeste Warteschlange; Rechtsklick setzt den Sammelpunkt für alle.
+              </div>
+            </>
+          ) : null}
+          {v.farms ? <div>Bauern <b>{v.farms.farmers}/{v.farms.rows}</b></div> : null}
+        </div>
       </div>
     </>
   );
@@ -186,31 +176,30 @@ function Building({ v }: { v: Extract<SelectionView, { kind: 'building' }> }) {
   const t = v.trainer;
   return (
     <>
-      <div class="title">{v.label}</div>
-      <div>Trefferpunkte <b>{Math.ceil(v.hp)}/{v.maxHp}</b></div>
-      {v.accepts ? <div class="muted">Lager für {v.accepts}</div> : null}
-      {v.provides ? <div class="muted">+{v.provides} Bevölkerung</div> : null}
-      {v.farm ? <FarmDetails farm={v.farm} /> : null}
-      {t && t.queue > 0 ? (
-        <>
-          <div>
-            In Ausbildung <b>{t.queue}/{t.max}</b>
-            {t.full ? <> - <span class="muted">Bevölkerung voll, baue ein Haus</span></> : null}
-          </div>
-          <Bar percent={t.percent} />
-        </>
-      ) : null}
-      {t ? (
-        <div class="muted">
-          {t.rally
-            ? 'Sammelpunkt gesetzt - Rechtsklick versetzt ihn, auf das Gebäude hebt ihn auf.'
-            : 'Rechtsklick auf die Karte setzt einen Sammelpunkt für neue Dorfbewohner.'}
+      <div class="sel-title">{v.label}</div>
+      <div class="sel-body">
+        <Portrait src={buildingIcon(v.type, rgb())} hp={v.hp} maxHp={v.maxHp} />
+        <div class="sel-info">
+          {v.accepts ? <div class="muted">Lager für {v.accepts}</div> : null}
+          {v.provides ? <div class="muted">+{v.provides} Bevölkerung</div> : null}
+          {v.farm ? <FarmDetails farm={v.farm} /> : null}
+          {t && t.queue > 0 ? (
+            <>
+              <div>
+                In Ausbildung <b>{t.queue}/{t.max}</b>
+                {t.full ? <> - <span class="muted">Bevölkerung voll, baue ein Haus</span></> : null}
+              </div>
+              <Bar percent={t.percent} />
+            </>
+          ) : null}
+          {t ? (
+            <div class="muted">
+              {t.rally
+                ? 'Sammelpunkt gesetzt - Rechtsklick versetzt ihn, auf das Gebäude hebt ihn auf.'
+                : 'Rechtsklick auf die Karte setzt einen Sammelpunkt für neue Dorfbewohner.'}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      <div class="actions">
-        {v.farm ? <CropButtons current={v.farm.plan} /> : null}
-        {t ? <TrainButton train={t.train} /> : null}
-        <ActionButton action="demolish" name="Entf Abreißen" cost="50 % zurück" />
       </div>
     </>
   );
@@ -219,25 +208,30 @@ function Building({ v }: { v: Extract<SelectionView, { kind: 'building' }> }) {
 function Resource({ v }: { v: Extract<SelectionView, { kind: 'resource' }> }) {
   return (
     <>
-      <div class="title">
+      <div class="sel-title">
         {v.title}
         {v.subtitle ? <span class="muted"> {v.subtitle}</span> : null}
       </div>
-      <div>Übrig <b>{v.left}/{v.total}</b></div>
-      <Bar percent={v.percent} />
-      {/* Beerensträucher wachsen nach - wie lange noch, bis er wieder voll ist. */}
-      {v.regrow ? (
-        <div class="muted">
-          {v.regrow.empty ? 'Leer gepflückt - wächst nach' : 'Wächst nach'} · voll in {formatDuration(v.regrow.seconds)}
+      <div class="sel-body">
+        <Portrait src={resourceIcon(v.type)} />
+        <div class="sel-info">
+          <div>Übrig <b>{v.left}/{v.total}</b></div>
+          <Bar percent={v.percent} />
+          {/* Beerensträucher wachsen nach - wie lange noch, bis er wieder voll ist. */}
+          {v.regrow ? (
+            <div class="muted">
+              {v.regrow.empty ? 'Leer gepflückt - wächst nach' : 'Wächst nach'} · voll in {formatDuration(v.regrow.seconds)}
+            </div>
+          ) : null}
+          <div>
+            Sammler <b>{v.gatherers}/{v.max}</b>
+            {v.gatherers >= v.max ? <span class="muted"> - voll besetzt</span> : null}
+          </div>
+          {v.gatherers === 0 && v.left > 0
+            ? <div class="muted">Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.</div>
+            : null}
         </div>
-      ) : null}
-      <div>
-        Sammler <b>{v.gatherers}/{v.max}</b>
-        {v.gatherers >= v.max ? <span class="muted"> - voll besetzt</span> : null}
       </div>
-      {v.gatherers === 0 && v.left > 0
-        ? <div class="muted">Wähle Dorfbewohner und klicke mit rechts darauf, um es zu sammeln.</div>
-        : null}
     </>
   );
 }
@@ -245,21 +239,21 @@ function Resource({ v }: { v: Extract<SelectionView, { kind: 'resource' }> }) {
 function Villagers({ v }: { v: Extract<SelectionView, { kind: 'villagers' }> }) {
   return (
     <>
-      {v.single ? (
-        <div class="title">{v.single.name} <span class="muted">{v.single.role}</span></div>
-      ) : (
-        <>
-          <div class="title">{v.count} {v.label}</div>
-          <div class="muted">{v.names}</div>
-        </>
-      )}
-      <div>Trefferpunkte <b>{Math.ceil(v.hp)}/{v.maxHp}</b></div>
       {v.single
-        ? <div>{v.single.doing}</div>
-        : <>{v.activities.map(([text, n]) => <div>{n}× {text}</div>)}</>}
-      <div class="muted">
-        Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · auf ein Tier: jagen · auf ein Feld: bestellen ·
-        auf ein Lager: abliefern · sonst: hingehen
+        ? <div class="sel-title">{v.single.name} <span class="muted">{v.single.role}</span></div>
+        : <div class="sel-title">{v.count} {v.label}</div>}
+      <div class="sel-body">
+        <Portrait src={villagerIcon(v.female, rgb())} hp={v.hp} maxHp={v.maxHp} />
+        <div class="sel-info">
+          {v.single ? null : <div class="muted">{v.names}</div>}
+          {v.single
+            ? <div>{v.single.doing}</div>
+            : <>{v.activities.map(([text, n]) => <div>{n}× {text}</div>)}</>}
+          <div class="muted">
+            Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · auf ein Tier: jagen · auf ein Feld: bestellen ·
+            auf ein Lager: abliefern · sonst: hingehen
+          </div>
+        </div>
       </div>
     </>
   );
@@ -271,30 +265,108 @@ export function SelectionPanel({ view }: { view: SelectionView }) {
     case 'building': return <Building v={view} />;
     case 'resource': return <Resource v={view} />;
     case 'empty':
-      return <><div class="title">Leer</div><div class="muted">Hier ist nichts mehr zu holen.</div></>;
+      return <><div class="sel-title">Leer</div><div class="muted">Hier ist nichts mehr zu holen.</div></>;
     case 'villagers': return <Villagers v={view} />;
-    case 'start':
-      return (
-        <>
-          <div class="title">Los geht's</div>
-          <div class="muted">Baue zuerst ein Hauptgebäude (Taste 1). Dort bildest du Dorfbewohner aus.</div>
-        </>
-      );
+    // Nichts ausgewählt: leeres Pergament.
+    case 'start': return <></>;
     case 'overview':
-      return (
-        <>
-          <div class="muted">Klicke auf das Hauptgebäude, um Dorfbewohner auszubilden (V), oder wähle Dorfbewohner aus.</div>
-          {view.idle > 0 ? (
-            <div class="actions">
-              <ActionButton action="idle" name=". Untätige" cost={`${view.idle} ohne Arbeit`} />
-            </div>
-          ) : null}
-        </>
-      );
+      return view.idle > 0
+        ? <div class="muted">{view.idle} Dorfbewohner ohne Arbeit - Taste . wählt sie aus.</div>
+        : <></>;
   }
 }
 
-/** Zeichnet `view` in das Panel - defuss gleicht nur ab, was sich geändert hat. */
-export function renderSelection(root: HTMLElement, view: SelectionView) {
-  render(<SelectionPanel view={view} />, root);
+// --- Befehle in der Steintafel ---------------------------------------------
+
+/** Ein Befehlsknopf: Bild, Taste, Tooltip und was er in main.ts auslöst. */
+interface Command {
+  action: 'train' | 'crop' | 'demolish';
+  title: string;
+  /** Bild-URL - oder das Abriss-Symbol. */
+  icon: string | 'demolish';
+  key?: string;
+  crop?: CropType;
+  disabled?: boolean;
+  pressed?: boolean;
+}
+
+function trainCommand(train: TrainView): Command {
+  return {
+    action: 'train', title: `${train.label} ausbilden (V) - ${train.cost}\nMit Umschalt: 5 auf einmal`,
+    icon: villagerIcon(false, rgb()), key: 'V', disabled: !train.affordable,
+  };
+}
+
+function cropCommands(current: CropType | null): Command[] {
+  return CROP_ORDER.map((c) => ({
+    action: 'crop', crop: c, pressed: c === current, icon: cropIcon(c, rgb()),
+    title: `${CROPS[c].label} säen - ${CROPS[c].food} Nahrung, reif in ${formatDuration(CROPS[c].growTime)}`,
+  }));
+}
+
+/** Die Befehle zur Auswahl - leer, wenn die Steintafel das Baumenü zeigt. */
+export function commandsFor(view: SelectionView): Command[] {
+  const demolish = (all: boolean): Command => ({
+    action: 'demolish', icon: 'demolish', key: 'Entf',
+    title: `${all ? 'Alle abreißen' : 'Abreißen'} (Entf) - 50 % der Kosten zurück`,
+  });
+  switch (view.kind) {
+    case 'building':
+      return [
+        ...(view.farm ? cropCommands(view.farm.plan) : []),
+        ...(view.trainer ? [trainCommand(view.trainer.train)] : []),
+        demolish(false),
+      ];
+    case 'buildings':
+      return [
+        ...(view.training ? [trainCommand(view.training.train)] : []),
+        ...(view.farms ? cropCommands(view.farms.plan) : []),
+        demolish(true),
+      ];
+    default:
+      return [];
+  }
+}
+
+/** Abriss: Haus mit rotem Kreuz. */
+function DemolishIcon() {
+  return (
+    <svg viewBox="0 0 44 44" aria-hidden="true">
+      <path d="M8 22 L22 10 L36 22 V36 H8 Z" fill="#c9a36a" stroke="#1a0f07" stroke-width="2" stroke-linejoin="round" />
+      <path d="M18 36 V27 H26 V36" fill="#5a3a1c" stroke="#1a0f07" stroke-width="2" />
+      <path d="M10 10 L34 34 M34 10 L10 34" stroke="#d8322a" stroke-width="5" stroke-linecap="round" />
+    </svg>
+  );
+}
+
+function CommandButton({ c }: { c: Command }) {
+  return (
+    <button type="button" class="cmd-btn" data-action={c.action} data-crop={c.crop} title={c.title}
+      disabled={c.disabled} aria-pressed={c.pressed === undefined ? undefined : String(c.pressed)}>
+      {c.icon === 'demolish' ? <DemolishIcon /> : <img src={c.icon} alt="" draggable={false} />}
+      {c.key ? <span class="cmd-key">{c.key}</span> : null}
+    </button>
+  );
+}
+
+/** Was zuletzt in der Steintafel stand - neu gezeichnet wird nur bei einer Änderung. */
+let lastCommands = '';
+
+/**
+ * Zeichnet die Auswahl: Angaben aufs Pergament (`details`), Befehle in die
+ * Steintafel (`commands`). Gibt zurück, ob es Befehle gibt - sonst zeigt die
+ * Steintafel das Baumenü.
+ */
+export function renderSelection(details: HTMLElement, commands: HTMLElement, view: SelectionView): boolean {
+  render(<SelectionPanel view={view} />, details);
+  const list = commandsFor(view);
+  const key = JSON.stringify(list.map((c) => [c.action, c.crop, c.disabled, c.pressed, c.icon.length]));
+  // Neu aufbauen statt abgleichen: sonst blieben disabled und aria-pressed an
+  // Knöpfen hängen, die an dieser Stelle vorher etwas anderes waren.
+  if (key !== lastCommands) {
+    lastCommands = key;
+    commands.replaceChildren();
+    render(<>{list.map((c) => <CommandButton c={c} />)}</>, commands);
+  }
+  return list.length > 0;
 }

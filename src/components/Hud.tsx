@@ -92,10 +92,17 @@ function Hud() {
       <HelpPanel />
       <DebugPanel />
       <div id="stock" />
-      <div id="selection" class="panel" />
+
       <div id="select-box" hidden />
       <div id="hint" />
-      <div id="build" class="panel" />
+      {/* Befehlsleiste wie in AoE2: Steintafel mit Baumenü oder Befehlen, Pergament mit der Auswahl. */}
+      <div id="command-bar">
+        <div class="cmd-stone">
+          <div id="build" class="cmd-grid" />
+          <div id="actions" class="cmd-grid" hidden />
+        </div>
+        <div id="selection" />
+      </div>
       <canvas id="minimap" />
       <SoundButton />
       <Compass />

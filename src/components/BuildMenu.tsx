@@ -1,17 +1,21 @@
 // BuildMenu.tsx
-// Baumenü unten in der Mitte: je Gebäudetyp ein Knopf mit Farbe, Taste,
-// Name, Kosten und wozu es gut ist. Einmal gerendert; danach setzt die
-// Klasse nur noch, welcher gedrückt ist und welche man sich leisten kann.
+// Baumenü in der Steintafel der Befehlsleiste: je Gebäudetyp ein
+// quadratischer Knopf mit dem Modell in Spielerfarbe und der Taste oben
+// links; Name, Kosten und Nutzen im Tooltip. Einmal gerendert; danach setzt
+// die Klasse nur noch, welcher gedrückt ist, welche man sich leisten kann
+// und - nach einem Farbwechsel - die Bilder.
 
 import { createRef, render, type Ref } from 'defuss';
-import './BuildMenu.css';
 import './buttons.css';
 import { RESOURCE_TYPE_LABEL } from '../map';
 import { BUILDINGS, BUILDING_ORDER, type BuildingType, type Stock } from '../world/buildings';
+import { buildingIcon } from './modelIcons';
+
+type RGB = [number, number, number];
 
 const COST_ORDER: (keyof Stock)[] = ['wood', 'stone', 'gold', 'berries'];
 
-/** Kosten und Nutzen eines Gebäudes für die zweite Zeile des Knopfs. */
+/** Kosten und Nutzen eines Gebäudes für den Tooltip. */
 function describe(type: BuildingType): string {
   const def = BUILDINGS[type];
   const cost = COST_ORDER.filter((r) => def.cost[r])
@@ -25,35 +29,34 @@ function describe(type: BuildingType): string {
   return [cost || 'kostenlos', use].filter(Boolean).join(' · ');
 }
 
-interface BuildButtonProps {
-  type: BuildingType;
-  buttonRef: Ref<HTMLButtonElement>;
-  onClick: () => void;
+interface ButtonRefs {
+  button: Ref<HTMLButtonElement>;
+  icon: Ref<HTMLImageElement>;
 }
 
-function BuildButton({ type, buttonRef, onClick }: BuildButtonProps) {
+function BuildButton({ type, refs, src, onClick }: { type: BuildingType; refs: ButtonRefs; src: string; onClick: () => void }) {
   const def = BUILDINGS[type];
   return (
-    <button type="button" class="build-btn" aria-pressed="false" ref={buttonRef} onClick={onClick}>
-      <span class="name">
-        <i style={`background:${def.color.toRgbString()}`} />
-        {def.key} {def.label}
-      </span>
-      <span class="cost">{describe(type)}</span>
+    <button type="button" class="cmd-btn" aria-pressed="false" ref={refs.button} onClick={onClick}
+      title={`${def.label} (${def.key})\n${describe(type)}`}>
+      <img src={src} alt={def.label} draggable={false} ref={refs.icon} />
+      <span class="cmd-key">{def.key}</span>
     </button>
   );
 }
 
 export class BuildMenu {
-  private buttons = new Map<BuildingType, Ref<HTMLButtonElement>>();
+  private buttons = new Map<BuildingType, ButtonRefs>();
+  private player: RGB;
 
   /** @param onClick Klick auf den Knopf eines Gebäudetyps */
-  constructor(root: HTMLElement, onClick: (type: BuildingType) => void) {
-    for (const type of BUILDING_ORDER) this.buttons.set(type, createRef());
+  constructor(root: HTMLElement, player: RGB, onClick: (type: BuildingType) => void) {
+    this.player = player;
+    for (const type of BUILDING_ORDER) this.buttons.set(type, { button: createRef(), icon: createRef() });
     render(
       <>
         {BUILDING_ORDER.map((type) => (
-          <BuildButton type={type} buttonRef={this.buttons.get(type)!} onClick={() => onClick(type)} />
+          <BuildButton type={type} refs={this.buttons.get(type)!} src={buildingIcon(type, player)} onClick={() => onClick(type)} />
         ))}
       </>,
       root,
@@ -62,11 +65,18 @@ export class BuildMenu {
 
   /** Welcher Typ gerade gebaut wird (gedrückt), oder keiner. */
   setPressed(type: BuildingType | null) {
-    for (const [key, ref] of this.buttons) ref.current.setAttribute('aria-pressed', String(key === type));
+    for (const [key, refs] of this.buttons) refs.button.current.setAttribute('aria-pressed', String(key === type));
   }
 
   /** Welche Knöpfe gehen - die übrigen sind ausgegraut. */
   setEnabled(enabled: (type: BuildingType) => boolean) {
-    for (const [type, ref] of this.buttons) ref.current.disabled = !enabled(type);
+    for (const [type, refs] of this.buttons) refs.button.current.disabled = !enabled(type);
+  }
+
+  /** Neue Spielerfarbe: die Gebäude neu zeichnen. */
+  setPlayerColor(player: RGB) {
+    if (player.every((c, i) => c === this.player[i])) return;
+    this.player = player;
+    for (const [type, refs] of this.buttons) refs.icon.current.src = buildingIcon(type, player);
   }
 }

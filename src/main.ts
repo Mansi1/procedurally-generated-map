@@ -70,6 +70,7 @@ const stockEl = document.getElementById('stock')!;
 const buildEl = document.getElementById('build')!;
 const hintEl = document.getElementById('hint')!;
 const selectionEl = document.getElementById('selection')!;
+const actionsEl = document.getElementById('actions')!;
 const boxEl = document.getElementById('select-box')!;
 
 /**
@@ -167,7 +168,7 @@ let selected: BuildingType | null = null;
 
 // --- Baumenü ---------------------------------------------------------------
 
-const buildMenu = new BuildMenu(buildEl, (type) => select(selected === type ? null : type));
+const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), (type) => select(selected === type ? null : type));
 
 function select(type: BuildingType | null) {
   selected = type;
@@ -228,6 +229,7 @@ function applySettings() {
   music.volume = settings.music;
   player.color = (PLAYER_COLORS[settings.playerColor] ?? PLAYER_COLORS.green).color;
   resourceBar.setPlayerColor(player.color.toRGB());
+  buildMenu.setPlayerColor(player.color.toRGB());
   // Mühlenflügel und Fahnen laufen mit der Spielgeschwindigkeit.
   setAnimationSpeed(settings.speed);
   document.getElementById('ui')!.hidden = !settings.showHelp;
@@ -850,7 +852,7 @@ function selectIdleVillager(all = true) {
 // Die Knöpfe entstehen bei jeder Aktualisierung neu - darum Delegation, und
 // mousedown statt click, damit ein Neuzeichnen zwischen Drücken und Loslassen
 // den Klick nicht verschluckt.
-for (const panel of [stockEl, selectionEl]) {
+for (const panel of [stockEl]) {
   panel.addEventListener('mousedown', (e) => {
     const button = (e.target as HTMLElement).closest('button');
     if (e.button !== 0 || button?.dataset.action !== 'idle') return;
@@ -901,7 +903,7 @@ function demolishSelected() {
  * Fortschrittsanzeige das Panel fünfmal je Sekunde, und ein click, dessen
  * mousedown und mouseup auf verschiedenen Knopf-Elementen landen, fiele weg.
  */
-selectionEl.addEventListener('mousedown', (e) => {
+actionsEl.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const action = (e.target as HTMLElement).closest('button')?.dataset.action;
   if (action === 'train') trainVillager(e.shiftKey ? 5 : 1);
@@ -971,8 +973,11 @@ function selectionView(): SelectionView {
     const trainers = many.filter((b) => BUILDINGS[b.type].trains);
     const plans = new Set(many.map((b) => b.farm?.plan));
     const plan = plans.size === 1 ? [...plans][0] : undefined;
+    // Fürs Porträt die häufigste Art.
+    const common = [...kinds].sort((a, b) => b[1] - a[1])[0][0];
     return {
       kind: 'buildings',
+      type: many.find((b) => BUILDINGS[b.type].label === common)!.type,
       title: kinds.size === 1 ? `${many.length} × ${[...kinds.keys()][0]}` : `${many.length} Gebäude`,
       kinds: kinds.size > 1 ? [...kinds].map(([l, n]) => `${n}× ${l}`).join(', ') : undefined,
       hp: many.reduce((sum, b) => sum + b.hp, 0),
@@ -994,6 +999,7 @@ function selectionView(): SelectionView {
     const pop = world.population();
     return {
       kind: 'building',
+      type: building.type,
       label: def.label,
       hp: building.hp,
       maxHp: def.hp,
@@ -1023,6 +1029,7 @@ function selectionView(): SelectionView {
     const kind = resources.kindAt(selectedResource.x, selectedResource.y);
     return {
       kind: 'resource',
+      type: info.type,
       title: kind ?? RESOURCE_TYPE_LABEL[info.type],
       subtitle: kind ? RESOURCE_TYPE_LABEL[info.type] : undefined,
       left,
@@ -1046,6 +1053,7 @@ function selectionView(): SelectionView {
     const single = chosen.length === 1 ? chosen[0] : undefined;
     return {
       kind: 'villagers',
+      female: chosen[0].female,
       single: single
         ? { name: single.name, role: single.female ? 'Dorfbewohnerin' : VILLAGER.label, doing: world.describe(single) }
         : undefined,
@@ -1069,10 +1077,10 @@ function updateSelectionUI() {
   }
   for (const a of [...selectedBuildings]) if (!world.building(a)) selectedBuildings.delete(a);
   if (selectedBuilding && !selectedBuildings.has(selectedBuilding)) selectedBuilding = [...selectedBuildings][0] ?? null;
-  const shown = selectionView();
-  // Ohne Auswahl und ohne Hauptgebäude kein Panel - kein "Los geht's".
-  selectionEl.hidden = shown.kind === 'start';
-  renderSelection(selectionEl, shown);
+  // Hat die Auswahl Befehle (ein Gebäude), zeigt die Steintafel sie statt des Baumenüs.
+  const hasCommands = renderSelection(selectionEl, actionsEl, selectionView());
+  actionsEl.hidden = !hasCommands;
+  buildEl.hidden = hasCommands;
   // Auswahl hat sich vielleicht geändert, oder das Feld unter dem Zeiger ist
   // inzwischen leer gesammelt.
   updateCursor();
