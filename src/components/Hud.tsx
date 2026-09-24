@@ -10,18 +10,14 @@ import { render } from 'defuss';
 import './Hud.css';
 import { TILE_TYPE_COLOR, TILE_TYPE_LABEL } from '../map';
 import type { TileType } from '../noise';
+import { ShortcutLine } from './Shortcuts';
 
-/** Tastenhilfe oben rechts. */
+/** Tastenhilfe oben rechts - dieselben Kürzel wie im Menü, knapp; × blendet sie aus (main.ts). */
 function HelpPanel() {
   return (
     <div id="ui" class="panel">
-      <div>
-        <kbd>WASD</kbd> bewegen <kbd>Q</kbd>/<kbd>E</kbd> zoomen<span class="sep">|</span>
-        <kbd>1</kbd>-<kbd>6</kbd> bauen <kbd>Esc</kbd> abbrechen<span class="sep">|</span>
-        <kbd>Klick</kbd>/<kbd>Ziehen</kbd> auswählen <kbd>Rechtsklick</kbd> Befehl{' '}
-        <kbd>V</kbd> Dorfbewohner <kbd>H</kbd> Hauptgebäude <kbd>.</kbd> untätige <kbd>M</kbd> Ton{' '}
-        <kbd>Entf</kbd> abreißen
-      </div>
+      <button type="button" id="help-close" class="panel-close" title="Tastenhilfe ausblenden">×</button>
+      <ShortcutLine />
     </div>
   );
 }
@@ -43,7 +39,7 @@ function DebugPanel() {
   return (
     <div id="debug" class="panel">
       {/* Schließt das Panel - wie der Schalter im Menü (main.ts). */}
-      <button type="button" id="debug-close" title="Entwickler-Infos ausblenden">×</button>
+      <button type="button" id="debug-close" class="panel-close" title="Entwickler-Infos ausblenden">×</button>
       <div>
         Pos <b id="pos">0, 0</b><span class="sep">|</span>
         Tiles/Px <b id="sampling">-</b><span class="sep">|</span>

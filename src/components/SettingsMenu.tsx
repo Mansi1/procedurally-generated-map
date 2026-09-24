@@ -9,6 +9,7 @@ import './SettingsMenu.css';
 import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/buildings';
 import { resetSettings, saveSettings, type Settings } from '../settings';
+import { ShortcutList } from './Shortcuts';
 
 /** Was das Menü außer den Einstellungen braucht - main.ts liefert es. */
 export interface MenuHooks {
@@ -25,71 +26,6 @@ export interface MenuHooks {
 }
 
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
-
-/**
- * Tastenkürzel für die Übersicht unter Steuerung: Tasten (je eine kbd), was
- * sie tun und was zwischen den Tasten steht - "+" zusammen, "/" oder "-"
- * eine davon, "" nebeneinander (WASD). Statt einer Taste: MOUSE_LEFT oder
- * MOUSE_RIGHT zeichnet eine Maus mit der Taste; "~2×" ist nur Text daneben.
- */
-const MOUSE_LEFT = 'mouse:left';
-const MOUSE_RIGHT = 'mouse:right';
-
-const SHORTCUTS: [string[], string, string?][] = [
-  [['W', 'A', 'S', 'D'], 'Kamera bewegen (auch Pfeiltasten)', ''],
-  [[MOUSE_RIGHT, '~ziehen'], 'Karte verschieben'],
-  [['Q', 'E'], 'Zoomen (auch Mausrad)', '/'],
-  [['Leertaste'], 'Halten: Gelände flach'],
-  [['H'], 'Zum Hauptgebäude'],
-  [[MOUSE_LEFT], 'Auswählen (Ziehen: Rahmen)'],
-  [['Umschalt', MOUSE_LEFT], 'Zur Auswahl hinzu', '+'],
-  [[MOUSE_LEFT, '~2×'], 'Gleiche Gebäude in der Nähe'],
-  [['.'], 'Untätige (Umschalt: einzeln)'],
-  [[MOUSE_RIGHT], 'Befehl: sammeln, jagen, bauen, gehen'],
-  [['1', '6'], 'Gebäude bauen', '-'],
-  [['V'], 'Dorfbewohner ausbilden (Umschalt: 5)'],
-  [['Entf'], 'Abreißen'],
-  [['Esc'], 'Abbrechen, Auswahl aufheben'],
-  [['F3'], 'Pause'],
-  [['F10'], 'Menü'],
-  [['M'], 'Ton an/aus'],
-];
-
-/** Maus mit hervorgehobener linker oder rechter Taste. */
-function MouseIcon({ button }: { button: 'left' | 'right' }) {
-  return (
-    <svg class="menu-mouse" viewBox="0 0 16 22" width="18" height="24" aria-label={button === 'left' ? 'Linke Maustaste' : 'Rechte Maustaste'}>
-      <rect x="1" y="1" width="14" height="20" rx="7" fill="#f4e2bc" stroke="#1a0f07" stroke-width="1.5" />
-      <path d={button === 'left' ? 'M8 1.8 A6.2 6.2 0 0 0 1.8 8 V9 H8 Z' : 'M8 1.8 A6.2 6.2 0 0 1 14.2 8 V9 H8 Z'} fill="#d9a441" />
-      <path d="M1.5 9 H14.5 M8 1.5 V9" stroke="#1a0f07" stroke-width="1.2" />
-    </svg>
-  );
-}
-
-/** Eine Taste, eine Maus oder Text daneben (siehe SHORTCUTS). */
-function Key({ k }: { k: string }) {
-  if (k === MOUSE_LEFT) return <MouseIcon button="left" />;
-  if (k === MOUSE_RIGHT) return <MouseIcon button="right" />;
-  if (k.startsWith('~')) return <span class="menu-key-note">{k.slice(1)}</span>;
-  return <kbd>{k}</kbd>;
-}
-
-/** Übersicht der Tastenkürzel zum Aufklappen - zweispaltig: Tasten, Wirkung. */
-function Shortcuts() {
-  return (
-    <details class="menu-keys-box">
-      <summary>Tastenkürzel</summary>
-      <dl class="menu-keys">
-      {SHORTCUTS.map(([keys, what, sep = '']) => (
-        <>
-          <dt>{keys.map((k, i) => <>{i > 0 && sep ? sep : null}<Key k={k} /></>)}</dt>
-          <dd>{what}</dd>
-        </>
-      ))}
-      </dl>
-    </details>
-  );
-}
 
 /** Regler 0..100 % mit der Zahl daneben. */
 interface SliderRefs {
@@ -204,7 +140,10 @@ export class SettingsMenu {
             <span>Kamera-Tempo</span>
             <Slider refs={this.scroll} min={50} max={200} step={10} onInput={(v) => this.change({ scroll: v })} />
           </div>
-          <Shortcuts />
+          <details class="menu-keys-box">
+            <summary>Tastenkürzel</summary>
+            <ShortcutList />
+          </details>
         </section>
         <section>
           <h3>Anzeige</h3>

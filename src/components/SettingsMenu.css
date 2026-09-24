@@ -251,11 +251,13 @@
 #menu .menu-keys-box summary:hover {
   color: #fbe7b5;
 }
-#menu .menu-mouse {
+#menu .key-mouse {
   display: block;
+  width: 18px;
+  height: 24px;
   filter: drop-shadow(0 2px 0 #1a0f07);
 }
-#menu .menu-key-note {
+#menu .key-note {
   font-size: 11px;
   font-style: italic;
 }

@@ -31,13 +31,38 @@
   /* Links oben liegt die Rohstoffleiste - so weit reicht #ui nicht. */
   max-width: calc(100vw - 770px);
 }
+#ui {
+  /* Kleiner als die übrigen Panels, Platz rechts für das × */
+  font-size: 9px;
+  line-height: 1.5;
+  padding-right: 24px;
+}
+#ui .help-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+}
+#ui .help-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
 #ui kbd {
   background: rgba(110, 231, 160, 0.12);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 0 4px;
   font: inherit;
   color: var(--accent);
+}
+#ui .key-mouse {
+  width: 10px;
+  height: 14px;
+}
+#ui .key-note {
+  font-style: italic;
+  opacity: 0.8;
 }
 #legend {
   display: flex;
@@ -77,7 +102,8 @@
 #debug b {
   font-variant-numeric: tabular-nums;
 }
-#debug-close {
+/* × zum Ausblenden der Tastenhilfe und der Entwickler-Infos */
+.panel-close {
   position: absolute;
   top: 3px;
   right: 4px;
@@ -94,7 +120,7 @@
   opacity: 0.6;
   cursor: pointer;
 }
-#debug-close:hover {
+.panel-close:hover {
   opacity: 1;
   background: rgba(255, 255, 255, 0.12);
 }

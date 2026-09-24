@@ -234,13 +234,15 @@ function applySettings() {
   document.getElementById('debug')!.hidden = !settings.showDebug;
 }
 
-// × an den Entwickler-Infos: ausblenden wie im Menü - und so gespeichert.
-document.getElementById('debug-close')!.addEventListener('click', () => {
-  settings.showDebug = false;
+// × an Tastenhilfe und Entwickler-Infos: ausblenden wie im Menü - und so gespeichert.
+function hidePanel(patch: Partial<typeof settings>) {
+  Object.assign(settings, patch);
   saveSettings(settings);
   applySettings();
   menu.refresh();
-});
+}
+document.getElementById('help-close')!.addEventListener('click', () => hidePanel({ showHelp: false }));
+document.getElementById('debug-close')!.addEventListener('click', () => hidePanel({ showDebug: false }));
 
 function togglePause() {
   paused = !paused;
