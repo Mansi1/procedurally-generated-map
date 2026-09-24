@@ -214,7 +214,7 @@ function hint(text: string) {
 /** Reihenfolge in der Rohstoffleiste - wie in AoE2: Holz, Nahrung, Gold, Stein. */
 const RESOURCE_BAR_ORDER: (keyof Stock)[] = ['wood', 'berries', 'gold', 'stone'];
 // Das Zahnrad am Ende öffnet das Menü (wie F10).
-const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER, player.color.toRGB(), () => menu.toggle());
+const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER, player.color.toRGB(), () => world.save(), () => menu.toggle());
 
 // --- Einstellungen und Menü ------------------------------------------------
 
