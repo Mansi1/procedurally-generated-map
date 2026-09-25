@@ -1,0 +1,665 @@
+// villagers.ts
+// Was Dorfbewohner tun, Schritt für Schritt: Befehle annehmen (Rechtsklick),
+// laufen (mit Wegsuche), sammeln, abliefern, Felder bestellen, jagen - und
+// als kurzer Text beschreiben, was sie gerade tun. Was ein Dorfbewohner ist
+// und hat, steht in unit/Villager.ts; die Welt ruft tick() je Dorfbewohner.
+
+import { BUILDING_HEADING, POSE, modelEntry } from '../gl/entityRenderer';
+import { RESOURCE_TYPE_LABEL } from '../map';
+import { findPath, lineOfSight } from './pathfinding';
+import { furrowFood, type Building, type Farm } from './building';
+import {
+  CROPS, FARM_RATE, HUNT, MAX_GATHERERS, PLOUGH_TIME, RESEED_COST, SOW_TIME, VILLAGER, YIELD, type AnimalKind, type DepositType, type ResourceKind,
+} from './catalog';
+import { farmSpot, furrowKey, furrowNeeds, type FarmPhase } from './farming';
+import type { Animal, Task, Villager } from './unit';
+import { WORK_TEMPO, type World } from './world';
+
+/** Abstand der Sammelplätze von der Feldmitte, in Tiles. */
+const GATHER_SPREAD = 0.4;
+/** Abstand zur Gebäudekante, ab dem er abliefern kann. */
+const DELIVER_REACH = 0.6;
+/** So lange (Sekunden) bleibt ein Dorfbewohner beim Abladen im Gebäude. */
+const INSIDE_TIME = 1.2;
+
+const key = (x: number, y: number) => `${x},${y}`;
+
+/** Fester Winkel 0..2π je Tile - gleiche Welt, gleiche Werte. */
+function tileAngle(x: number, y: number): number {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (((h ^ (h >>> 16)) >>> 0) / 4294967296) * Math.PI * 2;
+}
+
+export class VillagerWork {
+  /**
+   * Was ein Tile vom Gelände her versperrt, gemerkt: 0 frei, 1 Wasser,
+   * 2 Baum/Fels (frei, sobald abgebaut oder gefällt). Gebäude kommen dazu
+   * (siehe blockedAt).
+   */
+  private terrainBlock = new Map<string, number>();
+
+  constructor(private world: World) {}
+
+  /**
+   * Befehl an ausgewählte Dorfbewohner für das Feld (x, y), wie ein Rechtsklick
+   * in AoE2: Lager -> abliefern, Vorkommen -> sammeln, sonst hingehen.
+   */
+  command(ids: ReadonlySet<number>, x: number, y: number): string | null {
+    const selected = this.world.villagers.filter((v) => ids.has(v.id));
+    if (selected.length === 0) return null;
+    // Wer gerade im Gebäude ablädt, kommt für den neuen Befehl sofort heraus.
+    for (const v of selected) v.inside = 0;
+
+    const target = this.world.at(x, y);
+    if (target?.isFarm()) {
+      // Je Furche ein Bauer - sind alle besetzt, geht es aufs nächste Feld
+      // mit einer freien Furche.
+      for (const v of selected) v.task = { kind: 'idle' };
+      const busy = new Set(this.world.villagers.flatMap((v) => (v.task.kind === 'farm' ? [`${v.task.building}#${v.task.row}`] : [])));
+      for (const v of selected) {
+        const spot = this.world.farming.freeFurrow(target, busy);
+        if (!spot) {
+          v.problem = 'Auf allen Feldern in der Nähe arbeitet schon jemand in jeder Furche';
+          continue;
+        }
+        busy.add(`${spot.building}#${spot.row}`);
+        v.task = { kind: 'farm', building: spot.building, row: spot.row, delivering: false };
+        v.problem = null;
+      }
+      return null;
+    }
+    if (target) {
+      const def = target.definition;
+      if (def.storedResources.length === 0) return `${def.label} ist kein Lager`;
+      const anchor = key(target.x, target.y);
+      for (const v of selected) {
+        v.task = { kind: 'deliver', building: anchor };
+        v.problem = null;
+      }
+      return null;
+    }
+
+    const found = this.world.remainingAt(x, y);
+    if (found.type && found.amount > 0) {
+      // Die Ausgewählten zählen nicht mit - sie werden gerade neu verteilt.
+      for (const v of selected) v.task = { kind: 'idle' };
+      const occupancy = this.occupancy();
+      const full = (k: string) => (occupancy.get(k) ?? 0) >= MAX_GATHERERS;
+      for (const v of selected) {
+        // Ist das Ziel voll, das nächste Vorkommen derselben Art mit Platz.
+        const spot = !full(key(x, y)) ? { x, y } : this.nextDeposit(found.type, x, y, occupancy);
+        if (!spot) {
+          v.problem = 'Alle Vorkommen in der Nähe sind voll besetzt';
+          continue;
+        }
+        v.task = { kind: 'gather', type: found.type, x: spot.x, y: spot.y, delivering: false };
+        v.problem = null;
+        const k = key(spot.x, spot.y);
+        occupancy.set(k, (occupancy.get(k) ?? 0) + 1);
+      }
+      return null;
+    }
+
+    const tile = this.world.terrain.getTile(x, y);
+    if (tile.tileType === 'water' || tile.tileType === 'deep_water') return 'Dorfbewohner können nicht schwimmen';
+
+    // Mehrere Dorfbewohner stellen sich im Kreis um das Ziel, statt alle auf
+    // denselben Punkt zu laufen.
+    selected.forEach((v, i) => {
+      const angle = (i / selected.length) * Math.PI * 2;
+      const r = selected.length > 1 ? 0.35 + 0.1 * Math.sqrt(selected.length) : 0;
+      v.task = { kind: 'move', x: x + 0.5 + Math.cos(angle) * r, y: y + 0.5 + Math.sin(angle) * r };
+      v.problem = null;
+    });
+    return null;
+  }
+
+  /** Kann man Tile (x, y) nicht betreten? Wasser, Gebäude, stehende Bäume, Felsen. */
+  private blockedAt(x: number, y: number): boolean {
+    const k = key(x, y);
+    const anchor = this.world.occupied.get(k);
+    // Über Felder geht man hinweg - Bauern arbeiten ja darauf.
+    if (anchor !== undefined) return !this.world.building(anchor)?.isFarm();
+    let t = this.terrainBlock.get(k);
+    if (t === undefined) {
+      const found = this.world.terrain.resourceAt(x, y);
+      t = found.tileType === 'water' || found.tileType === 'deep_water' ? 1
+        : found.type === 'wood' || found.type === 'stone' || found.type === 'gold' ? 2 : 0;
+      if (this.terrainBlock.size > 200_000) this.terrainBlock.clear();
+      this.terrainBlock.set(k, t);
+    }
+    if (t === 2) return !this.world.deposits.isExhausted(x, y) && !this.world.deposits.isFelled(x, y);
+    return t === 1;
+  }
+
+  /**
+   * Nächster Punkt, den er ansteuert: der erste offene Wegpunkt zum Ziel -
+   * gesucht, wenn das Ziel neu ist oder der Weg inzwischen versperrt ist.
+   * Gibt es keinen Weg, geht er geradeaus (wie früher), statt stehen zu bleiben.
+   */
+  private waypoint(v: Villager, tx: number, ty: number, reach: number): { x: number; y: number } {
+    const blocked = (x: number, y: number) => this.blockedAt(x, y);
+    // Neu suchen: neues Ziel, oder die Strecke zum nächsten Wegpunkt ist
+    // inzwischen versperrt (z. B. ein neues Gebäude).
+    const stale = !v.pathTarget || Math.hypot(v.pathTarget.x - tx, v.pathTarget.y - ty) > 0.3
+      || (v.path?.[0] && !lineOfSight(v.x, v.y, v.path[0].x, v.path[0].y,
+          (x, y) => blocked(x, y) && !(x === Math.floor(v.x) && y === Math.floor(v.y))));
+    if (stale) {
+      v.pathTarget = { x: tx, y: ty };
+      v.path = lineOfSight(v.x, v.y, tx, ty, (x, y) => blocked(x, y) && !(x === Math.floor(tx) && y === Math.floor(ty)))
+        ? []
+        : findPath(v.x, v.y, tx, ty, reach, blocked) ?? [];
+    }
+    while (v.path && v.path.length > 0 && Math.hypot(v.path[0].x - v.x, v.path[0].y - v.y) < 0.12) v.path.shift();
+    return v.path && v.path.length > 0 ? v.path[0] : { x: tx, y: ty };
+  }
+
+  private walk(v: Villager, tx: number, ty: number, reach: number, dt: number): boolean {
+    const d = Math.hypot(tx - v.x, ty - v.y);
+    // Mit etwas Spielraum - sonst bliebe nach dem letzten Schritt ein
+    // Rundungsrest, und er käme nie an.
+    if (d <= reach + 1e-4) {
+      v.path = null;
+      v.pathTarget = null;
+      return true;
+    }
+    // Um Hindernisse herum: zum nächsten Wegpunkt, zuletzt aufs Ziel zu.
+    const next = this.waypoint(v, tx, ty, reach);
+    const final = next.x === tx && next.y === ty;
+    const dx = next.x - v.x;
+    const dy = next.y - v.y;
+    const dn = Math.hypot(dx, dy) || 1e-6;
+    const step = Math.min(VILLAGER.speed * dt, final ? d - reach : dn);
+    v.x += (dx / dn) * step;
+    v.y += (dy / dn) * step;
+    v.heading = Math.atan2(dy, dx);
+    v.stride += step;
+    v.pose = POSE.walk;
+    this.world.markDirty();
+    // Angekommen ist er erst im nächsten Tick: sonst ginge ein kurzer Weg im
+    // selben Tick in die Arbeitspose über, und er rutschte statt zu gehen.
+    return false;
+  }
+
+  /** Nächstes Lager, das `type` annimmt. */
+  private nearestDropSite(v: Villager, type: ResourceKind): Building | undefined {
+    let best: Building | undefined;
+    let bestDistance = Infinity;
+    for (const b of this.world.allBuildings()) {
+      if (!b.definition.storedResources.includes(type)) continue;
+      const d = Math.hypot(b.x + 0.5 - v.x, b.y + 0.5 - v.y);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  /** Läuft zum Lager; true, sobald die Ladung abgegeben ist. */
+  private deliverTo(v: Villager, building: Building, dt: number): boolean {
+    // Im Gebäude: kurz warten, dann kommt er ohne Last wieder heraus.
+    if (v.inside > 0) {
+      v.inside -= dt;
+      if (v.inside > 0) return false;
+      v.inside = 0;
+      return true;
+    }
+    // Zur Tür (im Modell markiert), sonst bis an die Kante des Modells bzw.
+    // der belegten Felder - was größer ist.
+    const def = building.definition;
+    const entry = modelEntry(building.model,
+        building.x, building.y, def.size, BUILDING_HEADING);
+    const reach = entry ? 0.08 : Math.max(def.footprint, def.size) / 2 + DELIVER_REACH;
+    const [tx, ty] = entry ? [entry.x, entry.y] : [building.x + 0.5, building.y + 0.5];
+    if (!this.walk(v, tx, ty, reach, dt)) return false;
+    if (v.carryType && v.carrying > 0) {
+      this.world.stock[v.carryType] += v.carrying;
+      this.world.onEvent?.({ kind: 'deliver', x: v.x, y: v.y });
+    }
+    v.carrying = 0;
+    v.carryType = null;
+    this.world.markDirty();
+    // Durch die Tür hinein - einen Moment lang ist er weg.
+    if (entry) {
+      v.inside = INSIDE_TIME;
+      v.heading = Math.atan2(building.y + 0.5 - v.y, building.x + 0.5 - v.x);
+      return false;
+    }
+    return true;
+  }
+
+  /** Wie viele Dorfbewohner je Feld sammeln - Schlüssel "x,y". */
+  private occupancy(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const v of this.world.villagers) {
+      if (v.task.kind !== 'gather') continue;
+      const k = key(v.task.x, v.task.y);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  /**
+   * Nächstes nicht leeres Feld derselben Art um (x, y), auf dem noch Platz
+   * ist (höchstens MAX_GATHERERS).
+   */
+  private nextDeposit(
+      type: DepositType, x: number, y: number,
+      occupancy: Map<string, number> = this.occupancy(),
+  ): { x: number; y: number } | null {
+    let best: { x: number; y: number } | null = null;
+    let bestDistance = Infinity;
+    const r = VILLAGER.searchRadius;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const d = dx * dx + dy * dy;
+        if (d >= bestDistance || d > r * r) continue;
+        if ((occupancy.get(key(x + dx, y + dy)) ?? 0) >= MAX_GATHERERS) continue;
+        const found = this.world.remainingAt(x + dx, y + dy);
+        if (found.type === type && found.amount > 0) {
+          best = { x: x + dx, y: y + dy };
+          bestDistance = d;
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Die nächste Furche auf dem Feld, in der es in dieser Phase Arbeit gibt
+   * und kein anderer Bauer arbeitet - die dem Bauern nächste.
+   */
+  private nextFurrow(v: Villager, group: Farm[], phase: FarmPhase): { building: Farm; row: number; distance: number } | undefined {
+    const busy = new Set(this.world.villagers.flatMap((u) => (u !== v && u.task.kind === 'farm' ? [`${u.task.building}#${u.task.row}`] : [])));
+    let best: { building: Farm; row: number; distance: number } | undefined;
+    for (const { building, row, f } of this.world.farming.furrows(group)) {
+      if (!furrowNeeds(f, phase) || busy.has(furrowKey(building, row))) continue;
+      const spot = this.farmSpot(building, row, v);
+      const distance = Math.hypot(spot.x - v.x, spot.y - v.y);
+      if (!best || distance < best.distance) best = { building, row, distance };
+    }
+    return best;
+  }
+
+  /** Wo der Bauer in seiner Furche steht (farming.ts) - beim Jäten je Bauer versetzt. */
+  private farmSpot(building: Farm, row: number, v: Villager, wander = false) {
+    return farmSpot(building, row, Math.abs(((this.world.now / 40 + v.id * 0.37) % 2) - 1), wander);
+  }
+
+  /**
+   * Arbeitstakt am Platz: Zeit weiterzählen und bei jedem Schlag bzw. Griff
+   * ein Ereignis melden - im Takt der Animation (siehe Shader).
+   */
+  private swing(v: Villager, dt: number, resource: DepositType, picking: boolean) {
+    // Der Arm schlägt zu, wenn sin(Phase) sein Minimum durchläuft - genau
+    // dann soll man den Hieb hören. Pflücken ist im Shader langsamer
+    // (Phase * 0.6), das Rascheln folgt dem Griff.
+    const tempo = picking ? WORK_TEMPO * 0.6 : WORK_TEMPO;
+    const strikes = (time: number) => Math.floor((time * tempo - Math.PI * 1.5) / (Math.PI * 2));
+    const before = strikes(v.workTime);
+    v.workTime += dt;
+    if (strikes(v.workTime) > before) {
+      this.world.onEvent?.({ kind: 'strike', resource, x: v.x, y: v.y });
+    }
+  }
+
+  /**
+   * Bauer: arbeitet mit den anderen auf seinem Feld Phase für Phase - erst
+   * alles pflügen, dann alles säen, jäten, bis alles reif ist, dann ernten
+   * und abliefern; abgeerntet wird alles neu gesät. Er nimmt sich jeweils die
+   * nächste freie Furche, in der es noch etwas zu tun gibt.
+   */
+  private tickFarmer(v: Villager, task: Extract<Task, { kind: 'farm' }>, dt: number) {
+    const found = this.world.building(task.building);
+    if (!found?.isFarm() || !found.furrows[task.row]) {
+      v.task = { kind: 'idle' };
+      return;
+    }
+    let building: Farm = found;
+    if (task.delivering) {
+      const site = this.nearestDropSite(v, 'food');
+      if (!site) {
+        v.problem = 'Kein Lager für Nahrung - baue eine Mühle';
+        return;
+      }
+      v.problem = null;
+      if (this.deliverTo(v, site, dt)) task.delivering = false;
+      return;
+    }
+
+    const group = this.world.farmGroup(building);
+    let phase = this.world.farmPhase(building);
+    // Die Ernte ist vorbei: wer noch etwas trägt, bringt es erst zum Lager.
+    if (phase !== 'harvest' && v.carrying > 0 && v.carryType === 'food') {
+      task.delivering = true;
+      return;
+    }
+    if (phase === 'done') {
+      // Alles abgeerntet: alles wird neu gesät.
+      for (const { building: b, row, f } of this.world.farming.furrows(group)) {
+        Object.assign(f, { crop: b.plan, sown: 0, growth: 0, food: furrowFood(b.plan, b.tiles, row), paid: false });
+      }
+      this.world.markDirty();
+      phase = 'sow';
+    }
+    // In der eigenen Furche nichts mehr zu tun: die nächste mit Arbeit. Beim
+    // Ernten geht er immer zum nächsten reifen Getreide, auch in einer fremden
+    // Furche - seine eigene behält er nur, solange sie kaum weiter weg ist.
+    const ownNeeds = furrowNeeds(building.furrows[task.row], phase);
+    if (!ownNeeds || phase === 'harvest') {
+      const next = this.nextFurrow(v, group, phase);
+      const own = this.farmSpot(building, task.row, v);
+      const keep = ownNeeds && (!next || Math.hypot(own.x - v.x, own.y - v.y) <= next.distance + 0.3);
+      if (keep) {
+        // Er bleibt, wo er ist.
+      } else if (next) {
+        building = next.building;
+        task.building = next.building.anchor;
+        task.row = next.row;
+      } else if (phase === 'harvest' && v.carrying > 0) {
+        // Die Ernte ist verteilt - mit dem, was er hat, zum Lager.
+        task.delivering = true;
+        return;
+      }
+    }
+    const f = building.furrows[task.row];
+    const working = furrowNeeds(f, phase);
+    if (working && phase === 'sow' && !f.paid) {
+      if (!this.world.canPay(RESEED_COST)) {
+        v.problem = 'Zu wenig Holz, um neu zu säen';
+        return;
+      }
+      this.world.pay(RESEED_COST);
+      f.paid = true;
+    }
+    v.problem = null;
+    const crop = CROPS[f.crop];
+    // Ohne eigene Arbeit (es wächst, oder die übrigen Furchen haben andere)
+    // geht er seine Furche ab und jätet.
+    const spot = this.farmSpot(building, task.row, v, !working);
+    if (!this.walk(v, spot.x, spot.y, 0.05, dt)) return;
+    v.heading = Math.atan2(spot.aimY - v.y, spot.aimX - v.x);
+    this.world.markDirty();
+
+    // Eine kürzere Furche (über weniger Tiles) ist schneller gepflügt und gesät.
+    const length = building.furrowCells(task.row).length / 3;
+    if (working && phase === 'plough') {
+      // Pflügen: mit der Hacke, stehend.
+      v.pose = POSE.work;
+      this.swing(v, dt, 'wood', false);
+      f.plough = Math.min(1, f.plough + dt / (PLOUGH_TIME * length));
+      return;
+    }
+    if (!working || phase === 'sow') {
+      // Säen und jäten: kniend.
+      v.pose = POSE.pick;
+      this.swing(v, dt, 'berries', true);
+      if (working) f.sown = Math.min(1, f.sown + dt / (SOW_TIME * length));
+      return;
+    }
+    // Ernten: Weizen mit der Sense, andere Früchte von Hand.
+    v.pose = crop.scythe ? POSE.scythe : POSE.pick;
+    this.swing(v, dt, 'berries', true);
+    if (v.carryType !== 'food') {
+      v.carrying = 0;
+      v.carryType = 'food';
+    }
+    const take = Math.min(FARM_RATE * crop.rate * dt, f.food, VILLAGER.capacity - v.carrying);
+    f.food -= take;
+    v.carrying += take;
+    if (v.carrying >= VILLAGER.capacity - 1e-6) task.delivering = true;
+  }
+
+  /** Rechtsklick auf ein Tier: die Ausgewählten jagen es bzw. zerlegen den Kadaver. */
+  hunt(ids: ReadonlySet<number>, animal: Animal) {
+    for (const v of this.world.villagers) {
+      if (!ids.has(v.id)) continue;
+      v.assign({ kind: 'hunt', animal: animal.id, delivering: false, cooldown: 0 });
+    }
+  }
+
+  /** Nächstes Tier bzw. Kadaver mit Fleisch in Reichweite der Suche - lieber erlegte. */
+  private nearestPrey(v: Villager, kind: AnimalKind | null): Animal | undefined {
+    let best: Animal | undefined;
+    let bestScore: number = VILLAGER.searchRadius;
+    for (const a of this.world.wildlife.animals) {
+      if (a.state === 'dead' && a.food <= 1e-6) continue;
+      if (kind && a.kind !== kind) continue;
+      const score = Math.hypot(a.x - v.x, a.y - v.y) - (a.state === 'dead' ? 4 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = a;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Jäger: hinterher, bis er in Wurfweite ist, dann Speer um Speer, bis das
+   * Tier fällt; am Kadaver zerlegt er das Fleisch und bringt es zum Lager.
+   * Ist es leer, macht er beim nächsten Tier derselben Art weiter.
+   */
+  private tickHunter(v: Villager, task: Extract<Task, { kind: 'hunt' }>, dt: number) {
+    if (task.delivering) {
+      const site = this.nearestDropSite(v, 'food');
+      if (!site) {
+        v.problem = 'Kein Lager für Nahrung - baue eine Mühle';
+        return;
+      }
+      v.problem = null;
+      if (this.deliverTo(v, site, dt)) task.delivering = false;
+      return;
+    }
+    let a = this.world.wildlife.byId(task.animal);
+    if (!a || (a.state === 'dead' && a.food <= 1e-6)) {
+      const next = this.nearestPrey(v, a?.kind ?? null);
+      if (next) {
+        task.animal = next.id;
+        a = next;
+      } else if (v.carrying > 0 && v.carryType === 'food') {
+        task.delivering = true;
+        return;
+      } else {
+        v.task = { kind: 'idle' };
+        v.problem = 'Hier gibt es nichts mehr zu jagen';
+        return;
+      }
+    }
+    v.problem = null;
+    if (a.state !== 'dead') {
+      // In Wurfweite heran - und dann werfen, auch wenn es wegläuft.
+      const d = Math.hypot(a.x - v.x, a.y - v.y);
+      task.cooldown = Math.max(0, task.cooldown - dt);
+      if (d > HUNT.range) {
+        this.walk(v, a.x, a.y, HUNT.range * 0.8, dt);
+        return;
+      }
+      v.heading = Math.atan2(a.y - v.y, a.x - v.x);
+      v.pose = POSE.work;
+      v.workTime += dt;
+      if (task.cooldown > 0) return;
+      task.cooldown = HUNT.reload;
+      a.hp -= 1;
+      this.world.onEvent?.({ kind: 'strike', resource: 'wood', x: v.x, y: v.y });
+      if (a.hp <= 0) {
+        a.state = 'dead';
+        a.target = null;
+      }
+      this.world.markDirty();
+      return;
+    }
+    // Am Kadaver: kniend zerlegen.
+    if (!this.walk(v, a.x, a.y, 0.35, dt)) return;
+    v.heading = Math.atan2(a.y - v.y, a.x - v.x);
+    v.pose = POSE.pick;
+    this.swing(v, dt, 'berries', true);
+    if (v.carryType !== 'food') {
+      v.carrying = 0;
+      v.carryType = 'food';
+    }
+    const take = Math.min(HUNT.butcherRate * dt, a.food, VILLAGER.capacity - v.carrying);
+    a.food -= take;
+    v.carrying += take;
+    this.world.markDirty();
+    if (v.carrying >= VILLAGER.capacity - 1e-6 || a.food <= 1e-6) task.delivering = true;
+  }
+
+  /** Ein Tick für einen Dorfbewohner: seinen Auftrag ein Stück weiter ausführen. */
+  tick(v: Villager, dt: number) {
+    const task = v.task;
+    switch (task.kind) {
+      case 'idle':
+        return;
+
+      case 'move':
+        if (this.walk(v, task.x, task.y, 0.05, dt)) v.task = { kind: 'idle' };
+        return;
+
+      case 'farm':
+        this.tickFarmer(v, task, dt);
+        return;
+
+      case 'hunt':
+        this.tickHunter(v, task, dt);
+        return;
+
+      case 'deliver': {
+        const building = this.world.building(task.building);
+        if (!building) {
+          v.task = { kind: 'idle' };
+          return;
+        }
+        if (this.deliverTo(v, building, dt)) v.task = { kind: 'idle' };
+        return;
+      }
+
+      case 'gather': {
+        if (task.delivering) {
+          const site = this.nearestDropSite(v, YIELD[task.type]);
+          if (!site) {
+            v.problem = 'Kein Lager für diese Ressource';
+            return;
+          }
+          v.problem = null;
+          if (this.deliverTo(v, site, dt)) task.delivering = false;
+          return;
+        }
+
+        const found = this.world.remainingAt(task.x, task.y);
+        if (found.type !== task.type || found.amount <= 0) {
+          // Feld leer: im Umkreis weitermachen, sonst Rest abliefern und aufhören.
+          // Er selbst zählt am leeren Feld nicht mehr mit.
+          const occupancy = this.occupancy();
+          const own = key(task.x, task.y);
+          occupancy.set(own, (occupancy.get(own) ?? 1) - 1);
+          const next = this.nextDeposit(task.type, task.x, task.y, occupancy);
+          if (next) {
+            task.x = next.x;
+            task.y = next.y;
+          } else if (v.carrying > 0) {
+            const site = this.nearestDropSite(v, YIELD[task.type]);
+            v.task = site ? { kind: 'deliver', building: key(site.x, site.y) } : { kind: 'idle' };
+            v.problem = site ? null : 'Kein Lager für diese Ressource';
+          } else {
+            v.task = { kind: 'idle' };
+            v.problem = 'Hier gibt es nichts mehr';
+          }
+          return;
+        }
+
+        // Jeder hat seinen eigenen Platz am Feld - sonst stehen alle
+        // Sammler auf demselben Punkt und sehen aus wie einer. Der goldene
+        // Winkel verteilt mehrere Sammler gleichmäßig; der Anteil je Feld
+        // sorgt dafür, dass derselbe Dorfbewohner nicht an jedem Baum von
+        // derselben Seite kommt - sonst fielen alle seine Bäume gleich.
+        const angle = v.id * 2.39996 + tileAngle(task.x, task.y);
+        let spotX = task.x + 0.5 + Math.cos(angle) * GATHER_SPREAD;
+        let spotY = task.y + 0.5 + Math.sin(angle) * GATHER_SPREAD;
+        // Wohin er schlägt: die Mitte des Felds - oder beim gefällten Baum der
+        // liegende Stamm, dort, wo gerade abgesägt wird (die Spitze, die mit
+        // dem Holz näher zum Stumpf wandert). Er steht seitlich daneben.
+        let aimX = task.x + 0.5;
+        let aimY = task.y + 0.5;
+        const fellDir = task.type === 'wood' ? this.world.deposits.fellDirection(task.x, task.y) : undefined;
+        const length = fellDir !== undefined ? this.world.treeLength?.(task.x, task.y) : undefined;
+        if (fellDir !== undefined && length) {
+          const total = this.world.terrain.getTile(task.x, task.y).resourceAmount;
+          const share = Math.max(0, Math.min(1, found.amount / total));
+          // In Sprüngen von STEP Tiles: so geht er ab und zu ein paar Schritte
+          // weiter, statt dem kürzer werdenden Stamm hinterherzurutschen.
+          const STEP = 0.8;
+          const along = Math.max(0.35, Math.floor((length * share * 0.8) / STEP) * STEP);
+          const [dx, dy] = [Math.cos(fellDir), Math.sin(fellDir)];
+          aimX += dx * along;
+          aimY += dy * along;
+          // Links oder rechts vom Stamm, mehrere Holzfäller verteilt.
+          const side = (v.id % 2 ? 1 : -1) * (0.3 + (v.id % 3) * 0.08);
+          spotX = aimX - dy * side - dx * (v.id % 3) * 0.15;
+          spotY = aimY + dx * side - dy * (v.id % 3) * 0.15;
+        }
+        if (!this.walk(v, spotX, spotY, 0.05, dt)) return;
+        // Am Platz: zum Vorkommen drehen und arbeiten - Beeren kniend pflücken.
+        v.heading = Math.atan2(aimY - v.y, aimX - v.x);
+        v.pose = task.type === 'berries' ? POSE.pick : POSE.work;
+        this.swing(v, dt, task.type, task.type === 'berries');
+
+        // Wechselt er die Ressource, lässt er die alte Ladung fallen - wie in AoE2.
+        if (v.carryType !== YIELD[task.type]) {
+          v.carrying = 0;
+          v.carryType = YIELD[task.type];
+        }
+        // Der erste Hieb fällt den Baum - grob weg vom Holzfäller, aber nie
+        // ganz genau: bis zu 35° daneben.
+        if (task.type === 'wood') {
+          const away = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
+          const jitter = (tileAngle(task.x + 17, task.y - 31) / Math.PI - 1) * 0.6;
+          if (this.world.deposits.fell(task.x, task.y, away + jitter, this.world.now)) {
+            this.world.onEvent?.({ kind: 'treeFall', x: task.x + 0.5, y: task.y + 0.5 });
+          }
+        }
+        const wanted = Math.min(VILLAGER.gatherRate[task.type] * dt, VILLAGER.capacity - v.carrying);
+        v.carrying += this.world.deposits.take(task.x, task.y, wanted, this.world.now);
+        this.world.markDirty();
+
+        if (v.carrying >= VILLAGER.capacity - 1e-6) task.delivering = true;
+        return;
+      }
+    }
+  }
+
+  /** Kurzbeschreibung für die Anzeige. */
+  describe(v: Villager): string {
+    if (v.problem) return v.problem;
+    const load = v.carrying > 0 && v.carryType ? ` (${Math.floor(v.carrying)})` : '';
+    switch (v.task.kind) {
+      case 'idle': return 'untätig' + load;
+      case 'move': return 'unterwegs' + load;
+      case 'deliver': return 'liefert ab' + load;
+      case 'gather':
+        return (v.task.delivering ? 'bringt ' : 'sammelt ') + RESOURCE_TYPE_LABEL[v.task.type] + load;
+      case 'hunt': {
+        if (v.task.delivering) return 'bringt Fleisch' + load;
+        const hunt = v.task;
+        const a = this.world.wildlife.byId(hunt.animal);
+        if (!a) return 'jagt' + load;
+        return (a.isDead ? `zerlegt ${a.label}` : `jagt ${a.label}`) + load;
+      }
+      case 'farm': {
+        const building = this.world.building(v.task.building);
+        const f = building?.isFarm() ? building.furrows[v.task.row] : undefined;
+        if (!building || !f) return 'untätig' + load;
+        const crop = CROPS[f.crop].label;
+        if (v.task.delivering) return `bringt ${crop}${load}`;
+        switch (this.world.farmPhase(building)) {
+          case 'plough': return 'pflügt' + load;
+          case 'sow': return `sät ${crop}` + load;
+          case 'grow': return `jätet (${crop} wächst)` + load;
+          case 'harvest': return `erntet ${crop}` + load;
+          case 'done': return 'sät neu' + load;
+        }
+      }
+    }
+  }
+}
