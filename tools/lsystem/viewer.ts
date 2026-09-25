@@ -50,16 +50,26 @@ function currentSpec(): TreeSpec {
   return spec;
 }
 
-function load(name: PresetName) {
+/** Beispiel laden; `seed` überschreibt den Seed des Beispiels (aus der URL). */
+function load(name: PresetName, seed = PRESETS[name].seed) {
   base = PRESETS[name];
-  seedInput.value = String(base.seed);
+  seedInput.value = String(seed);
   for (const { key, input } of sliders) input.value = String(base[key]);
   for (const { key, input } of texts) input.value = base[key];
   update();
 }
 
+/** Beispiel, Seed und Blätter in die URL - zum Teilen und Neuladen. */
+function syncUrl(seed: number) {
+  const query = new URLSearchParams({
+    preset: presetSelect.value, seed: String(seed), leaves: leafMode(), cards: cards() ? '1' : '0',
+  });
+  history.replaceState(null, '', `?${query}`);
+}
+
 async function update() {
   const spec = currentSpec();
+  syncUrl(spec.seed);
   const mode = leafMode();
   const current = ++generation;
   for (const { key, value } of sliders) value.textContent = String(spec[key]);
@@ -130,9 +140,7 @@ for (const group of GROUPS) {
   presetSelect.append(optgroup);
 }
 presetSelect.addEventListener('change', () => {
-  if (!isPresetName(presetSelect.value)) return;
-  history.replaceState(null, '', `?preset=${presetSelect.value}&leaves=${leafMode()}&cards=${cards() ? 1 : 0}`);
-  load(presetSelect.value);
+  if (isPresetName(presetSelect.value)) load(presetSelect.value);
 });
 for (const { input } of [...sliders, ...texts]) input.addEventListener('input', update);
 seedInput.addEventListener('input', update);
@@ -144,11 +152,12 @@ element('reseed', HTMLButtonElement).addEventListener('click', () => {
 });
 element('download', HTMLButtonElement).addEventListener('click', download);
 
-// ?preset=<name>&leaves=shape|texture&cards=0|1 - so verlinkt die Galerie (gallery.html) hierher.
+// ?preset=<name>&seed=<n>&leaves=shape|texture&cards=0|1 - so verlinkt auch die Galerie (gallery.html) hierher.
 const params = new URLSearchParams(location.search);
 const requested = params.get('preset') ?? '';
 const initial: PresetName = isPresetName(requested) ? requested : 'laubbaum';
+const seed = Number(params.get('seed'));
 if (params.get('leaves') === 'texture') leafModeSelect.value = 'texture';
 if (params.get('cards') === '0') cardsSelect.value = '0';
 presetSelect.value = initial;
-load(initial);
+load(initial, Number.isInteger(seed) && seed >= 1 ? seed : undefined);
