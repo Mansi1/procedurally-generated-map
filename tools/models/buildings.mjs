@@ -1121,7 +1121,14 @@ function armory() {
   const sx = -0.92, sTop = 1.85;
   m.extrude('Cut.Roof.Shield.Rim', 'Iron', 'z', [D + 0.06, D + 0.1], shield(sx, sTop + 0.05, 0.5, 1.3));
   m.extrude('Cut.Roof.Shield', 'Paint', 'z', [D + 0.1, D + 0.14], shield(sx, sTop, 0.44, 1.18));
-  beam('Cut.Roof.Shield.Stripe', 'Canvas', [sx + 0.36, sTop - 0.06, D + 0.145], [sx - 0.36, sTop - 0.62, D + 0.145], 0.14);
+  // Emblem: bow and arrow, light on the player's colour.
+  const ec = [sx - 0.04, sTop - 0.5, D + 0.17];
+  const eUp = [0.6, 0.8, 0], eBack = [0.8, -0.6, 0];
+  bow(m, ec, eUp, eBack, 0.85, 0.16, 'Cut.Roof.Shield.Bow', 1.3, 'Canvas');
+  const eAt = (d) => ec.map((v, i) => v + eBack[i] * d);
+  beam('Cut.Roof.Shield.Arrow', 'Canvas', eAt(0), eAt(0.38), 0.035);
+  beam('Cut.Roof.Shield.Arrow.Head', 'Canvas', eAt(0.38), eAt(0.48), 0.09, { w1: 0.01 });
+  beam('Cut.Roof.Shield.Arrow.Fletch', 'Canvas', eAt(0.01), eAt(0.12), 0.08, { w1: 0.03 });
 
   // Gable roof with shingles, ridge along x; plastered gables with a king post.
   const RX = W + 0.3, RZ = D + 0.42;

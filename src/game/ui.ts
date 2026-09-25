@@ -19,7 +19,7 @@ import { selectionView } from './selectionView';
 type RGB = [number, number, number];
 
 /** Reihenfolge in der Rohstoffleiste - wie in AoE2: Holz, Nahrung, Gold, Stein. */
-const RESOURCE_BAR_ORDER: ResourceKind[] = ['wood', 'food', 'gold', 'stone', 'bows'];
+const RESOURCE_BAR_ORDER: ResourceKind[] = ['wood', 'food', 'gold', 'stone'];
 /** So lange (ms) steht ein Hinweis. */
 const HINT_MS = 1800;
 
@@ -165,7 +165,6 @@ export class GameUi {
       stock: world.stock,
       labels: RESOURCE_LABEL,
       gatherers: counts,
-      capacity: { bows: world.weaponCapacity() },
       population: world.population(),
       idle,
       villagerLabel: VILLAGER.label,

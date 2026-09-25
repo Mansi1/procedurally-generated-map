@@ -1,6 +1,6 @@
 // modelIcons.ts
 // Symbole, gezeichnet aus den Modellen des Spiels: für die Rohstoffleiste
-// (Eiche, Beerenstrauch, Goldfels, Steinhaufen, Bogen, Dorfbewohner) und für die
+// (Eiche, Beerenstrauch, Goldfels, Steinhaufen, Dorfbewohner) und für die
 // Befehlsleiste (Gebäude, Tiere - Knöpfe und Porträts; Felder zeichnet cropIcons.ts). Ein eigener
 // EntityRenderer auf einem Canvas außerhalb der Seite zeichnet jedes Motiv
 // einmal; der Ausschnitt um das, was gezeichnet wurde, wird als Bild-URL
@@ -57,7 +57,7 @@ function scene(name: IconName, player: RGB): EntityInstance[] {
   }
 }
 
-const NAMES: IconName[] = ['wood', 'food', 'gold', 'stone', 'bows', 'population', 'idle'];
+const NAMES: IconName[] = ['wood', 'food', 'gold', 'stone', 'population', 'idle'];
 
 let stage: { canvas: HTMLCanvasElement; gl: WebGL2RenderingContext; renderer: EntityRenderer } | null = null;
 
@@ -178,7 +178,7 @@ export function animalIcon(kind: AnimalKind, dead = false): string {
   }]);
 }
 
-/** Rohstoff im Vorrat - dasselbe Symbol wie in der Rohstoffleiste (Bögen: Bogen mit Pfeil). */
+/** Rohstoff im Vorrat als Symbol - z. B. Bogen mit Pfeil im Panel der Waffenkammer. */
 export function stockIcon(kind: ResourceKind): string {
   return cached(`stock:${kind}`, [0, 0, 0], () => scene(kind, [0, 0, 0]));
 }

@@ -77,16 +77,17 @@ export function lantern(m, x, y, z) {
  * middle of the grip, `up` points to the upper tip, `back` to where the limbs
  * bend away from the string; both unit vectors. `sag`: how far the middle
  * sits in front of the tips (braced bow). `name` names the objects (the
- * armory numbers its bows 'Stock.<n>'), `thick` scales its thickness.
+ * armory numbers its bows 'Stock.<n>'), `thick` scales its thickness, `mtl`
+ * is the wood (the emblem on the armory's shield is light).
  */
-export function bow(m, c, up, back, length = 1.7, sag = 0.18, name = 'Bow', thick = 1) {
+export function bow(m, c, up, back, length = 1.7, sag = 0.18, name = 'Bow', thick = 1, mtl = 'Wood') {
   const at = (t) => c.map((v, i) => v + up[i] * t * length / 2 + back[i] * sag * (1 - t * t));
   const N = 8;
   for (let i = 0; i < N; i++) {
     const t0 = -1 + (2 * i) / N, t1 = -1 + (2 * (i + 1)) / N;
     // Thick at the grip, thin at the tips.
     const w = (t) => (0.03 + 0.03 * (1 - Math.abs(t))) * thick;
-    m.beam(name, 'Wood', at(t0), at(t1), w(t0), { w1: w(t1) });
+    m.beam(name, mtl, at(t0), at(t1), w(t0), { w1: w(t1) });
   }
   m.beam(`${name}.Grip`, 'WoodDark', at(-0.1), at(0.1), 0.07 * thick);
   m.beam(`${name}.String`, 'Canvas', at(-1), at(1), 0.012 * thick);
