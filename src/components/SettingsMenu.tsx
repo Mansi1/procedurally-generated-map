@@ -1,7 +1,7 @@
 // SettingsMenu.tsx
 // Menü als Holztafel in der Bildmitte (Zahnrad an der Rohstoffleiste oder
 // F10, wie in AoE2): Spielerfarbe, Pause, Tempo, Ton und Musik, Kamera-Tempo,
-// Anzeigen, Speichern, zurück ins Hauptmenü. Einmal gerendert; refresh()
+// Anzeigen, Grafik, Speichern, zurück ins Hauptmenü. Einmal gerendert; refresh()
 // setzt über Refs, was sich auch von außen ändert (Pause, Ton, laufendes
 // Musikstück).
 
@@ -31,6 +31,17 @@ export interface MenuHooks {
 }
 
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
+/**
+ * Ab wann Bäume als Bild gezeichnet werden: unter so vielen CSS-Pixeln je
+ * Tile (Zoomstufen 128 ... 1, Vorgabe 32). 16 = ab der zweiten Stufe unter
+ * der Vorgabe, dort sind Bäume nur noch wenige Pixel groß.
+ */
+const BILLBOARDS: [number, string, string][] = [
+  [0, 'Nie', 'Bäume immer als 3D-Modell'],
+  [16, 'Weit', 'Als Bild ab zwei Zoomstufen unter der Vorgabe - dort sind Bäume nur noch wenige Pixel groß'],
+  [32, 'Mittel', 'Als Bild, sobald man herauszoomt'],
+  [64, 'Immer', 'Auch in der Vorgabe-Zoomstufe als Bild - nur ganz nah als Modell'],
+];
 
 /** Regler 0..100 % mit der Zahl daneben. */
 interface SliderRefs {
@@ -58,6 +69,7 @@ export class SettingsMenu {
   private pauseButton = createRef<HTMLButtonElement>();
   private soundButton = createRef<HTMLButtonElement>();
   private speedButtons = SPEEDS.map(() => createRef<HTMLButtonElement>());
+  private billboardButtons = BILLBOARDS.map(() => createRef<HTMLButtonElement>());
   private colorButtons = new Map(Object.keys(PLAYER_COLORS).map((key) => [key, createRef<HTMLButtonElement>()]));
   private volume = sliderRefs();
   private music = sliderRefs();
@@ -170,6 +182,17 @@ export class SettingsMenu {
           </label>
         </section>
         <section>
+          <h3>Grafik</h3>
+          <div class="menu-row">
+            <span title="Bäume als flaches Bild statt als 3D-Modell - weit draußen sieht man kaum einen Unterschied, das Spiel läuft aber flüssiger.">Bäume als Bild</span>
+            <span class="menu-choice">
+              {BILLBOARDS.map(([value, label, hint], i) => (
+                <button type="button" class="wood-btn" title={hint} ref={this.billboardButtons[i]} onClick={() => this.change({ billboards: value })}>{label}</button>
+              ))}
+            </span>
+          </div>
+        </section>
+        <section>
           <div class="menu-row">
             <span>Alle Einstellungen</span>
             <button type="button" class="wood-btn menu-btn" onClick={() => this.reset()}>Zurücksetzen</button>
@@ -234,6 +257,7 @@ export class SettingsMenu {
     this.pauseButton.current.textContent = this.hooks.paused() ? 'Fortsetzen' : 'Anhalten';
     this.soundButton.current.textContent = this.hooks.soundEnabled() ? 'An' : 'Aus';
     SPEEDS.forEach(([value], i) => this.speedButtons[i].current.classList.toggle('active', value === s.speed));
+    BILLBOARDS.forEach(([value], i) => this.billboardButtons[i].current.classList.toggle('active', value === s.billboards));
     for (const [key, ref] of this.colorButtons) ref.current.classList.toggle('active', key === s.playerColor);
     const slider = (refs: SliderRefs, v: number) => {
       refs.input.current.value = String(Math.round(v * 100));

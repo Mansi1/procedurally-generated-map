@@ -15,10 +15,10 @@ offenen Punkte des Projekts stehen in docs/OFFEN.md.
 | Beeren in dichten Gruppen, halb so viele | erledigt, Branch |
 | Flachland weniger wellig | erledigt, Branch |
 | Feste Puffer für Bäume, Felsen, Sträucher | erledigt, Branch |
+| Bäume als Bild (Billboards), im Menü unter Grafik | erledigt, Branch |
 | Geringere Pixeldichte beim Herauszoomen | verworfen (zu pixelig) |
 | Baumenü im Stil der Minimap | verworfen |
 | Weit draußen Wald nur vom Boden malen | offen - der nächste Schritt |
-| Billboards für mittlere Entfernung | offen |
 | Herauszoomen begrenzen, Nebel | offen |
 | Waldrand zwischen Shader und Logik angleichen | offen |
 | Beeren-Gruppen natürlicher verteilen | offen |
@@ -160,6 +160,38 @@ Renderer für jede Instanz ihr Modell unter rund 60 per `find()`.
   Software. Messen: `npm run dev` im Worktree, ganz herauszoomen, FPS im
   Entwickler-Panel oben links mit `main` vergleichen.
 
+## 7. Bäume als Bild (Billboards) - Branch
+
+**Problem:** Auch mit festen Puffern zeichnet die Grafikkarte weit draußen
+jeden Baum als 3D-Modell mit Dutzenden Dreiecken - bei Zehntausenden
+Bäumen die größte Last.
+
+**Lösung:** Ein Billboard ist ein flaches Bild aus zwei Dreiecken, das zur
+Kamera zeigt.
+- Die Ansicht des Spiels ist parallel (ohne Perspektive) - ein Baum sieht
+  überall auf dem Bildschirm gleich aus. Darum genügt je Baumart ein Bild,
+  exakt so, wie das Modell gezeichnet würde.
+- `components/billboards.ts` rendert jede der 10 Baumarten in 4 Drehungen
+  einmal auf der Bühne der Symbole (`modelIcons.ts`) und packt die Bilder in
+  eine Textur. Nach einem Drehen der Karte (Kompass) wird neu gerendert, und
+  einmal, sobald das Blattfoto geladen ist (vorher wären Birken nur grün).
+- Im Shader (`uBillboard` in `gl/entityRenderer.ts`) steht das Rechteck am
+  Fuß des Baums, nach seiner Größe skaliert; die Tiefe wächst mit der Höhe
+  wie beim Modell, Hügel verdecken es richtig. Die Drehung des Baums wählt
+  das nächste der 4 Bilder.
+- Die Bilder sind vormultipliziert abgelegt und der Umriss kommt aus einer
+  feineren Mipmap-Stufe - sonst verschwänden dünne Stämme und die Ränder
+  würden dunkel.
+- Als Bild gezeichnet werden nur die Bäume der festen Puffer; gefällte,
+  angefangene und ausgewählte Bäume bleiben Modelle.
+- **Einstellbar** im Menü unter **Grafik → Bäume als Bild**:
+  *Nie*, *Weit* (Vorgabe: unter 16 CSS-Pixeln je Tile, also ab zwei
+  Zoomstufen unter der Standardansicht - dort sind Bäume nur wenige Pixel
+  groß), *Mittel* (sobald man herauszoomt), *Immer* (auch in der
+  Standardansicht).
+- **Geprüft:** Nebeneinander (Modell und Bild, gleiche Ansicht) kaum zu
+  unterscheiden; Drehen der Karte ohne Fehler; Tests, Build, Rauchtest.
+
 ## Verworfen
 
 ### Geringere Pixeldichte beim Herauszoomen (`2b9473a`, zurück in `da58935`)
@@ -204,24 +236,15 @@ draußen ganz weg. So machen es viele Strategiespiele.
 Bäume am Waldrand verschwinden.
 **Aufwand:** klein.
 
-## Herauszoomen: Billboards für mittlere Entfernung
+## Herauszoomen: Billboards weiter ausbauen
 
-Zwischen nah (3D-Modell) und fern (gemalter Boden) wird jeder Baum als
-flaches Bild aus zwei Dreiecken gezeichnet, das zur Kamera zeigt.
-
-**Umsetzung:**
-- Je Baumart ein Bild (oder wenige, aus verschiedenen Richtungen)
-  vorrendern - `tools/ui/icons.mjs` rendert Modelle schon zu Bildern.
-- Die Bilder in einen Texturatlas; eine eigene Zeichenroutine im
-  `EntityRenderer`, die je Baum ein Rechteck mit der passenden Kachel zeigt.
-- Zoomgrenzen: z. B. 3D ab 16 px je Tile, Billboard von 8 bis 16 px,
-  darunter der gemalte Wald.
-
-**Vorteil:** Ein Baum kostet zwei Dreiecke statt Dutzender; weiter draußen
-bleiben einzelne Bäume sichtbar.
-**Nachteil:** Mehr Code und ein Atlas, der bei neuen Baumarten neu gerendert
-werden muss; Licht und Schatten passen nur ungefähr.
-**Aufwand:** mittel.
+Die Billboards (oben, Punkt 7) gelten bisher nur für Bäume. Möglich wären:
+- **Sträucher und Felsen** ebenso als Bild - es sind aber wenige, der
+  Gewinn ist klein.
+- **Mehr als 4 Drehungen** je Baumart, falls man aus der Nähe (*Immer*)
+  sieht, dass sich Bäume wiederholen.
+- **Wind:** Die 3D-Bäume wiegen sich, die Bilder stehen still - weit draußen
+  nicht zu sehen, bei *Immer* vielleicht schon.
 
 ## Herauszoomen: begrenzen oder Nebel am Rand
 

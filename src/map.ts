@@ -1,6 +1,6 @@
 import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
-import { EntityRenderer, type EntityInstance, type StaticBatch } from './gl/entityRenderer';
+import { EntityRenderer, type BillboardAtlas, type EntityInstance, type StaticBatch } from './gl/entityRenderer';
 import { TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
@@ -389,6 +389,16 @@ export class MapRenderer {
 
   deleteBatch(batch: StaticBatch) {
     this.entities.deleteBatch(batch);
+  }
+
+  /** Bilder der Bäume für weit draußen (components/billboards.ts). */
+  setBillboards(source: () => BillboardAtlas | null) {
+    this.entities.setBillboards(source);
+  }
+
+  /** Unter so vielen CSS-Pixeln je Tile zeichnen Bäume als Bild (0: nie) - Einstellung "Bäume als Bild". */
+  set billboardBelow(cssPixelsPerTile: number) {
+    this.entities.billboardBelow = cssPixelsPerTile;
   }
 
   /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */

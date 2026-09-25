@@ -22,11 +22,16 @@ export interface Settings {
   paused: boolean;
   /** Spielerfarbe - Schlüssel in PLAYER_COLORS. */
   playerColor: string;
+  /**
+   * Bäume als Bild statt als Modell unter so vielen CSS-Pixeln je Tile (0:
+   * nie) - weit draußen spart das die meiste Arbeit (components/billboards.ts).
+   */
+  billboards: number;
 }
 
 const DEFAULTS: Settings = {
   volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', paused: false,
-  playerColor: 'green',
+  playerColor: 'green', billboards: 16,
 };
 const STORAGE_KEY = 'pgm.settings';
 

@@ -38,6 +38,7 @@ import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay'
 import { mountGame } from './components/Hud';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
+import { treeBillboards } from './components/billboards';
 import { loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound } from './audio';
@@ -263,6 +264,7 @@ function faceDirection(dir: string) {
 window.addEventListener('beforeunload', () => world.save());
 
 const renderer = new MapRenderer(canvas, seed, camera.tileSize, camera.pixelRatio);
+renderer.setBillboards(treeBillboards);
 const minimap = new MiniMap(minimapCanvas, seed, camera.pixelRatio);
 
 camera.moveTo(startX, startY);
@@ -496,6 +498,7 @@ function loop(now: number) {
   if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
   collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
+  renderer.billboardBelow = settings.billboards;
   renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay, staticBatches);
 
   const seen = minimapView();

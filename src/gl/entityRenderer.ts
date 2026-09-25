@@ -292,6 +292,8 @@ const FOLIAGE_ROLE = 12;
 const LEAF_TEXTURE_UNIT = 3;
 /** Knochen-Matrizen der Clips aus Blender (uClipTex, siehe clips.ts). */
 const CLIP_TEXTURE_UNIT = 5;
+/** Bilder der Bäume für weit draußen (uBillboardTex, siehe setBillboards). */
+const BILLBOARD_TEXTURE_UNIT = 6;
 
 /**
  * Wie viele Clips jede Bibliothek geladen hat - auch als
@@ -633,6 +635,13 @@ uniform float uSkirt;        // 1: Gebäude reichen in den Boden (Spiel), 0: ohn
 uniform vec3  uCanopy;       // Bäume, Sträucher: Mitte der Krone (Modell-Einheiten)
 uniform vec3  uCanopyHalf;   // ... und ihre halbe Ausdehnung
 flat out float vRoof;   // Gebäude: 1 = Dachfläche. Figuren: Körperteil.
+// Baum als Bild (Billboard, siehe setBillboards): je Viertel-Drehung der
+// Ausschnitt im Bild (u0, v0, u1, v1) und die Lage des Rechtecks zum Fuß
+// (x0, y0 = oben links, Breite, Höhe) in Tiles je Größe 1, auf dem Bildschirm.
+uniform int  uBillboard;
+uniform vec4 uBillboardRect[4];
+uniform vec4 uBillboardBox[4];
+out vec2 vBillboardUV;
 
 // Körperteile der Figur - aCorner.w im Menschen-Mesh.
 const int P_TORSO = 0;
@@ -777,6 +786,27 @@ void main() {
   vec3 world;
   vBent = vec3(0.0, 0.0, 1.0);
   vFoliage = -1.0;
+  vBillboardUV = vec2(0.0);
+
+  if (uBillboard == 1) {
+    // Baum weit draußen: ein Rechteck zur Kamera mit dem vorab aus dem Modell
+    // gerenderten Bild. Die Ansicht ist parallel, das Bild ist also überall
+    // dasselbe - nur verschoben und nach der Größe skaliert. Die Tiefe wächst
+    // mit der Höhe über dem Fuß wie beim Modell.
+    int h = int(mod(floor(aMotion.x / 1.5707963 + 0.5), 4.0));
+    vec4 box = uBillboardBox[h];
+    vec2 off = (box.xy + aCorner.xy * box.zw) * aParams.z * uPixelsPerTile;
+    float base = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(center);
+    vec4 foot = project(center, base);
+    vec4 clip = project(center, base + max(0.0, -off.y) / (uPixelsPerTile * uZScreen));
+    clip.xy = foot.xy + vec2(off.x, -off.y) * 2.0 / uResolution;
+    gl_Position = clip;
+    vec4 r = uBillboardRect[h];
+    vBillboardUV = mix(r.xy, r.zw, aCorner.xy);
+    vParams = aParams;
+    vColor = aColor;
+    return;
+  }
 
   if (shape == 10) {
     // Lebensbalken: ein Rechteck fester Pixelgroesse ueber dem Kopf der
@@ -1520,6 +1550,9 @@ uniform int uSilhouette;
 flat in vec3 vParams;
 flat in float vRoof;
 out vec4 fragColor;
+uniform highp int uBillboard;  // wie im Vertex-Shader, sonst lässt sich das Programm nicht linken
+uniform sampler2D uBillboardTex;
+in vec2 vBillboardUV;
 
 // Zur Kamera, in Weltkoordinaten - hängt von der Blickrichtung ab.
 uniform vec3 uToCamera;
@@ -1527,6 +1560,14 @@ uniform vec3 uToCamera;
 const vec3 SUN = vec3(-0.45, 0.35, 0.82);
 
 void main() {
+  if (uBillboard == 1) {
+    // Der Umriss aus einer feineren Stufe - in den groben mitteln sich dünne
+    // Stämme weg. Die Farbe ist vormultipliziert.
+    if (texture(uBillboardTex, vBillboardUV, -1.5).a < 0.5) discard;
+    vec4 t = texture(uBillboardTex, vBillboardUV);
+    fragColor = vec4(t.rgb / max(t.a, 0.004), 1.0);
+    return;
+  }
   int shape = int(vParams.x + 0.5);
   float alpha = vParams.y;
 
@@ -2400,6 +2441,19 @@ export interface StaticBatch {
   ranges: Map<number, { first: number; count: number }>;
 }
 
+/**
+ * Bilder der Bäume für weit draußen: je Form und Viertel-Drehung ein
+ * Ausschnitt im Bild und die Lage des Rechtecks zum Fuß (siehe
+ * uBillboardRect/uBillboardBox im Shader). Gilt für eine Blickrichtung.
+ */
+export interface BillboardAtlas {
+  /** RGBA, vormultipliziert - so mitteln die kleineren Mipmap-Stufen richtig. */
+  width: number;
+  height: number;
+  pixels: Uint8Array;
+  cells: Map<number, { rect: [number, number, number, number]; box: [number, number, number, number] }[]>;
+}
+
 /** Eine Instanz in den Puffer ab Float `o` - STRIDE Floats. */
 function packInstance(d: Float32Array, o: number, e: EntityInstance) {
   d[o] = e.x;
@@ -2445,6 +2499,20 @@ export class EntityRenderer {
   private leafTexture: WebGLTexture;
   /** Knochen-Matrizen der Clips, für jede Figur gebacken (uClipTex, siehe clips.ts). */
   private clipTexture: WebGLTexture;
+  /** true, sobald das Blattfoto geladen ist - vorher sind Birken nur grün. */
+  leafReady = false;
+  /**
+   * Unter so vielen CSS-Pixeln je Tile zeichnen die Bäume der festen Puffer
+   * als Bild statt als Modell (0: nie). Gefällte, angefangene und
+   * ausgewählte Bäume bleiben Modelle.
+   */
+  billboardBelow = 0;
+  /** Liefert die Bilder der Bäume für die jetzige Blickrichtung (components/billboards.ts). */
+  private billboardSource: (() => BillboardAtlas | null) | null = null;
+  private billboardAtlas: BillboardAtlas | null = null;
+  private billboardTexture: WebGLTexture | null = null;
+  /** Ein Rechteck aus zwei Dreiecken - die Fläche eines Billboards. */
+  private quad: Mesh;
   /** Clip-Uniforms je Modell (Form): erste Zeile jedes Clips in clipTexture, Länge, Pose ... */
   private clipUniforms = new Map<number, ClipUniforms>();
   private uniforms = new Map<string, WebGLUniformLocation | null>();
@@ -2471,6 +2539,7 @@ export class EntityRenderer {
     this.instanceBuffer = gl.createBuffer()!;
     this.building = this.createMesh(buildingMesh());
     this.flat = this.createMesh(flatMesh());
+    this.quad = this.createMesh(new Float32Array([0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0]));
     this.models = MODELS.map((m) => ({
       ...m,
       mesh: this.createMesh(m.model.vertices, 8),
@@ -2482,6 +2551,7 @@ export class EntityRenderer {
     gl.useProgram(this.program);
     uploadTerrainParams(gl, (name) => this.location(name));
     gl.uniform1i(this.location('uLeafTex'), LEAF_TEXTURE_UNIT);
+    gl.uniform1i(this.location('uBillboardTex'), BILLBOARD_TEXTURE_UNIT);
 
     // Blatt-Textur: bis das Bild geladen ist, ein einzelnes grünes Pixel.
     this.leafTexture = gl.createTexture()!;
@@ -2491,6 +2561,7 @@ export class EntityRenderer {
     gl.activeTexture(gl.TEXTURE0);
     const image = new Image();
     image.onload = () => {
+      this.leafReady = true;
       gl.activeTexture(gl.TEXTURE0 + LEAF_TEXTURE_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, this.leafTexture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
@@ -2646,6 +2717,31 @@ export class EntityRenderer {
     this.gl.deleteBuffer(batch.buffer);
   }
 
+  /** Woher die Bilder der Bäume kommen - wird je Bild gefragt, liefert aber meist dasselbe. */
+  setBillboards(source: () => BillboardAtlas | null) {
+    this.billboardSource = source;
+  }
+
+  /** Bilder für die jetzige Blickrichtung hochladen, wenn sie neu sind. false, wenn es keine gibt. */
+  private prepareBillboards(): boolean {
+    const atlas = this.billboardSource?.() ?? null;
+    if (!atlas) return false;
+    if (atlas === this.billboardAtlas) return true;
+    const gl = this.gl;
+    this.billboardAtlas = atlas;
+    this.billboardTexture ??= gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE0 + BILLBOARD_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, this.billboardTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, atlas.width, atlas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlas.pixels);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+    return true;
+  }
+
   /**
    * Instanzen ab `first` in `buffer` (sonst dem Instanz-Puffer dieses Bildes).
    * Die Attribut-Zeiger zeigen auf diesen Abschnitt.
@@ -2758,6 +2854,12 @@ export class EntityRenderer {
     const cssPixelsPerTile = camera.pixelsPerTile / pixelRatio;
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     const fieldLod = FIELD_LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
+    const billboards = batches.length > 0 && cssPixelsPerTile < this.billboardBelow && this.prepareBillboards();
+    if (billboards) {
+      gl.activeTexture(gl.TEXTURE0 + BILLBOARD_TEXTURE_UNIT);
+      gl.bindTexture(gl.TEXTURE_2D, this.billboardTexture);
+      gl.activeTexture(gl.TEXTURE0);
+    }
     let first = flats.length + solids.length;
     const drawModel = (m: (typeof this.models)[number], offset: number) => {
       // Ein Anhang (Werkzeug) zeichnet sich mit Gelenken, Clips und Hand
@@ -2790,10 +2892,17 @@ export class EntityRenderer {
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
       const mesh = level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh;
       this.draw(mesh, offset, m.list.length);
+      const cells = billboards ? this.billboardAtlas!.cells.get(m.shape) : undefined;
+      if (cells) {
+        gl.uniform4fv(this.location('uBillboardRect[0]'), cells.flatMap((c) => c.rect));
+        gl.uniform4fv(this.location('uBillboardBox[0]'), cells.flatMap((c) => c.box));
+        gl.uniform1i(this.location('uBillboard'), 1);
+      }
       for (const batch of batches) {
         const range = batch.ranges.get(m.shape);
-        if (range) this.draw(mesh, range.first, range.count, batch.buffer);
+        if (range) this.draw(cells ? this.quad : mesh, range.first, range.count, batch.buffer);
       }
+      if (cells) gl.uniform1i(this.location('uBillboard'), 0);
     };
     const batched = new Set<number>();
     for (const batch of batches) for (const shape of batch.ranges.keys()) batched.add(shape);
