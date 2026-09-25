@@ -1,6 +1,6 @@
 // Compass.ts
 // Der Kompass auf dem Ring um die Minimap: vier Himmelsrichtungen, die an die
-// Spitze der Raute wandern, in die sie gerade zeigen. Ein Klick auf eine
+// Stelle des Rings wandern, in die sie gerade zeigen. Ein Klick auf eine
 // Richtung dreht die Ansicht so, dass sie oben liegt.
 
 import { setViewRotation, worldToGround } from '../gl/iso';

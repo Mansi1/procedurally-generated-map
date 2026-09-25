@@ -234,8 +234,8 @@ world.onEvent = worldSounds(sound, camera, (x, y) => ground.heightAt(x, y));
 
 // --- Kompass ---------------------------------------------------------------
 
-/** Kompass auf dem Ring der Minimap (game/Compass.ts) - Radius wie in Hud.tsx. */
-const compass = new Compass(document.getElementById('compass')!, 146, (dir) => faceDirection(dir));
+/** Kompass auf dem Ring der Minimap (game/Compass.ts) - etwas innerhalb des Rings (146 px, Hud.tsx), damit W und O nicht über den Rahmen ragen. */
+const compass = new Compass(document.getElementById('compass')!, 143, (dir) => faceDirection(dir));
 // Die Pfeile unter der Minimap drehen um eine Vierteldrehung: was rechts bzw. links liegt, kommt nach oben.
 document.getElementById('turn-left')!.addEventListener('click', () => faceDirection(directionAt(1)));
 document.getElementById('turn-right')!.addEventListener('click', () => faceDirection(directionAt(-1)));
@@ -400,7 +400,7 @@ function minimapView(): IsoView {
 
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  // Nur die Raute ist Karte - die Ecken des Canvas gehören zum Rahmen.
+  // Nur die Scheibe ist Karte - die Ecken des Canvas gehören zum Rahmen.
   if (!minimap.inside(e.clientX - rect.left, e.clientY - rect.top)) return;
   const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView());
   // Die angeklickte Stelle mit ihrer Höhe in die Bildmitte - nicht den Punkt auf Meereshöhe.

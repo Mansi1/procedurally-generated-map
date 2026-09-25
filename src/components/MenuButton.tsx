@@ -1,5 +1,5 @@
 // MenuButton.tsx
-// Zahnrad am Ende der Rohstoffleiste - öffnet das Menü (wie F10).
+// Zahnrad oben rechts am Rahmen der Minimap - öffnet das Menü (wie F10).
 
 import './MenuButton.css';
 

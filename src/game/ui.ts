@@ -5,6 +5,7 @@
 
 import type { Sound } from '../audio';
 import { BuildMenu } from '../components/BuildMenu';
+import { mountMinimapMenu } from '../components/Hud';
 import { ResourceBar } from '../components/ResourceBar';
 import { renderSelection } from '../components/SelectionPanel';
 import { GATHER_CURSOR, RALLY_CURSOR } from '../cursors';
@@ -66,7 +67,8 @@ export class GameUi {
       crop: (crop) => this.placeField(crop),
       back: () => this.closeFarms(),
     });
-    this.resourceBar = new ResourceBar(byId('stock'), RESOURCE_BAR_ORDER, playerColor, () => hooks.save(), () => hooks.toggleMenu());
+    this.resourceBar = new ResourceBar(byId('stock'), RESOURCE_BAR_ORDER, playerColor);
+    mountMinimapMenu(() => hooks.save(), () => hooks.toggleMenu());
 
     // Die Knöpfe entstehen bei jeder Aktualisierung neu - darum Delegation, und
     // mousedown statt click: läuft eine Ausbildung, ersetzt die Anzeige das

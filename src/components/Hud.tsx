@@ -9,7 +9,10 @@
 import { render } from 'defuss';
 import './Hud.css';
 import { TILE_TYPE_COLOR, TILE_TYPE_LABEL } from '../map';
+import woodBar from '../icons/wood-bar.png';
 import type { TileType } from '../noise';
+import { MenuButton } from './MenuButton';
+import { SaveButton } from './SaveButton';
 import { ShortcutLine } from './Shortcuts';
 
 /** Tastenhilfe oben rechts - dieselben Kürzel wie im Menü, knapp; × blendet sie aus (main.ts). */
@@ -75,7 +78,7 @@ function SoundButton() {
 
 /**
  * Kompass auf dem Ring um die Minimap: die vier Himmelsrichtungen stehen an
- * den Spitzen der Raute, in die sie zeigen - main.ts stellt sie je nach
+ * den Stellen des Rings, in die sie zeigen - main.ts stellt sie je nach
  * Blickrichtung (game/Compass.ts). Ein Klick dreht die Richtung nach oben.
  */
 function Compass() {
@@ -101,36 +104,48 @@ function TurnIcon({ flip }: { flip?: boolean }) {
 }
 
 /**
- * Minimap wie in AoE4: die Raute der Karte in goldenem Rand, dahinter ein Ring
- * mit Zacken auf dunklem Stein. Unten links der Ton, unten rechts das Drehen
- * der Ansicht um eine Vierteldrehung.
+ * Minimap wie in AoE4, aber aus Holz wie die Rohstoffleiste: die Karte füllt
+ * eine runde, eingelassene Scheibe mit Holzreif und Nägeln, alles auf Planken. In den Ecken runde Holzknöpfe: oben Speichern und
+ * Menü (mountMinimapMenu), unten links der Ton, unten rechts das Drehen.
  */
 function Minimap() {
-  // Maße wie in Hud.css: Rahmen 312 px, Raute 280 px, Mitte bei 156.
+  // Maße wie in Hud.css: Rahmen 312 px, Karte 284 px, Mitte bei 156.
   const c = 156;
   const ring = 146;
-  const tip = 140;
-  // Zacken zwischen den Spitzen der Raute, wie eine Windrose.
-  const spikes = [45, 135, 225, 315].map((deg) => {
+  // Nägel im Ring, zwischen den Himmelsrichtungen - wie auf den Planken oben.
+  const nails = [22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((deg) => {
     const a = (deg * Math.PI) / 180;
-    const p = (r: number, off: number) => `${c + Math.cos(a + off) * r},${c + Math.sin(a + off) * r}`;
-    return `${p(ring + 14, 0)} ${p(ring - 2, 0.06)} ${p(ring - 2, -0.06)}`;
+    return { x: c + Math.cos(a) * ring, y: c + Math.sin(a) * ring };
   });
   return (
-    <div id="minimap-frame">
+    <div id="minimap-frame" style={`background-image:url(${woodBar})`}>
       <svg class="minimap-ring" viewBox="0 0 312 312" width="312" height="312">
-        {spikes.map((points) => <polygon points={points} />)}
-        <circle cx={c} cy={c} r={ring} class="ring-outer" />
-        <circle cx={c} cy={c} r={ring - 5} class="ring-inner" />
+        <defs>
+          <radialGradient id="minimap-disc" cx="50%" cy="45%" r="55%">
+            <stop offset="0" stop-color="#3e2614" />
+            <stop offset="1" stop-color="#1c1009" />
+          </radialGradient>
+          <radialGradient id="minimap-nail" cx="40%" cy="35%" r="65%">
+            <stop offset="0" stop-color="#b9b2a4" />
+            <stop offset="0.6" stop-color="#5d574c" />
+            <stop offset="1" stop-color="#2a2620" />
+          </radialGradient>
+        </defs>
+        {/* Eingelassene Scheibe: dunkles Holz, außen ein Reif aus Kantholz. */}
+        <circle cx={c} cy={c} r={ring + 3} class="disc" />
+        <circle cx={c} cy={c} r={ring} class="ring-wood" />
+        <circle cx={c} cy={c} r={ring - 4.5} class="ring-light" />
+        <circle cx={c} cy={c} r={ring + 5} class="ring-light" />
+        {nails.map((n) => <circle cx={n.x} cy={n.y} r="3" class="nail" />)}
       </svg>
-      {/* Karte und Rand drehen sich beim Drehen der Ansicht gemeinsam (game/TurnAnimation.ts). */}
+      {/* Die Karte dreht sich beim Drehen der Ansicht (game/TurnAnimation.ts). */}
       <div class="minimap-spin">
         <canvas id="minimap" />
-        <svg class="minimap-edge" viewBox="0 0 312 312" width="312" height="312">
-          <polygon points={`${c},${c - tip} ${c + tip},${c} ${c},${c + tip} ${c - tip},${c}`} />
-        </svg>
       </div>
+      {/* Schatten des Reifs auf der Karte - sie liegt eingelassen darunter. */}
+      <div class="minimap-shade" />
       <Compass />
+      <div id="minimap-menu" />
       <SoundButton />
       <div class="minimap-turn">
         <button type="button" id="turn-left" title="Ansicht gegen den Uhrzeigersinn drehen"><TurnIcon /></button>
@@ -160,6 +175,17 @@ function Hud() {
       <Minimap />
       <div id="paused" hidden>Pause</div>
     </>
+  );
+}
+
+/** Speichern und Menü in die oberen Ecken des Minimap-Rahmens - game/ui.ts kennt die Aktionen. */
+export function mountMinimapMenu(onSave: () => void, onMenu: () => void) {
+  render(
+    <>
+      <SaveButton onClick={onSave} />
+      <MenuButton onClick={onMenu} />
+    </>,
+    document.getElementById('minimap-menu')!,
   );
 }
 

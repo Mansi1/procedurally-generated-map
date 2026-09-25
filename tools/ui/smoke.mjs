@@ -27,7 +27,7 @@ const wait = (ms) => page.waitForTimeout(ms);
 const stock = async (kind) => Number(await page.$eval(`#stock [data-key=${kind}] .rb-amount`, (e) => e.textContent));
 /** Speichern-Knopf drücken und den Spielstand der Welt lesen. */
 async function saved(seed = SEED) {
-  await page.click('#stock .rb-save');
+  await page.click('#minimap-frame .rb-save');
   await wait(100);
   return JSON.parse(await page.evaluate((key) => localStorage.getItem(key), `pgm.world.${seed}`));
 }

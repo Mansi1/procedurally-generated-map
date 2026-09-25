@@ -369,15 +369,14 @@ export class MapRenderer {
 
 /**
  * Übersichtskarte wie in AoE4: ein Quadrat der Welt rund um die Stelle, die
- * man gerade sieht, von oben und über Eck - eine Raute, deren obere Spitze in
- * Blickrichtung zeigt. Das Canvas ist quadratisch, die Raute schneidet
- * Hud.css aus; der Ausschnitt der Hauptansicht ist darauf ein Rechteck.
+ * man gerade sieht, von oben, oben liegt die Blickrichtung. Das Canvas ist
+ * quadratisch, Hud.css schneidet daraus die runde Scheibe im Holzring; der Ausschnitt der Hauptansicht ist darauf ein Rechteck.
  */
 export class MiniMap {
   private terrain: TerrainRenderer;
   private entities: EntityRenderer;
-  /** Kantenlänge des Canvas in CSS-Pixeln - die Raute reicht von Rand zu Rand (Hud.css). */
-  private cssSize = 280;
+  /** Kantenlänge des Canvas in CSS-Pixeln - der Kreis reicht von Rand zu Rand (Hud.css). */
+  private cssSize = 284;
 
   /**
    * Wie viel breiter als die Hauptansicht die Minimap zeigt - bei jeder
@@ -388,7 +387,7 @@ export class MiniMap {
   /** Grenzen (u-Einheiten): ganz nah noch die Nachbarschaft, ganz weit nicht der halbe Kontinent. */
   private static readonly MIN_COVERAGE = 160;
   private static readonly MAX_COVERAGE = 6000;
-  /** Senkrecht von oben: die Raute ist dann so hoch wie breit. */
+  /** Senkrecht von oben: ein Quadrat der Welt ist dann auch im Bild quadratisch. */
   private static readonly TOP_DOWN = Math.PI / 2;
 
   constructor(
@@ -480,10 +479,10 @@ export class MiniMap {
     return this.topDown(() => visibleWorldRect(this.miniView(view)));
   }
 
-  /** Liegt die Stelle (CSS-Pixel im Canvas) auf der Raute? Die Ecken daneben sind Rahmen. */
+  /** Liegt die Stelle (CSS-Pixel im Canvas) auf der Scheibe? Die Ecken daneben sind Rahmen. */
   inside(x: number, y: number): boolean {
     const half = this.cssSize / 2;
-    return Math.abs(x - half) + Math.abs(y - half) <= half;
+    return Math.hypot(x - half, y - half) <= half;
   }
 
   /** Rechnet einen Klick (in CSS-Pixeln) auf die Minimap in Welt-Tiles um. */
