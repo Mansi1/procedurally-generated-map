@@ -104,12 +104,12 @@ function save(name: string, text: string) {
   URL.revokeObjectURL(a.href);
 }
 
-/** OBJ und MTL; die Blattbilder liegen in tools/lsystem/leaves/img (MTL verweist auf leaves/). */
+/** OBJ und MTL; die Bilder liegen in tools/lsystem/{leaves,bark}/img (MTL verweist auf textures/). */
 function download() {
   if (!tree) return;
   const file = `lsys_${presetSelect.value}`;
   save(`${file}.obj`, `# L-System "${base.label}" (tools/lsystem)\nmtllib ${file}.mtl\n${tree.model.out.join('\n')}\n`);
-  save(`${file}.mtl`, `# ${file}.mtl${mtlFile(tree, leafMode(), 'leaves')}`);
+  save(`${file}.mtl`, `# ${file}.mtl${mtlFile(tree, leafMode(), 'textures')}`);
 }
 
 // Ziehen dreht, Mausrad zoomt.

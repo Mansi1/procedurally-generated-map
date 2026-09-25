@@ -19,6 +19,7 @@
 // Die Astdicke folgt dem Pipe-Modell (da Vinci): der Querschnitt eines Astes
 // trägt alle Spitzen darüber - r = tip * spitzen^(1/pipe).
 import { model, type Model } from '../models/primitives.mjs';
+import { barkFor, barkMeters, type BarkName } from './bark/data.ts';
 import { hasCard, leafMaterial, placeLeaf, type LeafMaterialInfo, type LeafMode } from './foliage.ts';
 import type { LeafName } from './leaves/data.ts';
 import type { Material } from './materials.ts';
@@ -98,6 +99,8 @@ export interface TreeSpec {
   readonly organs?: Readonly<Record<string, Organ>>;
   /** Material der Äste bzw. Halme. */
   readonly stemMaterial: Material;
+  /** Rinden-Textur (bark/), sonst die Standard-Textur des Materials (MATERIAL_BARK). */
+  readonly barkTexture?: BarkName;
   /** Radius einer Astspitze in Metern. */
   readonly tip: number;
   /** Exponent des Pipe-Modells: 2 = Fläche bleibt gleich, größer = schlankerer Stamm. */
@@ -132,6 +135,8 @@ export interface Tree {
   readonly model: Model;
   /** Materialien der Blätter (Name im Modell -> Foto und Farbe), für Vorschau und MTL. */
   readonly leafMaterials: ReadonlyMap<string, LeafMaterialInfo>;
+  /** Rinde: Stamm-Material und seine Textur; null, wenn der Stamm einfarbig bleibt. */
+  readonly bark: { readonly material: Material; readonly texture: BarkName } | null;
   readonly symbols: number;
   /** Ausgeführte Schritte - weniger als verlangt, wenn die Kette zu lang wurde. */
   readonly iterations: number;
@@ -321,6 +326,38 @@ function pipeRadii(segments: readonly Segment[], spec: TreeSpec): [number, numbe
 /** Eckenzahl eines Astes: dicke rund, dünne dreieckig. */
 const sides = (r: number) => (r > 0.08 ? 7 : r > 0.03 ? 5 : 3);
 
+/**
+ * Ast als Prisma mit Texturkoordinaten: der Mantel abgewickelt, u läuft um den
+ * Stamm herum (Umfang in Metern), v den Ast entlang (Weg vom Boden), beides in
+ * Kacheln der Rinden-Textur (`tile` Meter je Kachel). `uOff` versetzt die
+ * Abwicklung, damit nicht jeder Ast dieselbe Stelle der Textur zeigt.
+ */
+function barkBeam(m: Model, name: string, mtl: string, a: Vec3, b: Vec3, r0: number, r1: number, n: number,
+  dist: number, uOff: number, tile: number, caps: { readonly bottom: boolean; readonly top: boolean }) {
+  const d = add(b, a, -1);
+  const len = length(d);
+  if (len < 1e-6) return;
+  const h: Vec3 = [d[0] / len, d[1] / len, d[2] / len];
+  const up: Vec3 = Math.abs(h[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const s1 = normalize(cross(h, up));
+  const s2 = cross(s1, h);
+  const ring = (c: Vec3, r: number) => Array.from({ length: n + 1 }, (_, k): Vec3 => {
+    const t = Math.PI / n + ((k % n) * 2 * Math.PI) / n; // k = n schließt den Mantel (gleicher Punkt, volles u)
+    return add(add(c, s1, Math.cos(t) * r), s2, Math.sin(t) * r);
+  });
+  const vertices = [...ring(a, r0), ...ring(b, r1)];
+  const u = (k: number) => uOff + (k / n) * ((Math.PI * (r0 + r1)) / tile); // mittlerer Umfang
+  const uvs: [number, number][] = [
+    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [u(k), dist / tile]),
+    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [u(k), (dist + len) / tile]),
+  ];
+  const faces: number[][] = Array.from({ length: n }, (_, k) => [k, k + 1, n + 2 + k, n + 1 + k]);
+  // Deckel nur, wo man sie sehen kann: am Boden und an Astspitzen ohne Kinder.
+  if (caps.bottom) faces.push(Array.from({ length: n }, (_, k) => n - 1 - k));
+  if (caps.top) faces.push(Array.from({ length: n }, (_, k) => n + 1 + k));
+  m.mesh(name, mtl, vertices, faces, uvs);
+}
+
 /** Wie das Laub gebaut wird. */
 export interface GrowOptions {
   /** Blätter als Form nach dem Umriss (Standard) oder als Foto-Textur. */
@@ -342,10 +379,35 @@ interface Drawing {
 export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number, { leaves = 'shape', cards = true }: GrowOptions = {}) {
   const m = model();
   const drawing: Drawing = { m, mode: leaves, cards, rnd, leafMaterials: new Map() };
-  skeleton.segments.forEach((s, i) => {
-    const [r0, r1] = skeleton.radii[i];
-    m.beam(r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0 * 2, { w1: r1 * 2, n: sides(r0) });
-  });
+  const texture = barkFor(spec.stemMaterial, spec.barkTexture);
+  const bark = texture ? { material: spec.stemMaterial, texture } : null;
+  const { segments } = skeleton;
+  if (!bark) {
+    segments.forEach((s, i) => {
+      const [r0, r1] = skeleton.radii[i];
+      m.beam(r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0 * 2, { w1: r1 * 2, n: sides(r0) });
+    });
+  } else {
+    // Weg vom Boden und u-Versatz je Ast: Kinder setzen die Abwicklung des
+    // Elternastes fort, damit die Textur den Stamm hinaufläuft statt je
+    // Stück neu anzusetzen.
+    const tile = barkMeters(bark.texture);
+    const len = segments.map((s) => length(add(s.b, s.a, -1)));
+    const dist = new Array<number>(segments.length).fill(0);
+    const uOff = new Array<number>(segments.length).fill(0);
+    const hasChild = new Array<boolean>(segments.length).fill(false);
+    segments.forEach((s, i) => {
+      if (s.parent < 0) { uOff[i] = (i * 0.618) % 1; return; }
+      dist[i] = dist[s.parent] + len[s.parent];
+      uOff[i] = uOff[s.parent];
+      hasChild[s.parent] = true;
+    });
+    segments.forEach((s, i) => {
+      const [r0, r1] = skeleton.radii[i];
+      barkBeam(m, r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0, r1, sides(r0),
+        dist[i], uOff[i], tile, { bottom: s.parent < 0, top: !hasChild[i] });
+    });
+  }
   const foliage: Organ = {
     shape: spec.leafShape, size: spec.leafSize, materials: spec.leafMaterials, leaf: spec.leaf, leafCount: spec.leafCount,
   };
@@ -358,7 +420,7 @@ export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number, { l
     const mtl = organ.materials[n % organ.materials.length];
     for (const part of rosette(leaf, organ, rnd)) drawOrgan(drawing, organ, mtl, part);
   }
-  return { model: m, leafMaterials: drawing.leafMaterials };
+  return { model: m, leafMaterials: drawing.leafMaterials, bark };
 }
 
 /** Die Teile eines Organs: bei count > 1 rund um die Blickrichtung verteilt und um spread geneigt. */

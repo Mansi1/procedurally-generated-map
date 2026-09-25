@@ -21,7 +21,7 @@ const kirsche = preset({
   rules: `# Offene Krone mit steilen Leitästen
 A 0.6 -> "[&FA]/(137.5)[&FA]/(137.5)[&FA]
 A 0.4 -> "F[&FA]/(137.5)[&(20)FA]`,
-  leaves: 'A', leafSize: 0.5, leafMaterials: ['Leaf', 'IvyDark'], stemMaterial: 'BarkRed', tip: 0.02,
+  leaves: 'A', leafSize: 0.5, leafMaterials: ['Leaf', 'IvyDark'], stemMaterial: 'BarkRed', barkTexture: 'kirsche', tip: 0.02,
   leaf: 'kirsche',
 });
 

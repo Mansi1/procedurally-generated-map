@@ -6,11 +6,15 @@ import type { Vec3 } from './lsystem.ts';
 
 type Rgb = readonly [number, number, number];
 
-/** Textur in Helligkeitsstufen (dunkel -> hell), siehe textureLevels. */
+/** Textur in Helligkeitsstufen (dunkel -> hell), siehe makeTexture. */
 export interface Texture {
-  readonly levels: readonly CanvasImageSource[];
+  readonly levels: readonly HTMLCanvasElement[];
   readonly width: number;
   readonly height: number;
+  /** Durchschnittsfarbe - für Flächen, die nicht als Bild gemalt werden können (Deckel). */
+  readonly average: Rgb;
+  /** Kachel-Muster je Stufe, erst beim Zeichnen angelegt (render). */
+  patterns?: readonly (CanvasPattern | null)[];
 }
 
 /** Wie ein Material aussieht: Farbe oder Textur. */
@@ -22,12 +26,17 @@ interface Triangle {
   readonly color: Rgb;
 }
 
-/** Texturiertes Viereck; Ecken in der Reihenfolge uv (0,0), (1,0), (1,1), (0,1). */
+/** Texturiertes Viereck mit den Texturkoordinaten seiner Ecken. */
 interface Sprite {
   readonly kind: 'sprite';
   readonly p: readonly [Vec3, Vec3, Vec3, Vec3];
+  readonly uv: readonly (readonly [number, number])[];
   readonly texture: Texture;
 }
+
+/** Ein Blatt-Foto füllt sein Viereck genau einmal: uv (0,0), (1,0), (1,1), (0,1). */
+const UNIT_RECT: readonly (readonly [number, number])[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+const isUnitRect = (uv: Sprite['uv']) => uv.every(([u, v], i) => u === UNIT_RECT[i][0] && v === UNIT_RECT[i][1]);
 
 export type Shape = Triangle | Sprite;
 
@@ -59,16 +68,27 @@ function normalize(v: Vec3): Vec3 {
  */
 export function shapesFromObj(lines: readonly string[], look: (material: string) => Look | undefined): Shape[] {
   const vertices: Vec3[] = [];
+  const uvs: [number, number][] = [];
   const shapes: Shape[] = [];
   let current: Look = { color: FALLBACK };
   for (const line of lines) {
     const [kind, ...rest] = line.split(' ');
     if (kind === 'v') vertices.push([Number(rest[0]), Number(rest[1]), Number(rest[2])]);
+    else if (kind === 'vt') uvs.push([Number(rest[0]), Number(rest[1])]);
     else if (kind === 'usemtl') current = look(rest[0]) ?? { color: FALLBACK };
     else if (kind === 'f') {
-      const face = rest.map((ref) => vertices[Number(ref.split('/')[0]) - 1]);
+      const refs = rest.map((ref) => ref.split('/'));
+      const face = refs.map((r) => vertices[Number(r[0]) - 1]);
       if ('texture' in current) {
-        if (face.length === 4) shapes.push({ kind: 'sprite', p: [face[0], face[1], face[2], face[3]], texture: current.texture });
+        const faceUvs = refs.map((r) => uvs[Number(r[1]) - 1]);
+        if (face.length === 4 && faceUvs.every(Boolean)) {
+          shapes.push({ kind: 'sprite', p: [face[0], face[1], face[2], face[3]], uv: faceUvs, texture: current.texture });
+          continue;
+        }
+        // Fläche ohne brauchbare Texturkoordinaten (Deckel): Durchschnittsfarbe.
+        for (let i = 1; i + 1 < face.length; i++) {
+          shapes.push({ kind: 'triangle', p: [face[0], face[i], face[i + 1]], color: current.texture.average });
+        }
         continue;
       }
       for (let i = 1; i + 1 < face.length; i++) {
@@ -138,12 +158,46 @@ export function render(canvas: HTMLCanvasElement, shapes: readonly Shape[], view
       ctx.stroke();
       continue;
     }
-    // Bildursprung (oben links) = uv (0,1) = Ecke 3; Bild-x läuft zu Ecke 2, Bild-y zu Ecke 0.
-    const { levels, width: w, height: h } = shape.texture;
-    const [p0, , p2, p3] = q;
-    ctx.setTransform((p2[0] - p3[0]) / w, (p2[1] - p3[1]) / w, (p0[0] - p3[0]) / h, (p0[1] - p3[1]) / h, p3[0], p3[1]);
-    ctx.drawImage(levels[Math.round(light * (levels.length - 1))], 0, 0);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const { texture } = shape;
+    const level = Math.round(light * (texture.levels.length - 1));
+    if (isUnitRect(shape.uv)) {
+      // Blatt: das Bild füllt das Viereck genau einmal - ein drawImage mit
+      // affiner Transformation. Bildursprung (oben links) = uv (0,1) = Ecke 3;
+      // Bild-x läuft zu Ecke 2, Bild-y zu Ecke 0.
+      const { width: w, height: h } = texture;
+      const [p0, , p2, p3] = q;
+      ctx.setTransform((p2[0] - p3[0]) / w, (p2[1] - p3[1]) / w, (p0[0] - p3[0]) / h, (p0[1] - p3[1]) / h, p3[0], p3[1]);
+      ctx.drawImage(texture.levels[level], 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      continue;
+    }
+    // Rinde: die Textur kachelt über die Fläche (uv über 0..1 hinaus). Ein
+    // Muster mit passender Transformation wiederholt sie von selbst; gemalt
+    // wird der Umriss des Vierecks, gefüllt und umrandet (gegen Haarrisse).
+    const patterns = (texture.patterns ??= texture.levels.map((c) => ctx.createPattern(c, 'repeat')));
+    const pattern = patterns[level];
+    if (!pattern) continue;
+    // Texturkoordinaten in Bildpixel (Bild-y läuft nach unten: 1 - v).
+    const px = shape.uv.map(([u, v]) => [u * texture.width, (1 - v) * texture.height]);
+    const e1 = [px[1][0] - px[0][0], px[1][1] - px[0][1]];
+    const e2 = [px[3][0] - px[0][0], px[3][1] - px[0][1]];
+    const det = e1[0] * e2[1] - e1[1] * e2[0];
+    if (Math.abs(det) < 1e-9) continue;
+    const s1 = [q[1][0] - q[0][0], q[1][1] - q[0][1]];
+    const s2 = [q[3][0] - q[0][0], q[3][1] - q[0][1]];
+    // Affine Abbildung M: Bildpixel -> Bildschirm, aus M*e1 = s1 und M*e2 = s2.
+    const a = (s1[0] * e2[1] - s2[0] * e1[1]) / det;
+    const b = (s1[1] * e2[1] - s2[1] * e1[1]) / det;
+    const c = (s2[0] * e1[0] - s1[0] * e2[0]) / det;
+    const d = (s2[1] * e1[0] - s1[1] * e2[0]) / det;
+    pattern.setTransform(new DOMMatrix([a, b, c, d, q[0][0] - a * px[0][0] - c * px[0][1], q[0][1] - b * px[0][0] - d * px[0][1]]));
+    ctx.fillStyle = ctx.strokeStyle = pattern;
+    ctx.beginPath();
+    ctx.moveTo(q[0][0], q[0][1]);
+    for (let i = 1; i < 4; i++) ctx.lineTo(q[i][0], q[i][1]);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   }
 }
 
@@ -152,6 +206,7 @@ export function render(canvas: HTMLCanvasElement, shapes: readonly Shape[], view
  * Stufe i gehört zum Sonnenlicht i / (TEXTURE_LEVELS - 1).
  */
 export function makeTexture(image: HTMLImageElement, tint: Rgb): Texture {
+  let average: Rgb = FALLBACK;
   const levels = Array.from({ length: TEXTURE_LEVELS }, (_, i) => {
     const brightness = (AMBIENT + DIRECT * (i / (TEXTURE_LEVELS - 1))) / (AMBIENT + DIRECT);
     const c = document.createElement('canvas');
@@ -165,7 +220,20 @@ export function makeTexture(image: HTMLImageElement, tint: Rgb): Texture {
     // multiply färbt auch die durchsichtigen Stellen - die Form des Blattes wiederherstellen.
     ctx.globalCompositeOperation = 'destination-in';
     ctx.drawImage(image, 0, 0);
+    if (i === TEXTURE_LEVELS - 1) average = averageOf(ctx, c.width, c.height);
     return c;
   });
-  return { levels, width: image.naturalWidth, height: image.naturalHeight };
+  return { levels, width: image.naturalWidth, height: image.naturalHeight, average };
+}
+
+/** Durchschnittsfarbe der deckenden Pixel, 0..1. */
+function averageOf(ctx: CanvasRenderingContext2D, w: number, h: number): Rgb {
+  const d = ctx.getImageData(0, 0, w, h).data;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (d[i * 4 + 3] < 128) continue;
+    r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2];
+    n++;
+  }
+  return n ? [r / n / 255, g / n / 255, b / n / 255] : FALLBACK;
 }

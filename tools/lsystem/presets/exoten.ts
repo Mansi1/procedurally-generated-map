@@ -10,7 +10,7 @@ const palme = preset({
 # Die Wedel hängen durch ihren eigenen Tropismus (~), die Fiedern sind Blätter (b).
 K -> [&(20)G]/(40)[&(50)G]/(40)[&(75)G]/(40)[&(35)G]/(40)[&(65)G]/(40)[&(45)G]/(40)[&(80)G]/(40)[&(30)G]/(40)[&(60)G]
 G -> ~(0.25)F(0.4)[+(65)b]/(180)[+(65)b]/(180)G`,
-  leafSize: 0, stemMaterial: 'BarkPale', tip: 0.018, pipe: 1.1,
+  leafSize: 0, stemMaterial: 'BarkPale', barkTexture: 'palme', tip: 0.018, pipe: 1.1,
   organs: { b: { shape: 'blade', size: 0.75, width: 0.07, droop: 60, materials: ['Leaf', 'LeafLight'] } },
 });
 
@@ -37,7 +37,7 @@ const drachenbaum = preset({
   lengthFactor: 0.9, jitter: 0.2, tropism: -0.02,
   rules: `# Gabelt immer wieder, an jedem Ende ein Schopf steifer, schmaler Blätter (Rosette)
 A -> "[&FFA]/(180)[&FFA]/(90)`,
-  leafSize: 0, stemMaterial: 'BarkPale', tip: 0.05, pipe: 1.6,
+  leafSize: 0, stemMaterial: 'BarkPale', barkTexture: 'palme', tip: 0.05, pipe: 1.6,
   organs: { A: { shape: 'blade', size: 0.7, width: 0.06, droop: 25, count: 16, spread: 55, materials: ['IvyDark', 'Leaf'] } },
 });
 
@@ -47,7 +47,7 @@ const eukalyptus = preset({
   rules: `# Hoch und licht, helle glatte Rinde, blaugrünes Laub hängt in Büscheln
 A 0.6 -> "[&FA]/(137.5)[&FA]A
 A 0.4 -> "F[&(40)FA]/(137.5)[&FA]`,
-  leaves: 'A', leafShape: 'needle', leafSize: 0.5, leafMaterials: ['LeafBlue', 'LeafSilver'], stemMaterial: 'BarkPale', tip: 0.022,
+  leaves: 'A', leafShape: 'needle', leafSize: 0.5, leafMaterials: ['LeafBlue', 'LeafSilver'], stemMaterial: 'BarkPale', barkTexture: 'eukalyptus', tip: 0.022,
   leaf: 'eukalyptus',
 });
 

@@ -38,8 +38,9 @@ in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
   (`?leaves=texture` für die Fotos)
 - Export aller Beispiele: `npx vite-node tools/lsystem/export.ts [--texture] [--einzeln] [Zielordner]`
   (Standard `tools/lsystem/out`, nicht eingecheckt). Ohne `--texture` sind die Blätter
-  einfarbige Flächen nach dem Umriss des Fotos, mit `--texture` Vierecke mit dem Foto
-  (`map_Kd`/`map_d`, die Bilder werden nach `<Zielordner>/leaves/` kopiert).
+  einfarbige Flächen nach dem Umriss des Fotos und die Rinde einfarbig, mit `--texture`
+  Blatt-Vierecke mit Foto und die Rinde als Kachel-Textur (`map_Kd`/`map_d`, die Bilder
+  werden nach `<Zielordner>/textures/` kopiert).
 - Blattebenen: Das Laub besteht aus Ebenen mit einem Zweig und 4 bis 6 Blättern
   (`img/<name>-card.png`) - weniger Flächen, dichter. `--einzeln` bzw. „Einzelblätter“
   in der Spielwiese setzt jedes Blatt als eigene Fläche. Nadelbäume nutzen ihr
@@ -53,6 +54,13 @@ in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
   Downloads bleiben in `.cache/`), Ergebnis in `img/`, `leaves.json` und `CREDITS.md`.
   Die Bilder stehen unter CC BY-SA/CC BY/CC0 - Urheber und Lizenz in `leaves/CREDITS.md`
   nennen, wenn sie weitergegeben werden.
+- `bark/` - Rinden-Texturen: CC0 von Poly Haven, die Birke von Wikimedia Commons
+  (`bark/CREDITS.md`). `bark/fetch.ts` lädt und verkleinert sie; `sources.ts` ordnet
+  jedem Stamm-Material eine Textur zu (`MATERIAL_BARK`), Rezepte weichen mit
+  `barkTexture` ab. Die Stämme sind dafür mit Texturkoordinaten abgewickelt
+  (u = Umfang, v = Weg vom Boden); die Vorschau malt die Rinde in beiden
+  Blatt-Modi als Kachel-Muster - das Spiel hätte dafür seinen eigenen Shader
+  (`treeTexture` in `src/gl/entityRenderer.ts`).
 - `materials.ts`, `mtl.ts` - Farben und MTL-Ausgabe
 - `presets/` - Rezepte nach Gruppen: Laubbäume, Nadelbäume, Obstbäume, Exoten,
   Getreide, Klassiker aus "The Algorithmic Beauty of Plants"; dazu Varianten

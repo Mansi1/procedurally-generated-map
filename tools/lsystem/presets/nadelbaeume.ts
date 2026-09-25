@@ -123,7 +123,7 @@ T -> F"[W]/(65)T
 W -> [&(75)B]/(120)[&(80)B]/(120)[&(75)B]
 B -> "(0.7)FL[-(40)C]/(180)B
 C -> FL`,
-  leaves: 'BCT', leafSize: 0.7, leafMaterials: ['IvyDark', 'Leaf'], stemMaterial: 'BarkRed', tip: 0.03, pipe: 1.7,
+  leaves: 'BCT', leafSize: 0.7, leafMaterials: ['IvyDark', 'Leaf'], stemMaterial: 'BarkRed', barkTexture: 'zeder', tip: 0.03, pipe: 1.7,
   leaf: 'mammutbaum',
 });
 

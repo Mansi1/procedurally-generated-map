@@ -1,0 +1,82 @@
+{
+ "braun": {
+  "average": [
+   0.449,
+   0.365,
+   0.209
+  ],
+  "author": "Rob Tuytel"
+ },
+ "eiche": {
+  "average": [
+   0.258,
+   0.21,
+   0.166
+  ],
+  "author": "Dario Barresi, Dimitrios Savva"
+ },
+ "glatt": {
+  "average": [
+   0.33,
+   0.278,
+   0.199
+  ],
+  "author": "Charlotte Baglioni"
+ },
+ "kiefer": {
+  "average": [
+   0.402,
+   0.325,
+   0.252
+  ],
+  "author": "Dimitrios Savva"
+ },
+ "platane": {
+  "average": [
+   0.338,
+   0.28,
+   0.235
+  ],
+  "author": "Dimitrios Savva"
+ },
+ "palme": {
+  "average": [
+   0.346,
+   0.304,
+   0.269
+  ],
+  "author": "Charlotte Baglioni"
+ },
+ "eukalyptus": {
+  "average": [
+   0.331,
+   0.27,
+   0.19
+  ],
+  "author": "Charlotte Baglioni"
+ },
+ "kirsche": {
+  "average": [
+   0.483,
+   0.411,
+   0.346
+  ],
+  "author": "Charlotte Baglioni"
+ },
+ "zeder": {
+  "average": [
+   0.28,
+   0.205,
+   0.138
+  ],
+  "author": "Charlotte Baglioni"
+ },
+ "birke": {
+  "average": [
+   0.615,
+   0.558,
+   0.52
+  ],
+  "author": "LBM1948"
+ }
+}
