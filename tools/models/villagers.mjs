@@ -1,12 +1,14 @@
 // Generates src/models/villager_male.obj and villager_female.obj - villagers in
 // the style of Age of Empires II. File coords: x = left, y = up, z = front.
 // Usage: node tools/models/villagers.mjs [outDir] (default src/models)
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 const mirror = ([a, b]) => [-b, -a];
 
 function model() {
   const out = [];
+  /** Jedes Teil mit seinen Eckpunkten - daraus die Gelenke (joints). */
+  const objects = [];
   let base = 0;
   /**
    * Outline of rect [x0,x1]x[z0,z1], corners rounded by r (0 = box, 0.5 = ellipse):
@@ -33,9 +35,12 @@ function model() {
    */
   function box(name, mtl, x, [y0, y1], z, o = {}) {
     const r = o.r ?? 0;
-    const bottom = ring(x, z, y0, r);
-    const top = ring(o.x ?? x, o.z ?? z, y1, r);
+    prism(name, mtl, ring(x, z, y0, r), ring(o.x ?? x, o.z ?? z, y1, r));
+  }
+  /** Two outlines of equal length (any points) joined by side faces, both capped. */
+  function prism(name, mtl, bottom, top) {
     const n = bottom.length;
+    objects.push({ name, verts: [...bottom, ...top] });
     out.push(`o ${name}`);
     for (const p of [...bottom, ...top]) out.push(`v ${p.map((v) => +v.toFixed(3)).join(' ')}`);
     out.push(`usemtl ${mtl}`, 's off');
@@ -62,6 +67,7 @@ function model() {
       }
     }
     v.push([c[0], c[1] + r[1], c[2]]);
+    objects.push({ name, verts: v });
     out.push(`o ${name}`);
     for (const p of v) out.push(`v ${p.map((x) => +x.toFixed(3)).join(' ')}`);
     out.push(`usemtl ${mtl}`, 's off');
@@ -79,7 +85,7 @@ function model() {
     ellipsoid(name.replace('#', 'L'), mtl, [x, y, z], r);
     ellipsoid(name.replace('#', 'R'), mtl, [-x, y, z], r);
   }
-  return { box, pair, ellipsoid, ellipsoidPair, out };
+  return { box, pair, prism, ellipsoid, ellipsoidPair, out, objects };
 }
 
 /** Head centred on x = z = 0 (it turns around its vertical axis), chin at h. */
@@ -139,29 +145,90 @@ function hatchet({ box }, [x0, x1], gy) {
   box('Arm.R.Lower.Tool.Edge', 'Steel', [hc - 0.011, hc + 0.011], [gy - 0.24, gy + 0.03], [0.42, 0.49], { z: [0.47, 0.53] });
 }
 
+const MOW = JSON.parse(readFileSync(new URL('../../src/models/mow_pose.json', import.meta.url), 'utf8'));
+
 /**
- * Scythe in the right hand, only shown while mowing (pose 4): the snath runs
- * through the hand from behind the hip forward down to just above the
- * ground, the blade reaches across to the left. It sweeps with the body.
+ * Gelenke, wie loadModel() in src/gl/entityRenderer.ts sie aus dem Modell
+ * liest (in Metern, Datei-Koordinaten): Hüfte und Schulter an der Oberkante
+ * von Oberschenkel bzw. Oberarm, Ellbogen an der Oberkante des Unterarms,
+ * arm = Abstand der Unterarme von der Mitte.
  */
-function scythe({ box }, [x0, x1], gy) {
-  const hx = -(x0 + x1) / 2;
-  const hand = [hx, gy + 0.04, 0];
-  const low = [hx + 0.24, 0.12, 0.9];
-  const dir = low.map((v, i) => v - hand[i]);
-  const high = hand.map((v, i) => v - dir[i] * 0.5);
-  // Snath: a slanted prism from the high end down to the low end.
-  const w = 0.022;
-  box('Arm.R.Lower.Scythe.Snath', 'Wood', [low[0] - w, low[0] + w], [low[1], high[1]], [low[2] - w, low[2] + w],
-    { x: [high[0] - w, high[0] + w], z: [high[2] - w, high[2] + w] });
-  // Grip for the left hand, a third of the way down from the hand.
-  const g = hand.map((v, i) => v + dir[i] * 0.3);
-  box('Arm.R.Lower.Scythe.Nib', 'Wood', [g[0], g[0] + 0.14], [g[1] - 0.018, g[1] + 0.018], [g[2] - 0.018, g[2] + 0.018]);
-  // Blade: thin and curving back to its tip.
-  const [bx, by, bz] = low;
-  box('Arm.R.Lower.Scythe.Blade', 'Steel', [bx - 0.02, bx + 0.32], [by - 0.012, by + 0.008], [bz - 0.05, bz + 0.035]);
-  box('Arm.R.Lower.Scythe.Blade', 'Steel', [bx + 0.32, bx + 0.56], [by - 0.012, by + 0.006], [bz - 0.1, bz - 0.03]);
-  box('Arm.R.Lower.Scythe.Blade', 'Steel', [bx + 0.56, bx + 0.68], [by - 0.01, by + 0.004], [bz - 0.14, bz - 0.1]);
+function joints(objects) {
+  const verts = (test) => objects.filter((o) => test(o.name)).flatMap((o) => o.verts);
+  const top = (test) => Math.max(...verts(test).map((v) => v[1]));
+  const lower = (n) => /^Arm\.[LR]\.Lower/.test(n) && !/Tool|Scythe/.test(n);
+  const forearm = verts(lower).map((v) => Math.abs(v[0]));
+  const all = objects.flatMap((o) => o.verts).map((v) => v[1]);
+  return {
+    hip: top((n) => /^Leg\.[LR]/.test(n) && !/Lower/.test(n)),
+    shoulder: top((n) => /^Arm\.[LR]/.test(n) && !/Lower/.test(n)),
+    elbow: top(lower),
+    arm: (Math.min(...forearm) + Math.max(...forearm)) / 2,
+    height: Math.max(...all) - Math.min(...all),
+  };
+}
+
+// Die Bewegungen des Shaders in Datei-Koordinaten (x links, y oben, z vorn):
+// swing dreht um die Querachse (nach vorn), inward um die Längsachse.
+const swing = ([x, y, z], pivot, a) => [x, z * Math.sin(a) + (y - pivot) * Math.cos(a) + pivot, z * Math.cos(a) - (y - pivot) * Math.sin(a)];
+const inward = ([x, y, z], px, py, a) => [px + (x - px) * Math.cos(a) - (y - py) * Math.sin(a), py + (x - px) * Math.sin(a) + (y - py) * Math.cos(a), z];
+const sub3 = (a, b) => a.map((v, i) => v - b[i]);
+const add3 = (a, b) => a.map((v, i) => v + b[i]);
+const mul3 = (a, k) => a.map((v) => v * k);
+const unit3 = (a) => mul3(a, 1 / Math.hypot(...a));
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/**
+ * Sense, nur beim Mähen (Pose 4) zu sehen. Gebaut in der Mäh-Haltung
+ * (mow_pose.json): der Stiel läuft durch beide Hände - die linke oben am
+ * Ende, die rechte weiter unten - schräg nach vorn bis knapp über den Boden,
+ * dort zeigt das Blatt nach links. Weil die Sense am rechten Unterarm hängt,
+ * wird sie danach in dessen Ruhelage zurückgerechnet.
+ */
+function scythe(m) {
+  const j = joints(m.objects);
+  const center = (name) => {
+    const v = m.objects.filter((o) => o.name.startsWith(name)).flatMap((o) => o.verts);
+    return v.reduce((s, q) => add3(s, mul3(q, 1 / v.length)), [0, 0, 0]);
+  };
+  // Hände in der Haltung: Ellbogen beugen, den hängenden Arm zur Mitte
+  // schwenken (links zu kleinerem x), dann nach vorn heben - wie der Shader.
+  const pose = (p, side, a) => swing(inward(swing(p, j.elbow, a.elbow), side * j.arm, j.shoulder, side > 0 ? -a.inward : a.inward), j.shoulder, a.forward);
+  const left = pose(center('Arm.L.Lower.Hand'), 1, MOW.left);
+  const right = pose(center('Arm.R.Lower.Hand'), -1, MOW.right);
+  // Zurück in die Ruhelage des rechten Unterarms: die Schritte rückwärts.
+  const rest = (p) => swing(inward(swing(p, j.shoulder, -MOW.right.forward), -j.arm, j.shoulder, -MOW.right.inward), j.elbow, -MOW.right.elbow);
+  // Wo die Figur den Punkt hinstellt: vorgeneigt über der Hüfte, gesenkt (bob).
+  const world = (p) => add3(swing(p, j.hip, -MOW.lean), [0, MOW.bob * j.height, 0]);
+  const fromWorld = (p) => swing(sub3(p, [0, MOW.bob * j.height, 0]), j.hip, MOW.lean);
+
+  const dir = unit3(sub3(right, left));
+  const top = sub3(left, mul3(dir, 0.08));
+  // Den Stiel verlängern, bis sein Ende knapp über dem Boden ist.
+  let length = Math.hypot(...sub3(right, left));
+  while (world(add3(left, mul3(dir, length)))[1] > 0.12 && length < 3) length += 0.005;
+  const foot = add3(left, mul3(dir, length));
+
+  // Stiel: sechseckiger Balken von oben bis zum Fuß.
+  const side1 = unit3(cross3(dir, [0, 1, 0]));
+  const side2 = cross3(side1, dir);
+  const round = (c, w) => Array.from({ length: 6 }, (_, i) => {
+    const a = (i * Math.PI) / 3;
+    return add3(c, add3(mul3(side1, Math.cos(a) * w), mul3(side2, Math.sin(a) * w)));
+  });
+  m.prism('Arm.R.Lower.Scythe.Snath', 'Wood', round(top, 0.022).map(rest), round(foot, 0.024).map(rest));
+  // Blatt: am Fuß waagerecht nach links, zur Spitze hin schmaler und zum
+  // Mäher zurückgebogen - in Weltlage gebaut, damit es flach über dem Boden liegt.
+  const base = world(foot);
+  const along = [[0, 0.06], [0.3, 0.05], [0.52, 0.035], [0.66, 0.012]];
+  for (let i = 0; i < along.length - 1; i++) {
+    const [u0, w0] = along[i];
+    const [u1, w1] = along[i + 1];
+    const at = (u) => add3(base, [u, 0, -0.35 * u * u]);
+    const quad = (u, w) => [[0, -0.008, -w / 2], [0, -0.008, w / 2], [0, 0.008, w / 2], [0, 0.008, -w / 2]].map((d) => add3(at(u), d));
+    // Der Querschnitt steht senkrecht zur Blattrichtung: quer liegt z.
+    m.prism('Arm.R.Lower.Scythe.Blade', 'Steel', quad(u0, w0).map((p) => rest(fromWorld(p))), quad(u1, w1).map((p) => rest(fromWorld(p))));
+  }
 }
 
 /** Sack on the back - grows out of the back with the load, tinted by resource. */
@@ -231,7 +298,7 @@ function male() {
   hand(m, [0.26, 0.322], sh - 0.56);
 
   hatchet(m, [0.26, 0.322], sh - 0.64);
-  scythe(m, [0.26, 0.322], sh - 0.64);
+  scythe(m);
   load(m, -0.13);
   return m.out.join('\n');
 }
@@ -289,7 +356,7 @@ function female() {
   hand(m, [0.212, 0.268], sh - 0.54);
 
   hatchet(m, [0.212, 0.268], sh - 0.62);
-  scythe(m, [0.212, 0.268], sh - 0.62);
+  scythe(m);
   load(m, -0.125);
   return m.out.join('\n');
 }

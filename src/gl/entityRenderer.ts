@@ -11,6 +11,7 @@
 import type { RGB } from '../functions/Color';
 import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
+import MOW from '../models/mow_pose.json';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
@@ -420,6 +421,7 @@ uniform float uHip;
 uniform float uShoulder;
 uniform float uKnee;
 uniform float uElbow;
+uniform float uArm;          // Figuren: Abstand der Unterarme von der Mitte - Drehpunkt, wenn der Arm zur Mitte schwenkt
 uniform float uStride;   // Schrittweite: 1 = voller Schritt, kleiner im langen Rock
 uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 // Modelle: Groesse je Tile der Instanzgroesse, Nabe der Fluegel (links, oben)
@@ -514,6 +516,15 @@ vec3 swingAt(vec3 p, vec2 pivot, float angle) {
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
 // so schwingen Arme und Beine nach vorn und hinten.
+// Um die Längsachse am Punkt (y, z) = pivot drehen - ein Arm schwenkt so zur
+// Körpermitte hin oder von ihr weg.
+vec3 swingSideways(vec3 p, vec2 pivot, float angle) {
+  vec2 q = p.yz - pivot;
+  float c = cos(angle);
+  float s = sin(angle);
+  return vec3(p.x, pivot + vec2(q.x * c - q.y * s, q.x * s + q.y * c));
+}
+
 vec3 swingAround(vec3 p, float pivot, float angle) {
   vec2 q = vec2(p.x, p.z - pivot);
   float c = cos(angle);
@@ -587,6 +598,8 @@ void main() {
       // hinten (negativ), Ellbogen nach vorn (positiv).
       float hipL = 0.0, hipR = 0.0, kneeL = -0.05, kneeR = -0.05;
       float shL = -0.05, shR = -0.05, elL = 0.15, elR = 0.15;
+      // Arme zur Körpermitte hin (nur beim Mähen).
+      float inL = 0.0, inR = 0.0;
       float lean = 0.0, twist = 0.0, sway = 0.0, bob = 0.0;
 
       if (pose == 1) {
@@ -645,22 +658,26 @@ void main() {
         twist = -0.1 + 0.12 * reach;
         bob = -(uKnee - 0.04);
       } else if (pose == 4) {
-        // Mähen: breit und leicht gebeugt, vorgeneigt; die rechte Hand am
-        // Stiel, die linke vorn am Griff. Der Oberkörper dreht hin und her
-        // und zieht die Sense flach über den Boden von rechts nach links.
+        // Mähen: breit und leicht gebeugt, vorgeneigt; beide Hände vor dem
+        // Körper am Stiel, die linke oben am Ende, die rechte weiter unten
+        // (mow_pose.json - danach ist die Sense gebaut). Der Oberkörper dreht
+        // hin und her und zieht die Sense flach über den Boden von rechts
+        // nach links; die Arme bleiben dabei ruhig, sonst lösten sich die Hände.
         float t = phase * 0.6;
         float sweep = sin(t);
         hipL = 0.3;
         hipR = -0.2;
         kneeL = -0.4;
         kneeR = -0.3;
-        shR = 0.05 + 0.05 * sweep;
-        elR = 0.08;
-        shL = 0.85;
-        elL = 0.7;
-        lean = 0.16;
+        shL = ${MOW.left.forward.toFixed(3)};
+        elL = ${MOW.left.elbow.toFixed(3)};
+        inL = ${MOW.left.inward.toFixed(3)};
+        shR = ${MOW.right.forward.toFixed(3)};
+        elR = ${MOW.right.elbow.toFixed(3)};
+        inR = ${MOW.right.inward.toFixed(3)};
+        lean = ${MOW.lean.toFixed(3)};
         twist = sweep * 0.55;
-        bob = -0.035;
+        bob = ${MOW.bob.toFixed(3)};
       } else {
         // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
         // eine Gruppe nicht im Gleichtakt atmet.
@@ -703,6 +720,9 @@ void main() {
       if (part == P_SCYTHE && pose != 4) p = vec3(0.0, 0.0, uHip);
       if (legL) p = swingAround(p, uHip, hipL);
       if (legR) p = swingAround(p, uHip, hipR);
+      // Beim Mähen schwenkt der hängende Arm erst zur Mitte, dann nach vorn.
+      if (armL && inL != 0.0) p = swingSideways(p, vec2(uArm, uShoulder), -inL);
+      if (armR && inR != 0.0) p = swingSideways(p, vec2(-uArm, uShoulder), inR);
       if (armL) p = swingAround(p, uShoulder, shL);
       if (armR) p = swingAround(p, uShoulder, shR);
       // Die Last waechst mit der Ladung aus dem Ruecken heraus.
@@ -1633,6 +1653,8 @@ interface Model {
   shoulder: number;
   knee: number;
   elbow: number;
+  /** Figuren: Abstand der Unterarme von der Mitte (Modell-Einheiten). */
+  arm: number;
   /** Bäume: Höhe des Stumpfs (Modell-Einheiten) - dort knickt der Stamm beim Fällen ab. */
   stump: number;
   /** Bäume: Halbmesser des Stumpfs (Modell-Einheiten) - so weit rutscht der Stamm daneben. */
@@ -1797,6 +1819,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   let shoulder = 0;
   let knee = 0;
   let elbow = 0;
+  const forearm = [Infinity, 0];
   let stump = 0;
   const load = { back: -Infinity, y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
   const crown = { lo: [Infinity, Infinity, Infinity], hi: [-Infinity, -Infinity, -Infinity] };
@@ -1903,7 +1926,11 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       if (part === 3 || part === 4) shoulder = Math.max(shoulder, z);
       // Knie und Ellbogen an der Oberkante von Unterschenkel und Unterarm.
       if (part === 9 || part === 10) knee = Math.max(knee, z);
-      if (part === 11 || part === 12) elbow = Math.max(elbow, z);
+      if (part === 11 || part === 12) {
+        elbow = Math.max(elbow, z);
+        forearm[0] = Math.min(forearm[0], Math.abs(y));
+        forearm[1] = Math.max(forearm[1], Math.abs(y));
+      }
       if (t.object.startsWith('Trunk.Stump')) stump = Math.max(stump, z);
       if (part === 6) {
         // Die Last hängt mit ihrer Vorderseite am Rücken.
@@ -1930,6 +1957,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     shoulder,
     knee,
     elbow,
+    arm: Number.isFinite(forearm[0]) ? (forearm[0] + forearm[1]) / 2 : 0,
     stump,
     stumpRadius,
     loadAnchor: Number.isFinite(load.back)
@@ -2346,6 +2374,7 @@ export class EntityRenderer {
       gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
       gl.uniform1f(this.location('uKnee'), m.model.knee);
       gl.uniform1f(this.location('uElbow'), m.model.elbow);
+      gl.uniform1f(this.location('uArm'), m.model.arm);
       gl.uniform1f(this.location('uStride'), m.stride ?? 1);
       gl.uniform1f(this.location('uModelTop'), m.model.top);
       gl.uniform1f(this.location('uMeters'), m.model.meters);

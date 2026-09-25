@@ -1,0 +1,15 @@
+{
+  "_": "Mähen mit der Sense (Pose 4): Winkel der Arme in Radiant - der Shader (entityRenderer.ts) bewegt die Figur so, tools/models/villagers.mjs legt den Stiel der Sense durch beide Hände dieser Haltung. forward: Schulter nach vorn, elbow: Ellbogen, inward: Arm zur Körpermitte hin.",
+  "left": {
+    "forward": 0.95,
+    "elbow": 0.75,
+    "inward": 0.35
+  },
+  "right": {
+    "forward": 0.35,
+    "elbow": 0.5,
+    "inward": 0.12
+  },
+  "lean": 0.16,
+  "bob": -0.035
+}
