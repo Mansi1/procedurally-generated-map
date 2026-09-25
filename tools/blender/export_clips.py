@@ -41,6 +41,13 @@ if rig.animation_data:
         rig.animation_data.nla_tracks.remove(track)
     rig.animation_data.action = None
 
+# Nur Knochen, die etwas bewegen, kommen ins Spiel: Hilfsknochen zum
+# Bearbeiten (IK-Ziele ik.*, die Hände hand.* - siehe humanoid_ik.py) bleiben
+# in Blender. Nur für den Export, die Datei wird nicht gespeichert.
+for bone in rig.data.bones:
+    if bone.name.startswith('ik.'):
+        bone.use_deform = False
+
 bpy.ops.object.select_all(action='DESELECT')
 rig.select_set(True)
 bpy.context.view_layer.objects.active = rig
@@ -55,6 +62,7 @@ bpy.ops.export_scene.gltf(
     export_optimize_animation_size=False,
     export_extras=True,
     export_yup=True,
+    export_def_bones=True,
 )
 
 def listed(value):
