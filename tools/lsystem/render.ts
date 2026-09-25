@@ -1,44 +1,21 @@
-// Einfache Vorschau für Spielwiese und Galerie: Canvas 2D, parallele Projektion,
-// Maler-Algorithmus (von hinten nach vorn), flach beleuchtet. Blätter mit Foto
-// sind ebene Rechtecke - projiziert ein Parallelogramm, also genau ein drawImage
-// mit affiner Transformation.
+// Vorschau für Spielwiese und Galerie: WebGL2 mit Tiefentest, Beleuchtung im
+// Fragment-Shader, Blatt-Fotos mit Alphatest und kachelnder Rinde (Mipmaps).
+// Browser erlauben nur wenige WebGL-Kontexte, die Galerie hat aber 58 Canvases:
+// gerendert wird deshalb auf einem gemeinsamen, unsichtbaren Canvas, das Bild
+// dann per drawImage in das sichtbare Canvas kopiert.
 import type { Vec3 } from './lsystem.ts';
 
 type Rgb = readonly [number, number, number];
 
-/** Textur in Helligkeitsstufen (dunkel -> hell), siehe makeTexture. */
+/** Foto-Textur: fertig geladenes Bild, Einfärbung (1,1,1 = unverändert), tile = kacheln (Rinde). */
 export interface Texture {
-  readonly levels: readonly HTMLCanvasElement[];
-  readonly width: number;
-  readonly height: number;
-  /** Durchschnittsfarbe - für Flächen, die nicht als Bild gemalt werden können (Deckel). */
-  readonly average: Rgb;
-  /** Kachel-Muster je Stufe, erst beim Zeichnen angelegt (render). */
-  patterns?: readonly (CanvasPattern | null)[];
+  readonly image: HTMLImageElement;
+  readonly tint: Rgb;
+  readonly tile: boolean;
 }
 
-/** Wie ein Material aussieht: Farbe oder Textur. */
+/** Wie ein Material aussieht: Farbe oder Foto-Textur. */
 export type Look = { readonly color: Rgb } | { readonly texture: Texture };
-
-interface Triangle {
-  readonly kind: 'triangle';
-  readonly p: readonly [Vec3, Vec3, Vec3];
-  readonly color: Rgb;
-}
-
-/** Texturiertes Viereck mit den Texturkoordinaten seiner Ecken. */
-interface Sprite {
-  readonly kind: 'sprite';
-  readonly p: readonly [Vec3, Vec3, Vec3, Vec3];
-  readonly uv: readonly (readonly [number, number])[];
-  readonly texture: Texture;
-}
-
-/** Ein Blatt-Foto füllt sein Viereck genau einmal: uv (0,0), (1,0), (1,1), (0,1). */
-const UNIT_RECT: readonly (readonly [number, number])[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
-const isUnitRect = (uv: Sprite['uv']) => uv.every(([u, v], i) => u === UNIT_RECT[i][0] && v === UNIT_RECT[i][1]);
-
-export type Shape = Triangle | Sprite;
 
 export interface View {
   /** Drehung um die Hochachse, Radiant. */
@@ -48,192 +25,299 @@ export interface View {
   zoom: number;
 }
 
-const FALLBACK: Rgb = [0.6, 0.6, 0.6];
-const LIGHT = normalize([0.45, 0.75, 0.5]);
-const BACKGROUND = '#1b1d1a';
-const GROUND = '#2c3326';
-/** Helligkeit: Grundlicht plus Anteil der Sonne. */
-const AMBIENT = 0.45, DIRECT = 0.75;
-/** Stufen, in denen eine Textur vorab abgedunkelt wird. */
-const TEXTURE_LEVELS = 8;
-
-function normalize(v: Vec3): Vec3 {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / l, v[1] / l, v[2] / l];
+/** Dreiecke je Look, als Soup mit flachen Normalen - fertig für den Upload. */
+interface Batch {
+  readonly look: Look;
+  /** Erster Eckpunkt und Anzahl im gemeinsamen Buffer. */
+  readonly first: number;
+  readonly count: number;
 }
 
-/**
- * Formen aus OBJ-Zeilen. `look` liefert je `usemtl`-Name Farbe oder Textur;
- * Vierecke mit Textur werden zu Sprites.
- */
-export function shapesFromObj(lines: readonly string[], look: (material: string) => Look | undefined): Shape[] {
+export interface Scene {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly uvs: Float32Array;
+  readonly batches: readonly Batch[];
+  readonly triangles: number;
+  /** Höchster Punkt und Kronenradius in Metern - für Bildausschnitt und Boden. */
+  readonly top: number;
+  readonly radius: number;
+}
+
+const BACKGROUND: Rgb = [0.106, 0.114, 0.102]; // #1b1d1a
+const GROUND: Rgb = [0.173, 0.2, 0.149]; // #2c3326
+const FALLBACK: Rgb = [0.6, 0.6, 0.6];
+/** Boden: Scheibe um den Stamm, etwas größer als die Krone. */
+const GROUND_SCALE = 1.2;
+
+/** Dreiecke aus OBJ-Zeilen; `look` liefert je `usemtl`-Name Farbe oder Textur. */
+export function sceneFromObj(lines: readonly string[], look: (material: string) => Look | undefined): Scene {
   const vertices: Vec3[] = [];
-  const uvs: [number, number][] = [];
-  const shapes: Shape[] = [];
+  const uvList: [number, number][] = [];
+  interface Face { look: Look; verts: Vec3[]; uvs: ([number, number] | undefined)[] }
+  const faces: Face[] = [];
   let current: Look = { color: FALLBACK };
+  let triangles = 0;
   for (const line of lines) {
     const [kind, ...rest] = line.split(' ');
     if (kind === 'v') vertices.push([Number(rest[0]), Number(rest[1]), Number(rest[2])]);
-    else if (kind === 'vt') uvs.push([Number(rest[0]), Number(rest[1])]);
+    else if (kind === 'vt') uvList.push([Number(rest[0]), Number(rest[1])]);
     else if (kind === 'usemtl') current = look(rest[0]) ?? { color: FALLBACK };
     else if (kind === 'f') {
       const refs = rest.map((ref) => ref.split('/'));
-      const face = refs.map((r) => vertices[Number(r[0]) - 1]);
-      if ('texture' in current) {
-        const faceUvs = refs.map((r) => uvs[Number(r[1]) - 1]);
-        if (face.length === 4 && faceUvs.every(Boolean)) {
-          shapes.push({ kind: 'sprite', p: [face[0], face[1], face[2], face[3]], uv: faceUvs, texture: current.texture });
-          continue;
-        }
-        // Fläche ohne brauchbare Texturkoordinaten (Deckel): Durchschnittsfarbe.
-        for (let i = 1; i + 1 < face.length; i++) {
-          shapes.push({ kind: 'triangle', p: [face[0], face[i], face[i + 1]], color: current.texture.average });
-        }
-        continue;
-      }
-      for (let i = 1; i + 1 < face.length; i++) {
-        shapes.push({ kind: 'triangle', p: [face[0], face[i], face[i + 1]], color: current.color });
-      }
+      faces.push({
+        look: current,
+        verts: refs.map((r) => vertices[Number(r[0]) - 1]),
+        uvs: refs.map((r) => uvList[Number(r[1]) - 1]),
+      });
+      triangles += refs.length - 2;
     }
   }
-  return shapes;
+
+  // Ein Batch je Look: erst zählen, dann in einem Rutsch füllen (Fächer-Triangulierung).
+  const counts = new Map<Look, number>();
+  for (const f of faces) counts.set(f.look, (counts.get(f.look) ?? 0) + (f.verts.length - 2) * 3);
+  const positions = new Float32Array(triangles * 9);
+  const normals = new Float32Array(triangles * 9);
+  const uvs = new Float32Array(triangles * 6);
+  const batches: Batch[] = [];
+  const cursor = new Map<Look, number>();
+  let first = 0;
+  for (const [batchLook, count] of counts) {
+    batches.push({ look: batchLook, first, count });
+    cursor.set(batchLook, first);
+    first += count;
+  }
+  let top = 0.1, radius = 0.1;
+  for (const f of faces) {
+    let at = cursor.get(f.look) ?? 0;
+    const [a, b, c] = [f.verts[0], f.verts[1], f.verts[2]];
+    // Flache Normale der Fläche - die Seiten sind nicht einheitlich gewunden,
+    // der Shader dreht sie zum Auge.
+    const u: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const w: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n: Vec3 = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+    for (const p of f.verts) {
+      top = Math.max(top, p[1]);
+      radius = Math.max(radius, Math.hypot(p[0], p[2]));
+    }
+    for (let i = 1; i + 1 < f.verts.length; i++) {
+      for (const k of [0, i, i + 1]) {
+        positions.set(f.verts[k], at * 3);
+        normals.set(n, at * 3);
+        uvs.set(f.uvs[k] ?? [0, 0], at * 2);
+        at++;
+      }
+    }
+    cursor.set(f.look, at);
+  }
+  return { positions, normals, uvs, batches, triangles, top, radius };
 }
 
-/** Sonnenlicht 0..1 aus der Flächennormale; die Seiten sind nicht einheitlich gewunden - immer die zum Auge. */
-function lightOf(a: Vec3, b: Vec3, c: Vec3): number {
-  const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-  let n = normalize([u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]);
-  if (n[2] < 0) n = [-n[0], -n[1], -n[2]];
-  return Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
+// --- WebGL: ein gemeinsamer Kontext für alle Vorschauen ---------------------
+
+const VERTEX_SOURCE = `#version 300 es
+in vec3 aPos;
+in vec3 aNormal;
+in vec2 aUV;
+uniform mat4 uMVP;
+uniform mat3 uRot;      // Drehung der Ansicht - für die Normale
+uniform float uScale;   // 1 für den Baum, Kronenradius für die Boden-Scheibe
+out vec3 vNormal;
+out vec2 vUV;
+void main() {
+  vNormal = uRot * aNormal;
+  vUV = aUV;
+  gl_Position = uMVP * vec4(aPos * uScale, 1.0);
+}`;
+
+const FRAGMENT_SOURCE = `#version 300 es
+precision mediump float;
+uniform int uMode;      // 0 Farbe, 1 Foto, 2 unbeleuchtet (Boden)
+uniform vec3 uColor;    // Farbe bzw. Einfärbung des Fotos
+uniform sampler2D uTex;
+in vec3 vNormal;
+in vec2 vUV;
+out vec4 outColor;
+const vec3 LIGHT = normalize(vec3(0.45, 0.75, 0.5));
+void main() {
+  if (uMode == 2) { outColor = vec4(uColor, 1.0); return; }
+  vec3 n = normalize(vNormal);
+  if (n.z < 0.0) n = -n; // immer die dem Auge zugewandte Seite
+  float light = max(0.0, dot(n, LIGHT));
+  if (uMode == 1) {
+    // Vormultipliziert hochgeladen, damit die Mipmaps an den Blatträndern
+    // nicht ins Durchsichtige (Schwarz) mitteln - hier wieder herausteilen.
+    vec4 t = texture(uTex, vUV);
+    if (t.a < 0.05) discard;
+    vec3 photo = t.rgb / max(t.a, 0.01);
+    // In groben Mipmap-Stufen sinkt das Alpha der Blattmassen - steil auf
+    // deckend ziehen, sonst dünnen die Kronen von Weitem aus und werden dunkel
+    // (die MSAA-Abdeckung wiederholt je Stufe dasselbe Muster, Lücken bleiben Lücken).
+    float a = clamp((t.a - 0.12) / 0.2, 0.0, 1.0);
+    // Fotos sind schon "beleuchtet" - nur abdunkeln, nie aufhellen. Die
+    // Ausgabe vormultipliziert, so mischt das Kopieren auf die Seite richtig.
+    outColor = vec4(photo * uColor * ((0.45 + 0.75 * light) / 1.2) * a, a);
+  } else {
+    outColor = vec4(min(vec3(1.0), uColor * (0.45 + 0.75 * light)), 1.0);
+  }
+}`;
+
+interface SceneBuffers { vao: WebGLVertexArrayObject; count: number }
+
+interface Renderer {
+  readonly canvas: HTMLCanvasElement;
+  readonly gl: WebGL2RenderingContext;
+  readonly locations: Record<'uMVP' | 'uRot' | 'uScale' | 'uMode' | 'uColor' | 'uTex', WebGLUniformLocation | null>;
+  readonly ground: SceneBuffers;
+  readonly scenes: WeakMap<Scene, SceneBuffers>;
+  readonly textures: WeakMap<Texture, WebGLTexture>;
 }
 
-export function render(canvas: HTMLCanvasElement, shapes: readonly Shape[], view: View): void {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+let shared: Renderer | null | undefined;
+
+function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
+  const shader = gl.createShader(type)!;
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) ?? 'Shader-Fehler');
+  return shader;
+}
+
+function upload(gl: WebGL2RenderingContext, positions: Float32Array, normals: Float32Array, uvs: Float32Array): SceneBuffers {
+  const vao = gl.createVertexArray()!;
+  gl.bindVertexArray(vao);
+  for (const [index, data, size] of [[0, positions, 3], [1, normals, 3], [2, uvs, 2]] as const) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(index);
+    gl.vertexAttribPointer(index, size, gl.FLOAT, false, 0, 0);
+  }
+  gl.bindVertexArray(null);
+  return { vao, count: positions.length / 3 };
+}
+
+/** Boden: Einheitsscheibe auf y = 0, uScale macht daraus den Kronenradius. */
+function groundDisc(gl: WebGL2RenderingContext): SceneBuffers {
+  const n = 64;
+  const positions = new Float32Array(n * 9);
+  const at = (k: number): [number, number] => [Math.cos((k / n) * 2 * Math.PI), Math.sin((k / n) * 2 * Math.PI)];
+  for (let k = 0; k < n; k++) {
+    const [x0, z0] = at(k), [x1, z1] = at(k + 1);
+    positions.set([0, 0, 0, x0, 0, z0, x1, 0, z1], k * 9);
+  }
+  const normals = new Float32Array(n * 9);
+  for (let k = 0; k < n * 3; k++) normals[k * 3 + 1] = 1;
+  return upload(gl, positions, normals, new Float32Array(n * 6));
+}
+
+function renderer(): Renderer | null {
+  if (shared !== undefined) return shared;
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2', { antialias: true });
+  if (!gl) return (shared = null);
+  const program = gl.createProgram()!;
+  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX_SOURCE));
+  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SOURCE));
+  for (const [index, name] of [[0, 'aPos'], [1, 'aNormal'], [2, 'aUV']] as const) gl.bindAttribLocation(program, index, name);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program) ?? 'Link-Fehler');
+  gl.useProgram(program);
+  const locations = Object.fromEntries((['uMVP', 'uRot', 'uScale', 'uMode', 'uColor', 'uTex'] as const)
+    .map((name) => [name, gl.getUniformLocation(program, name)])) as Renderer['locations'];
+  gl.enable(gl.DEPTH_TEST);
+  // Weiche Blattränder trotz Tiefentest: Alpha steuert die MSAA-Abdeckung.
+  gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  shared = { canvas, gl, locations, ground: groundDisc(gl), scenes: new WeakMap(), textures: new WeakMap() };
+  return shared;
+}
+
+function textureOf(r: Renderer, texture: Texture): WebGLTexture {
+  let t = r.textures.get(texture);
+  if (!t) {
+    const { gl } = r;
+    t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    const wrap = texture.tile ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    r.textures.set(texture, t);
+  }
+  return t;
+}
+
+export function render(canvas: HTMLCanvasElement, scene: Scene | null, view: View): void {
+  const target = canvas.getContext('2d');
+  if (!target) return;
   const W = (canvas.width = canvas.clientWidth * devicePixelRatio);
   const H = (canvas.height = canvas.clientHeight * devicePixelRatio);
-  ctx.fillStyle = BACKGROUND;
-  ctx.fillRect(0, 0, W, H);
-  if (!shapes.length) return;
-
-  // Maßstab aus Höhe und Kronenradius, damit die ganze Pflanze ins Bild passt.
-  // Untergrenze klein genug für Getreide, aber > 0 für leere Modelle.
-  let top = 0.1, radius = 0.1;
-  for (const s of shapes) for (const p of s.p) {
-    top = Math.max(top, p[1]);
-    radius = Math.max(radius, Math.hypot(p[0], p[2]));
+  const r = renderer();
+  if (!r) {
+    target.fillStyle = '#1b1d1a';
+    target.fillRect(0, 0, W, H);
+    target.fillStyle = '#9a9c94';
+    target.font = `${13 * devicePixelRatio}px system-ui`;
+    target.fillText('WebGL2 nicht verfügbar', 12, 24);
+    return;
   }
-  const scale = view.zoom * 0.85 * Math.min(H / (top + radius * 0.5), W / (2 * radius + 1));
-  const ox = W / 2, oy = H / 2 + (top * scale) / 2;
+  const { gl, locations } = r;
+  if (r.canvas.width !== W || r.canvas.height !== H) {
+    r.canvas.width = W;
+    r.canvas.height = H;
+  }
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(...BACKGROUND, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (scene) {
+    // Bildausschnitt wie bisher: die ganze Pflanze samt Boden-Scheibe im Bild.
+    const { top, radius } = scene;
+    const scale = view.zoom * 0.85 * Math.min(H / (top + radius * 0.5), W / (2 * radius + 1));
+    const ox = W / 2, oy = H / 2 + (top * scale) / 2;
+    const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw), cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
+    // Ansicht: erst um die Hochachse drehen, dann kippen - Zeilen der 3x3-Matrix.
+    const rot = [cy, 0, sy, sy * sp, cp, -cy * sp, -sy * cp, sp, cy * cp];
+    const ax = (2 * scale) / W, ay = (2 * scale) / H, az = -1 / (top + 2 * radius + 1);
+    const mvp = [
+      ax * rot[0], ay * rot[3], az * rot[6], 0,
+      ax * rot[1], ay * rot[4], az * rot[7], 0,
+      ax * rot[2], ay * rot[5], az * rot[8], 0,
+      (2 * ox) / W - 1, 1 - (2 * oy) / H, 0, 1,
+    ];
+    gl.uniformMatrix4fv(locations.uMVP, false, mvp);
+    // uRot ist spaltenweise - die Drehung oben zeilenweise, also transponieren.
+    gl.uniformMatrix3fv(locations.uRot, true, rot);
+    gl.uniform1i(locations.uTex, 0);
 
-  const cy = Math.cos(view.yaw), sy = Math.sin(view.yaw), cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
-  /** In Bildschirm-Pixel: x, y und die Tiefe (größer = näher). */
-  const project = ([x, y, z]: Vec3): Vec3 => {
-    const xr = x * cy + z * sy, zr = -x * sy + z * cy;
-    return [ox + xr * scale, oy - (y * cp - zr * sp) * scale, y * sp + zr * cp];
-  };
+    gl.uniform1i(locations.uMode, 2);
+    gl.uniform3fv(locations.uColor, GROUND);
+    gl.uniform1f(locations.uScale, radius * GROUND_SCALE);
+    gl.bindVertexArray(r.ground.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, r.ground.count);
 
-  ctx.fillStyle = GROUND;
-  ctx.beginPath();
-  ctx.ellipse(ox, oy, radius * scale * 1.2, radius * scale * 1.2 * Math.abs(sp), 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  const items = shapes.map((shape) => {
-    const q = shape.p.map(project);
-    const light = lightOf(q[0], q[1], q[shape.kind === 'sprite' ? 3 : 2]);
-    return { shape, q, light, depth: q.reduce((sum, p) => sum + p[2], 0) / q.length };
-  }).sort((a, b) => a.depth - b.depth);
-
-  for (const { shape, q, light } of items) {
-    if (shape.kind === 'triangle') {
-      const brightness = AMBIENT + DIRECT * light;
-      const fill = `rgb(${shape.color.map((c) => Math.min(255, Math.round(c * brightness * 255))).join(',')})`;
-      ctx.fillStyle = ctx.strokeStyle = fill; // Kontur schließt die Haarrisse zwischen den Dreiecken
-      ctx.beginPath();
-      ctx.moveTo(q[0][0], q[0][1]);
-      ctx.lineTo(q[1][0], q[1][1]);
-      ctx.lineTo(q[2][0], q[2][1]);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      continue;
+    let buffers = r.scenes.get(scene);
+    if (!buffers) {
+      buffers = upload(gl, scene.positions, scene.normals, scene.uvs);
+      r.scenes.set(scene, buffers);
     }
-    const { texture } = shape;
-    const level = Math.round(light * (texture.levels.length - 1));
-    if (isUnitRect(shape.uv)) {
-      // Blatt: das Bild füllt das Viereck genau einmal - ein drawImage mit
-      // affiner Transformation. Bildursprung (oben links) = uv (0,1) = Ecke 3;
-      // Bild-x läuft zu Ecke 2, Bild-y zu Ecke 0.
-      const { width: w, height: h } = texture;
-      const [p0, , p2, p3] = q;
-      ctx.setTransform((p2[0] - p3[0]) / w, (p2[1] - p3[1]) / w, (p0[0] - p3[0]) / h, (p0[1] - p3[1]) / h, p3[0], p3[1]);
-      ctx.drawImage(texture.levels[level], 0, 0);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      continue;
+    gl.uniform1f(locations.uScale, 1);
+    gl.bindVertexArray(buffers.vao);
+    for (const { look, first, count } of scene.batches) {
+      if ('texture' in look) {
+        gl.uniform1i(locations.uMode, 1);
+        gl.uniform3fv(locations.uColor, look.texture.tint);
+        gl.bindTexture(gl.TEXTURE_2D, textureOf(r, look.texture));
+      } else {
+        gl.uniform1i(locations.uMode, 0);
+        gl.uniform3fv(locations.uColor, look.color);
+      }
+      gl.drawArrays(gl.TRIANGLES, first, count);
     }
-    // Rinde: die Textur kachelt über die Fläche (uv über 0..1 hinaus). Ein
-    // Muster mit passender Transformation wiederholt sie von selbst; gemalt
-    // wird der Umriss des Vierecks, gefüllt und umrandet (gegen Haarrisse).
-    const patterns = (texture.patterns ??= texture.levels.map((c) => ctx.createPattern(c, 'repeat')));
-    const pattern = patterns[level];
-    if (!pattern) continue;
-    // Texturkoordinaten in Bildpixel (Bild-y läuft nach unten: 1 - v).
-    const px = shape.uv.map(([u, v]) => [u * texture.width, (1 - v) * texture.height]);
-    const e1 = [px[1][0] - px[0][0], px[1][1] - px[0][1]];
-    const e2 = [px[3][0] - px[0][0], px[3][1] - px[0][1]];
-    const det = e1[0] * e2[1] - e1[1] * e2[0];
-    if (Math.abs(det) < 1e-9) continue;
-    const s1 = [q[1][0] - q[0][0], q[1][1] - q[0][1]];
-    const s2 = [q[3][0] - q[0][0], q[3][1] - q[0][1]];
-    // Affine Abbildung M: Bildpixel -> Bildschirm, aus M*e1 = s1 und M*e2 = s2.
-    const a = (s1[0] * e2[1] - s2[0] * e1[1]) / det;
-    const b = (s1[1] * e2[1] - s2[1] * e1[1]) / det;
-    const c = (s2[0] * e1[0] - s1[0] * e2[0]) / det;
-    const d = (s2[1] * e1[0] - s1[1] * e2[0]) / det;
-    pattern.setTransform(new DOMMatrix([a, b, c, d, q[0][0] - a * px[0][0] - c * px[0][1], q[0][1] - b * px[0][0] - d * px[0][1]]));
-    ctx.fillStyle = ctx.strokeStyle = pattern;
-    ctx.beginPath();
-    ctx.moveTo(q[0][0], q[0][1]);
-    for (let i = 1; i < 4; i++) ctx.lineTo(q[i][0], q[i][1]);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    gl.bindVertexArray(null);
   }
-}
-
-/**
- * Textur in Helligkeitsstufen, eingefärbt mit `tint` (1,1,1: Foto unverändert).
- * Stufe i gehört zum Sonnenlicht i / (TEXTURE_LEVELS - 1).
- */
-export function makeTexture(image: HTMLImageElement, tint: Rgb): Texture {
-  let average: Rgb = FALLBACK;
-  const levels = Array.from({ length: TEXTURE_LEVELS }, (_, i) => {
-    const brightness = (AMBIENT + DIRECT * (i / (TEXTURE_LEVELS - 1))) / (AMBIENT + DIRECT);
-    const c = document.createElement('canvas');
-    c.width = image.naturalWidth;
-    c.height = image.naturalHeight;
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(image, 0, 0);
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = `rgb(${tint.map((v) => Math.round(Math.min(1, v * brightness) * 255)).join(',')})`;
-    ctx.fillRect(0, 0, c.width, c.height);
-    // multiply färbt auch die durchsichtigen Stellen - die Form des Blattes wiederherstellen.
-    ctx.globalCompositeOperation = 'destination-in';
-    ctx.drawImage(image, 0, 0);
-    if (i === TEXTURE_LEVELS - 1) average = averageOf(ctx, c.width, c.height);
-    return c;
-  });
-  return { levels, width: image.naturalWidth, height: image.naturalHeight, average };
-}
-
-/** Durchschnittsfarbe der deckenden Pixel, 0..1. */
-function averageOf(ctx: CanvasRenderingContext2D, w: number, h: number): Rgb {
-  const d = ctx.getImageData(0, 0, w, h).data;
-  let r = 0, g = 0, b = 0, n = 0;
-  for (let i = 0; i < w * h; i++) {
-    if (d[i * 4 + 3] < 128) continue;
-    r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2];
-    n++;
-  }
-  return n ? [r / n / 255, g / n / 255, b / n / 255] : FALLBACK;
+  target.clearRect(0, 0, W, H);
+  target.drawImage(r.canvas, 0, 0);
 }

@@ -3,7 +3,7 @@
 import { grow, type LeafMode } from './lsystem.ts';
 import { looksFor } from './looks.ts';
 import { GROUPS, PRESETS, type Preset } from './presets/index.ts';
-import { render, shapesFromObj } from './render.ts';
+import { render, sceneFromObj } from './render.ts';
 
 /** ?leaves=texture zeigt die Blätter als Foto, sonst als Form; ?cards=0 einzelne Blätter statt Blattebenen. */
 const params = new URLSearchParams(location.search);
@@ -40,7 +40,7 @@ async function renderAll() {
   for (const { canvas, preset } of jobs) {
     await new Promise((resolve) => setTimeout(resolve));
     const tree = grow(preset, { leaves: mode, cards });
-    render(canvas, shapesFromObj(tree.model.out, await looksFor(tree, mode)), VIEW);
+    render(canvas, sceneFromObj(tree.model.out, await looksFor(tree, mode)), VIEW);
     canvas.title = `${tree.height.toFixed(1)} m · ${tree.model.out.length.toLocaleString('de')} OBJ-Zeilen`;
   }
   document.body.dataset['done'] = 'true';

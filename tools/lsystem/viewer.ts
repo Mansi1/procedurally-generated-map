@@ -4,7 +4,7 @@ import { grow, type LeafMode, type Tree, type TreeSpec } from './lsystem.ts';
 import { looksFor } from './looks.ts';
 import { mtlFile } from './mtl.ts';
 import { GROUPS, PRESETS, isPresetName, type PresetName } from './presets/index.ts';
-import { render, shapesFromObj, type Shape, type View } from './render.ts';
+import { render, sceneFromObj, type Scene, type View } from './render.ts';
 
 /** Regler: Feld des Rezepts, das sie einstellen - die id im HTML ist derselbe Name. */
 const SLIDERS = ['iterations', 'angle', 'tropism', 'jitter', 'lengthFactor', 'leafSize'] as const satisfies readonly (keyof TreeSpec)[];
@@ -34,7 +34,7 @@ const texts = TEXTS.map((key) => ({ key, input: textField(key) }));
 
 const view: View = { yaw: 0.6, pitch: 0.25, zoom: 1 };
 let base: TreeSpec = PRESETS.laubbaum;
-let shapes: Shape[] = [];
+let scene: Scene | null = null;
 let tree: Tree | null = null;
 /** Zählt die Aufrufe von update - eine ältere, noch ladende Vorschau zeichnet dann nicht mehr. */
 let generation = 0;
@@ -84,17 +84,17 @@ async function update() {
   const look = await looksFor(grown, mode);
   if (current !== generation) return;
   tree = grown;
-  shapes = shapesFromObj(grown.model.out, look);
+  scene = sceneFromObj(grown.model.out, look);
   const n = (v: number) => v.toLocaleString('de');
   stats.textContent = [
     `${grown.iterations} Schritte${grown.capped ? ' (gekappt - zu viele Zeichen)' : ''}`,
     `${n(grown.symbols)} Zeichen`, `${n(grown.segments)} Äste`, `${n(grown.leaves)} Laub`,
-    `${n(shapes.length)} Flächen`, `${grown.height.toFixed(1)} m hoch`,
+    `${n(scene.triangles)} Dreiecke`, `${grown.height.toFixed(1)} m hoch`,
   ].join(' · ');
   draw();
 }
 
-const draw = () => render(canvas, shapes, view);
+const draw = () => render(canvas, scene, view);
 
 function save(name: string, text: string) {
   const a = document.createElement('a');

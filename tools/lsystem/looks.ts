@@ -5,28 +5,27 @@ import { barkFile } from './bark/data.ts';
 import { textureFile, textureTint, type LeafMode } from './foliage.ts';
 import type { Tree } from './lsystem.ts';
 import { MATERIALS, type Material } from './materials.ts';
-import { makeTexture, type Look, type Texture } from './render.ts';
+import type { Look, Texture } from './render.ts';
 
 const IMAGES = {
   ...import.meta.glob('./leaves/img/*.png', { eager: true, query: '?url', import: 'default' }),
   ...import.meta.glob('./bark/img/*.jpg', { eager: true, query: '?url', import: 'default' }),
 } as Record<string, string>;
 
-/** Geladene Texturen je Datei und Einfärbung - Galerie und Spielwiese laden jede nur einmal. */
-const textures = new Map<string, Promise<Texture>>();
+/** Geladene Bilder je Datei - Galerie und Spielwiese laden jedes nur einmal. */
+const images = new Map<string, Promise<HTMLImageElement>>();
 
-function texture(path: string, tint: readonly [number, number, number]): Promise<Texture> {
-  const key = `${path}|${tint.join(',')}`;
-  let t = textures.get(key);
-  if (!t) {
+async function texture(path: string, tint: readonly [number, number, number], tile: boolean): Promise<Texture> {
+  let loading = images.get(path);
+  if (!loading) {
     const url = IMAGES[path];
     if (!url) throw new Error(`Bild fehlt: ${path} - npx vite-node tools/lsystem/leaves/fetch.ts bzw. bark/fetch.ts`);
     const image = new Image();
     image.src = url;
-    t = image.decode().then(() => makeTexture(image, tint));
-    textures.set(key, t);
+    loading = image.decode().then(() => image);
+    images.set(path, loading);
   }
-  return t;
+  return { image: await loading, tint, tile };
 }
 
 const isMaterial = (name: string): name is Material => Object.hasOwn(MATERIALS, name);
@@ -37,9 +36,9 @@ export async function looksFor(tree: Tree, mode: LeafMode): Promise<(material: s
   await Promise.all([...tree.leafMaterials].map(async ([name, info]) => {
     looks.set(name, mode === 'shape'
       ? { color: info.color }
-      : { texture: await texture(`./leaves/img/${textureFile(info)}`, textureTint(info)) });
+      : { texture: await texture(`./leaves/img/${textureFile(info)}`, textureTint(info), false) });
   }));
   // Rinde in beiden Modi als Foto - die Vorschau hat keinen Shader wie das Spiel (treeTexture).
-  if (tree.bark) looks.set(tree.bark.material, { texture: await texture(`./bark/img/${barkFile(tree.bark.texture)}`, [1, 1, 1]) });
+  if (tree.bark) looks.set(tree.bark.material, { texture: await texture(`./bark/img/${barkFile(tree.bark.texture)}`, [1, 1, 1], true) });
   return (name) => looks.get(name) ?? (isMaterial(name) ? { color: MATERIALS[name] } : undefined);
 }

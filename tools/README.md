@@ -58,11 +58,13 @@ in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
   (`bark/CREDITS.md`). `bark/fetch.ts` lädt und verkleinert sie; `sources.ts` ordnet
   jedem Stamm-Material eine Textur zu (`MATERIAL_BARK`), Rezepte weichen mit
   `barkTexture` ab. Die Stämme sind dafür mit Texturkoordinaten abgewickelt
-  (u = Umfang, v = Weg vom Boden); die Vorschau malt die Rinde in beiden
-  Blatt-Modi als Kachel-Muster - das Spiel hätte dafür seinen eigenen Shader
+  (u = Umfang, v = Weg vom Boden); die Vorschau zeigt die Rinde in beiden
+  Blatt-Modi - das Spiel hätte dafür seinen eigenen Shader
   (`treeTexture` in `src/gl/entityRenderer.ts`).
 - `materials.ts`, `mtl.ts` - Farben und MTL-Ausgabe
 - `presets/` - Rezepte nach Gruppen: Laubbäume, Nadelbäume, Obstbäume, Exoten,
   Getreide, Klassiker aus "The Algorithmic Beauty of Plants"; dazu Varianten
   (Herbst, Winter, Blüte, jung) über `variant`, `autumn`, `winter` in `presets/base.ts`
 - `render.ts`, `looks.ts`, `viewer.ts`, `gallery.ts` + die beiden HTML-Seiten - Vorschau
+  in WebGL2 (Tiefentest, Beleuchtung im Shader, Mipmaps, Alphatest fürs Laub);
+  alle Canvases teilen sich einen Kontext, das Bild wird per drawImage kopiert
