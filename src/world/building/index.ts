@@ -5,8 +5,9 @@
 //
 //   BuildingBase (abstrakt)       Lage, Trefferpunkte, Variante, speichern
 //    ├─ UnitProducer (abstrakt)   bildet Einheiten aus  ── TownCenter
-//    ├─ StorageBuilding (abstr.)  nimmt Rohstoffe an   ── LumberCamp, MiningCamp, Mill
+//    ├─ StorageBuilding (abstr.)  nimmt Rohstoffe an   ── LumberCamp, MiningCamp, Mill, Armory
 //    ├─ House                     Wohnraum
+//    ├─ Bowyer                    Werkstatt: ein Bogner macht Bögen aus Holz
 //    └─ Farm                      Feld mit Furchen
 
 import type { BuildingDefinition } from './definition';
@@ -18,16 +19,18 @@ import { House } from './House';
 import { LumberCamp } from './LumberCamp';
 import { MiningCamp } from './MiningCamp';
 import { Mill } from './Mill';
+import { Bowyer } from './Bowyer';
+import { Armory } from './Armory';
 import { Farm, furrowCells, furrowFood, furrowPosition, maskCovers, ALL_TILES, CENTER_TILE, type Furrow } from './Farm';
 
 export {
-  BuildingBase, UnitProducer, StorageBuilding, TownCenter, House, LumberCamp, MiningCamp, Mill, Farm,
+  BuildingBase, UnitProducer, StorageBuilding, TownCenter, House, LumberCamp, MiningCamp, Mill, Farm, Bowyer, Armory,
   furrowCells, furrowFood, furrowPosition, maskCovers, ALL_TILES, CENTER_TILE,
   type BuildingClass, type BuildingDefinition, type BuildingOptions, type BuildingSave, type Furrow, type TrainableUnit,
 };
 
 /** Alle Gebäudeklassen - in der Reihenfolge des Baumenüs. */
-export const BUILDING_CLASSES = [TownCenter, House, LumberCamp, MiningCamp, Mill, Farm] as const;
+export const BUILDING_CLASSES = [TownCenter, House, LumberCamp, MiningCamp, Mill, Farm, Bowyer, Armory] as const;
 
 /** Kennung einer Gebäudeart, z. B. 'lumber_camp'. */
 export type BuildingType = (typeof BUILDING_CLASSES)[number]['definition']['type'];

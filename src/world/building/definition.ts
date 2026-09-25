@@ -33,16 +33,18 @@ export interface BuildingDefinition<T extends string = string> {
   housing: number;
   /** Rohstoffe, die Dorfbewohner hier abliefern können. */
   storedResources: readonly ResourceKind[];
+  /** Waffenkammer: so viele Waffen passen hinein; 0 = kein Waffenlager. */
+  weaponCapacity: number;
   /** Trefferpunkte, wenn es unbeschädigt ist - Werte wie in AoE2. */
   hp: number;
 }
 
 /** Was fast jedes Gebäude so hat - in der Definition nur, wenn es anders ist. */
-type Defaults = 'footprint' | 'terrain' | 'housing' | 'storedResources';
+type Defaults = 'footprint' | 'terrain' | 'housing' | 'storedResources' | 'weaponCapacity';
 
 /** Definition mit Vorgaben: ein Tile groß, auf festem Boden, kein Wohnraum, kein Lager. */
 export function defineBuilding<T extends string>(
   definition: Omit<BuildingDefinition<T>, Defaults> & Partial<Pick<BuildingDefinition<T>, Defaults>>,
 ): BuildingDefinition<T> {
-  return { footprint: 1, terrain: BUILDABLE, housing: 0, storedResources: [], ...definition };
+  return { footprint: 1, terrain: BUILDABLE, housing: 0, storedResources: [], weaponCapacity: 0, ...definition };
 }

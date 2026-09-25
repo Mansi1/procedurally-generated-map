@@ -5,7 +5,7 @@
 // gelesen.
 
 import {
-  ANIMAL_POSE, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, type EntityInstance,
+  ANIMAL_POSE, BUILDING_HEADING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelStockSlots, type EntityInstance,
 } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS } from '../map';
 import { reliefZ } from '../noise';
@@ -20,7 +20,7 @@ import { STRIDE_LENGTH, WORK_TEMPO, type ViewRect, type World } from './world';
 const DUST_COLOR: [number, number, number] = [214, 200, 172];
 
 /** Farbe der Ladung auf dem Rücken: wie das Vorkommen, aus dem sie meist stammt. */
-const LOAD_LOOK: Record<ResourceKind, DepositType> = { food: 'berries', wood: 'wood', stone: 'stone', gold: 'gold' };
+const LOAD_LOOK: Record<ResourceKind, DepositType> = { food: 'berries', wood: 'wood', stone: 'stone', gold: 'gold', bows: 'wood' };
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
@@ -30,6 +30,8 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
  * @param blend 0..1 - wie weit der nächste Tick schon fortgeschritten ist,
  *   damit Dorfbewohner flüssig laufen statt zehnmal je Sekunde zu springen.
  * @param selection was ausgewählt ist - nur das bekommt einen Lebensbalken
+ * @param hovered Gebäude unter dem Zeiger (Ankerpunkt) - eine Waffenkammer
+ *   zeigt sich dann ohne Dach, wie in Stronghold (ausgewählt ebenso)
  */
 export function worldInstances(
   world: World,
@@ -37,6 +39,7 @@ export function worldInstances(
   out: EntityInstance[] = [],
   blend = 1,
   selection?: { villagers: ReadonlySet<number>; buildings: ReadonlySet<string> },
+  hovered?: string,
 ): EntityInstance[] {
   const margin = 4;
   const x0 = view.x - margin;
@@ -45,6 +48,7 @@ export function worldInstances(
   const y1 = view.y + view.height + margin;
 
   ruinInstances(world, x0, y0, x1, y1, out, blend);
+  const armory = world.armoryStock();
 
   for (const building of world.allBuildings()) {
     if (building.x < x0 || building.x > x1 || building.y < y0 || building.y > y1) continue;
@@ -77,7 +81,11 @@ export function worldInstances(
       shape: building.model,
       alpha: 1,
       // Jede Mühle dreht in ihrem eigenen Takt; Felder zeigen Wuchs und Rest.
-      motion: def.model === SHAPE.mill ? millMotion(building.x, building.y) : undefined,
+      motion: def.model === SHAPE.mill ? millMotion(building.x, building.y)
+        : armory.has(building.anchor) && modelStockSlots(building.model) > 0
+          ? armoryMotion(building.model, armory.get(building.anchor)!,
+              building.anchor === hovered || !!selection?.buildings.has(building.anchor))
+        : undefined,
       health: selection?.buildings.has(building.anchor) ? building.health : undefined,
     });
   }
@@ -88,7 +96,7 @@ export function worldInstances(
     if (x < x0 || x > x1 || y < y0 || y > y1) continue;
     const phase = v.pose === POSE.walk
       ? lerp(v.prevStride, v.stride, blend) * (Math.PI * 2 / STRIDE_LENGTH)
-      : v.pose === POSE.work || v.pose === POSE.pick || v.pose === POSE.scythe
+      : v.pose === POSE.work || v.pose === POSE.pick || v.pose === POSE.scythe || v.pose === POSE.carve
         ? lerp(v.prevWorkTime, v.workTime, blend) * WORK_TEMPO
         // Stehen: Weltzeit in Sekunden, je Figur versetzt (Leerlauf-Animation).
         : world.timeAt(blend) + v.id * 7.3;
@@ -128,6 +136,11 @@ export function worldInstances(
     });
   }
   return out;
+}
+
+/** Waffenkammer: Füllstand der Gestelle (Anteil der Plätze) und offen, wenn der Zeiger darauf steht oder sie ausgewählt ist. */
+function armoryMotion(shape: number, bows: number, open: boolean): [number, number, number, number] {
+  return [BUILDING_HEADING, Math.min(1, bows / modelStockSlots(shape)), open ? 1 : 0, 0];
 }
 
 /** Einstürzende Gebäude: Wackeln, Zusammensacken, Staub, fliegender Schutt, Ausblenden. */

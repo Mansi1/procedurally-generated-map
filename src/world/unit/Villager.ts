@@ -30,7 +30,13 @@ export type Task =
    */
   | { kind: 'hunt'; animal: number; delivering: boolean; cooldown: number }
   /** Bestellt und erntet das Feld, bringt die Ernte zum nächsten Lager für Nahrung. */
-  | { kind: 'farm'; building: string; row: number; delivering: boolean };
+  | { kind: 'farm'; building: string; row: number; delivering: boolean }
+  /**
+   * Arbeitet in der Werkstatt (Bognerei): holt Holz vom nächsten Lager
+   * (`fetch`), schnitzt an der Werkbank (`carve`, Fortschritt 0..1) und trägt
+   * den Bogen zur nächsten Waffenkammer (`deliver`) - dann von vorn.
+   */
+  | { kind: 'craft'; building: string; step: 'fetch' | 'carve' | 'deliver'; progress: number };
 
 export class Villager extends UnitBase {
   carrying = 0;

@@ -72,6 +72,26 @@ export function lantern(m, x, y, z) {
   m.box('Lantern.Cap', 'Iron', [x - 0.08, x + 0.08], [y + 0.14, y + 0.2], [z - 0.08, z + 0.08], { x: [x - 0.02, x + 0.02], z: [z - 0.02, z + 0.02] });
 }
 
+/**
+ * Bow: a curved stave from tip to tip with a straight string. `c` is the
+ * middle of the grip, `up` points to the upper tip, `back` to where the limbs
+ * bend away from the string; both unit vectors. `sag`: how far the middle
+ * sits in front of the tips (braced bow). `name` names the objects (the
+ * armory numbers its bows 'Stock.<n>'), `thick` scales its thickness.
+ */
+export function bow(m, c, up, back, length = 1.7, sag = 0.18, name = 'Bow', thick = 1) {
+  const at = (t) => c.map((v, i) => v + up[i] * t * length / 2 + back[i] * sag * (1 - t * t));
+  const N = 8;
+  for (let i = 0; i < N; i++) {
+    const t0 = -1 + (2 * i) / N, t1 = -1 + (2 * (i + 1)) / N;
+    // Thick at the grip, thin at the tips.
+    const w = (t) => (0.03 + 0.03 * (1 - Math.abs(t))) * thick;
+    m.beam(name, 'Wood', at(t0), at(t1), w(t0), { w1: w(t1) });
+  }
+  m.beam(`${name}.Grip`, 'WoodDark', at(-0.1), at(0.1), 0.07 * thick);
+  m.beam(`${name}.String`, 'Canvas', at(-1), at(1), 0.012 * thick);
+}
+
 export const PALETTE = {
   Stone: '0.600 0.585 0.560', StoneDark: '0.450 0.440 0.425', StoneLight: '0.720 0.700 0.660',
   Plaster: '0.900 0.860 0.760', Timber: '0.270 0.180 0.110', Wood: '0.420 0.290 0.170',
@@ -83,7 +103,7 @@ export const PALETTE = {
   Gold: '0.930 0.740 0.220', GoldDark: '0.700 0.520 0.120', Ore: '0.350 0.330 0.320',
   Dirt: '0.450 0.380 0.280', PlasterGrey: '0.760 0.760 0.740', WindowLit: '1.000 0.820 0.420',
   Shingle: '0.520 0.410 0.290', ShingleDark: '0.380 0.290 0.200', Ivy: '0.300 0.520 0.200',
-  IvyDark: '0.190 0.380 0.140',
+  IvyDark: '0.190 0.380 0.140', Straw: '0.850 0.740 0.420', Feather: '0.900 0.880 0.840',
 };
 
 export function write(dir, file, header, m, paint) {

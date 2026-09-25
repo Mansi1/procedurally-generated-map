@@ -102,6 +102,12 @@ import boarMtl from '../models/boar.mtl?raw';
 import birchLeafUrl from '../textures/birch_leaf.png';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
+import bowyerObj from '../models/bowyer.obj?raw';
+import bowyerMtl from '../models/bowyer.mtl?raw';
+import armoryObj from '../models/armory.obj?raw';
+import armoryMtl from '../models/armory.mtl?raw';
+import bowObj from '../models/bow.obj?raw';
+import bowMtl from '../models/bow.mtl?raw';
 
 /** Formen für aParams.x - die Zahlen stehen so auch im Shader. */
 export const SHAPE = {
@@ -207,6 +213,12 @@ export const SHAPE = {
   sheep: 95,
   goat: 96,
   boar: 97,
+  /** Bognerei: Werkstatt mit Werkbank, Bogenstäben und Zielscheibe (models/bowyer.obj). */
+  bowyer: 98,
+  /** Ein Bogen - Symbol für den Vorrat an Bögen (models/bow.obj). */
+  bow: 99,
+  /** Waffenkammer: Steinhaus mit Waffengestell, Schilden und Pfeilfässern (models/armory.obj). */
+  armory: 100,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -286,6 +298,9 @@ export const BUILDING_HEADING = 0.5;
 /** Wo die Pflanzen ansetzen, in Metern (SOIL in tools/models/farmsGen.mjs). */
 const FIELD_SOIL_METERS = '0.02';
 
+/** Waffenkammer offen: so hoch (Meter) bleiben die Wände stehen (siehe P_CUT_WALL). */
+const ARMORY_CUT_METERS = '1.1';
+
 /** Furchen je Feld (FIELD_ROWS in world/catalog.ts, ROWS in farmsGen.mjs). */
 const FIELD_FURROWS = 9;
 const FIELD_BASES = [SHAPE.farmWheat, SHAPE.farmCorn];
@@ -351,6 +366,8 @@ export const POSE = {
   pick: 3,
   /** Mit der Sense mähen: der Oberkörper schwingt die Sense flach über den Boden. */
   scythe: 4,
+  /** An der Werkbank einen Bogenstab schnitzen: beide Hände ziehen das Zugmesser heran. */
+  carve: 5,
 } as const;
 
 export interface EntityInstance {
@@ -503,6 +520,13 @@ const int P_SOIL = 21;
 // Schnur mit Pflöcken an einer Kante eines Tiles: aCorner.w = 22 + Tile * 0.04
 // + Seite * 0.009 (0/1: Tile davor/dahinter entlang x, 2/3: entlang y).
 const int P_EDGE = 22;
+// Waffenkammer: das Dach (verschwindet, wenn der Zeiger darauf steht), die
+// Wände (werden dann niedrig) und die Bögen im Vorrat - je Bogen seine
+// Reihenfolge im Nachkomma-Teil (Anteil * 0.45), er erscheint, sobald der
+// Füllstand (aMotion.y) darüber liegt. Offen: aMotion.z = 1.
+const int P_CUT_ROOF = 28;
+const int P_STOCK = 29;
+const int P_CUT_WALL = 30;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Höhe (z) um ein Gelenk an
@@ -678,6 +702,25 @@ void main() {
         lean = ${MOW.lean.toFixed(3)};
         twist = sweep * 0.55;
         bob = ${MOW.bob.toFixed(3)};
+      } else if (pose == 5) {
+        // Schnitzen an der Werkbank: leicht gebeugt, beide Hände vorn auf
+        // Tischhöhe am Zugmesser. Es gleitet mit gestreckten Armen vom Körper
+        // weg an den Stab und wird mit angewinkelten Ellbogen herangezogen -
+        // der Oberkörper geht ein wenig mit.
+        float t = phase * 0.6;
+        float pull = 0.5 + 0.5 * sin(t);
+        hipL = 0.12;
+        hipR = -0.08;
+        kneeL = -0.2;
+        kneeR = -0.15;
+        shL = 0.55 + 0.35 * (1.0 - pull);
+        shR = shL;
+        elL = 0.45 + 0.75 * pull;
+        elR = elL;
+        inL = 0.25;
+        inR = 0.25;
+        lean = 0.22 + 0.1 * (1.0 - pull);
+        bob = -0.02;
       } else {
         // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
         // eine Gruppe nicht im Gleichtakt atmet.
@@ -713,9 +756,9 @@ void main() {
       if (part == P_SHIN_R) p = swingAround(p, uKnee, kneeR);
       if (part == P_FOREARM_L) p = swingAround(p, uElbow, elL);
       if (part == P_FOREARM_R || part == P_TOOL || part == P_SCYTHE) p = swingAround(p, uElbow, elR);
-      // Beim Pflücken ist das Beil weggesteckt: alle Ecken auf einen Punkt,
+      // Beim Pflücken, Mähen und Schnitzen ist das Beil weggesteckt: alle Ecken auf einen Punkt,
       // die Dreiecke haben dann keine Fläche mehr.
-      if (part == P_TOOL && (pose == 3 || pose == 4)) p = vec3(0.0, 0.0, uHip);
+      if (part == P_TOOL && (pose == 3 || pose == 4 || pose == 5)) p = vec3(0.0, 0.0, uHip);
       // Die Sense nur beim Mähen - sonst trägt er das Beil.
       if (part == P_SCYTHE && pose != 4) p = vec3(0.0, 0.0, uHip);
       if (legL) p = swingAround(p, uHip, hipL);
@@ -817,6 +860,11 @@ void main() {
         gSawn = 1.0;
       }
     }
+
+    if (part == P_STOCK && (aCorner.w - 29.0) / 0.45 >= aMotion.y) p = vec3(0.0);
+    if (part == P_CUT_ROOF && aMotion.z > 0.5) p = vec3(0.0);
+    // Offen: die Wände nur bis gut einen Meter hoch - man schaut hinein.
+    if (part == P_CUT_WALL && aMotion.z > 0.5) p.z = min(p.z, ${ARMORY_CUT_METERS} / uMeters);
 
     if (part == P_BERRY) {
       // Abgeerntet: die Beeren verschwinden eine nach der anderen, der Strauch
@@ -1586,6 +1634,10 @@ const PARTS: [prefix: string, part: number][] = [
   ['Load', 6],
   ['Sails', 7],
   ['Cloth', 8],
+  // Waffenkammer (siehe P_CUT_ROOF).
+  ['Cut.Roof', 28],
+  ['Stock', 29],
+  ['Cut.Wall', 30],
 ];
 
 /** Materialien, die zur Laufzeit gefärbt werden - aMaterial.w im Shader. */
@@ -1675,11 +1727,20 @@ interface Model {
   top: number;
   /** Eingang (Modell-Einheiten: vorn, links), falls das Modell ihn markiert. */
   entry?: [number, number];
+  /** Waffenkammer: so viele Bögen passen sichtbar hinein (Objekte "Stock.<n>"). */
+  stockSlots: number;
+  /** Werkstatt: wo der Arbeiter steht und wohin er schaut (Modell-Einheiten: vorn, links). */
+  work?: { stand: [number, number]; aim: [number, number] };
   /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
   meters: number;
 }
 
 /** Nummer einer Beere aus ihrem Objektnamen ("Berry.12.Shine" -> 12). */
+/** Nummer eines Bogens im Vorrat ("Stock.7.Grip": 7), siehe P_STOCK. */
+function stockNumber(object: string): number {
+  return Number(/^Stock\.(\d+)/.exec(object)?.[1] ?? 0);
+}
+
 function berryNumber(object: string): number {
   return Number(/^Berry\.(\d+)/.exec(object)?.[1] ?? 0);
 }
@@ -1755,10 +1816,13 @@ function berryRandom(index: number): number {
  */
 function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'width', lod = false, sawable = false,
                    only?: ObjTriangle[]): Model {
-  // Das Objekt "Entry" markiert nur den Eingang - nicht zeichnen, nicht mitmessen.
+  // Die Objekte "Entry" (Eingang) und "Work.*" (Platz an der Werkbank)
+  // markieren nur Stellen - nicht zeichnen, nicht mitmessen.
   const all = typeof obj === 'string' ? parseObj(obj) : obj;
-  const entryPoints = all.filter((t) => t.object.startsWith('Entry')).flatMap((t) => t.points);
-  const triangles = all.filter((t) => !t.object.startsWith('Entry'));
+  const isMarker = (object: string) => object.startsWith('Entry') || object.startsWith('Work.');
+  const markerPoints = (prefix: string) => all.filter((t) => t.object.startsWith(prefix)).flatMap((t) => t.points);
+  const entryPoints = markerPoints('Entry');
+  const triangles = all.filter((t) => !isMarker(t.object));
   const colors = parseMtl(mtl);
   if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
 
@@ -1771,13 +1835,17 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     }
   }
   const partOf = (object: string) => PARTS.find(([prefix]) => object.startsWith(prefix))?.[1] ?? 0;
+  // Plätze für Bögen im Vorrat (Waffenkammer): die höchste Nummer + 1.
+  const stockSlots = triangles.reduce((n, t) => (t.object.startsWith('Stock') ? Math.max(n, stockNumber(t.object) + 1) : n), 0);
 
   let unitLength = maxY - minY;
   if (unit === 'width') {
     let minX = Infinity;
     let maxX = -Infinity;
     for (const t of triangles) {
-      if (partOf(t.object) !== 0) continue;
+      // Dach und Wände der Waffenkammer stehen still und zählen mit.
+      const part = partOf(t.object);
+      if (part !== 0 && part !== 28 && part !== 30) continue;
       for (const p of t.points) {
         minX = Math.min(minX, p[0]);
         maxX = Math.max(maxX, p[0]);
@@ -1885,6 +1953,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       }
       // Beeren: je Beere (Objekt) ein fester Zufall im Nachkomma-Teil, siehe P_BERRY.
       const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45
+        // Bögen im Vorrat: ihre Reihenfolge, die Mitte ihres Anteils.
+        : part === 29 ? 29 + ((stockNumber(t.object) + 0.5) / stockSlots) * 0.45
         // Feldpflanzen: ihre Reihenfolge beim Ernten, siehe P_CROP.
         : part === 20 || part === 21 ? part + furrowValue(t.object)
         // Schnur an einer Tile-Kante, siehe P_EDGE.
@@ -1945,12 +2015,19 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     }
   }
 
-  const entry = entryPoints.length > 0
-    ? local(entryPoints.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0])
-        .map((c) => c / entryPoints.length) as [number, number, number])
-    : undefined;
+  // Mitte einer Markierung (Modell-Einheiten: vorn, links).
+  const markerAt = (points: [number, number, number][]): [number, number] | undefined => {
+    if (points.length === 0) return undefined;
+    const c = local(points.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0])
+      .map((v) => v / points.length) as [number, number, number]);
+    return [c[0], c[1]];
+  };
+  const stand = markerAt(markerPoints('Work.Stand'));
+  const aim = markerAt(markerPoints('Work.Aim'));
   return {
-    entry: entry && [entry[0], entry[1]] as [number, number],
+    entry: markerAt(entryPoints),
+    work: stand && aim && { stand, aim },
+    stockSlots,
     vertices: new Float32Array(v),
     lods: lod ? lods.map((l) => new Float32Array(l)) : undefined,
     hip,
@@ -2071,6 +2148,9 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.house4, model: loadModel(house4Obj, house4Mtl, 'width'), scale: 1 },
   { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
   { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
+  { shape: SHAPE.bowyer, model: loadModel(bowyerObj, bowyerMtl, 'width'), scale: 1 },
+  { shape: SHAPE.bow, model: loadModel(bowObj, bowMtl, 'height'), scale: 1 },
+  { shape: SHAPE.armory, model: loadModel(armoryObj, armoryMtl, 'width'), scale: 1 },
   ...FARM_KINDS.flatMap((kind, i) => fieldModels(kind, FIELD_BASES[i])),
   ...natural(SHAPE.tree, treeSpruceObj, treeSpruceMtl, TREE_METERS),
   ...natural(SHAPE.treePine, treePineObj, treePineMtl, TREE_METERS),
@@ -2111,8 +2191,29 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
  */
 export function modelEntry(shape: number, x: number, y: number, size: number, heading: number): { x: number; y: number } | undefined {
   const m = MODELS.find((entry) => entry.shape === shape);
-  if (!m?.model.entry) return undefined;
-  const [f, l] = m.model.entry;
+  return m?.model.entry && modelToWorld(m, m.model.entry, x, y, size, heading);
+}
+
+/**
+ * Platz an der Werkbank einer Werkstatt in der Welt: wo der Arbeiter steht
+ * und wohin er schaut. Undefined, wenn das Modell ihn nicht markiert.
+ */
+export function modelWorkSpot(shape: number, x: number, y: number, size: number, heading: number):
+    { x: number; y: number; aimX: number; aimY: number } | undefined {
+  const m = MODELS.find((entry) => entry.shape === shape);
+  if (!m?.model.work) return undefined;
+  const stand = modelToWorld(m, m.model.work.stand, x, y, size, heading);
+  const aim = modelToWorld(m, m.model.work.aim, x, y, size, heading);
+  return { ...stand, aimX: aim.x, aimY: aim.y };
+}
+
+/** Wie viele Bögen im Modell sichtbar gestapelt werden können (Waffenkammer), sonst 0. */
+export function modelStockSlots(shape: number): number {
+  return MODELS.find((entry) => entry.shape === shape)?.model.stockSlots ?? 0;
+}
+
+/** Punkt im Modell (vorn, links) in der Welt - wie beim Zeichnen gedreht und skaliert. */
+function modelToWorld(m: { scale: number }, [f, l]: [number, number], x: number, y: number, size: number, heading: number) {
   const s = size * m.scale;
   const [fx, fy] = [Math.cos(heading), Math.sin(heading)];
   return { x: x + 0.5 + (fx * f - fy * l) * s, y: y + 0.5 + (fy * f + fx * l) * s };

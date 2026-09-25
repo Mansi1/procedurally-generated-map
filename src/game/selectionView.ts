@@ -3,7 +3,7 @@
 // (components/SelectionPanel.tsx): Gebäude mit Feld oder Ausbildung, ein
 // Vorkommen, Dorfbewohner mit ihren Tätigkeiten - oder nichts.
 
-import type { FarmView, SelectionView, TrainView } from '../components/SelectionPanel';
+import type { FarmView, SelectionView, TrainView, WorkshopView } from '../components/SelectionPanel';
 import { RESOURCE_TYPE_LABEL } from '../map';
 import type { Building, UnitProducer } from '../world/building';
 import {
@@ -105,6 +105,10 @@ export function selectionView(world: World, selection: Selection, resources: Res
       storedResources: def.storedResources.length > 0 ? def.storedResources.map((r) => RESOURCE_LABEL[r]).join(', ') : undefined,
       housing: def.housing > 0 ? def.housing : undefined,
       farm: building.isFarm() ? { ...farmView(world, building), plan: building.plan } : undefined,
+      workshop: building.isWorkshop() ? workshopView(world, building) : undefined,
+      weapons: def.weaponCapacity > 0
+        ? { bows: world.armoryStock().get(building.anchor) ?? 0, capacity: def.weaponCapacity }
+        : undefined,
       trainer: building.isUnitProducer()
         ? {
             queue: building.queuedUnits,
@@ -168,3 +172,14 @@ export function selectionView(world: World, selection: Selection, resources: Res
   return { kind: 'overview', idle: world.villagers.filter((v) => v.task.kind === 'idle').length };
 }
 
+/** Werkstatt: wer dort arbeitet, was er tut, wie weit der Bogen ist. */
+function workshopView(world: World, building: Building): WorkshopView {
+  const worker = world.villagers.find((v) => v.task.kind === 'craft' && v.task.building === building.anchor);
+  if (!worker || worker.task.kind !== 'craft') return {};
+  const task = worker.task;
+  return {
+    worker: worker.name,
+    doing: world.describe(worker),
+    percent: task.step === 'carve' && worker.carryType !== 'wood' ? Math.floor(task.progress * 100) : undefined,
+  };
+}

@@ -4,12 +4,12 @@
 // als kurzer Text beschreiben, was sie gerade tun. Was ein Dorfbewohner ist
 // und hat, steht in unit/Villager.ts; die Welt ruft tick() je Dorfbewohner.
 
-import { BUILDING_HEADING, POSE, modelEntry } from '../gl/entityRenderer';
+import { BUILDING_HEADING, POSE, modelEntry, modelWorkSpot } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_LABEL } from '../map';
 import { findPath, lineOfSight } from './pathfinding';
 import { furrowFood, type Building, type Farm } from './building';
 import {
-  CROPS, FARM_RATE, HUNT, MAX_GATHERERS, PLOUGH_TIME, RESEED_COST, SOW_TIME, VILLAGER, YIELD, type AnimalKind, type DepositType, type ResourceKind,
+  BOWYER, CROPS, FARM_RATE, HUNT, MAX_GATHERERS, PLOUGH_TIME, RESEED_COST, SOW_TIME, VILLAGER, YIELD, type AnimalKind, type DepositType, type ResourceKind,
 } from './catalog';
 import { farmSpot, furrowKey, furrowNeeds, type FarmPhase } from './farming';
 import type { Animal, Task, Villager } from './unit';
@@ -52,6 +52,18 @@ export class VillagerWork {
     for (const v of selected) v.inside = 0;
 
     const target = this.world.at(x, y);
+    if (target?.isWorkshop()) {
+      // Wie in Stronghold arbeitet in einer Werkstatt genau einer.
+      const anchor = target.anchor;
+      const taken = this.world.villagers.some((v) => !ids.has(v.id) && v.task.kind === 'craft' && v.task.building === anchor);
+      if (taken) return `In der ${target.label} arbeitet schon jemand`;
+      const [worker, ...rest] = selected;
+      for (const v of rest) {
+        if (v.task.kind === 'craft' && v.task.building === anchor) v.assign({ kind: 'idle' });
+      }
+      worker.assign({ kind: 'craft', building: anchor, step: 'fetch', progress: 0 });
+      return rest.length > 0 ? `In der ${target.label} arbeitet nur einer` : null;
+    }
     if (target?.isFarm()) {
       // Je Furche ein Bauer - sind alle besetzt, geht es aufs nächste Feld
       // mit einer freien Furche.
@@ -412,6 +424,70 @@ export class VillagerWork {
     if (v.carrying >= VILLAGER.capacity - 1e-6) task.delivering = true;
   }
 
+  /**
+   * Bogner: holt Holz vom nächsten Lager, das Holz annimmt, schnitzt daraus
+   * an der Werkbank einen Bogen und trägt ihn zur nächsten Waffenkammer -
+   * immer wieder, solange Holz im Vorrat ist.
+   */
+  private tickCrafter(v: Villager, task: Extract<Task, { kind: 'craft' }>, dt: number) {
+    const shop = this.world.building(task.building);
+    if (!shop?.isWorkshop()) {
+      v.task = { kind: 'idle' };
+      return;
+    }
+    if (task.step === 'deliver') {
+      const armory = this.nearestDropSite(v, 'bows');
+      if (!armory) {
+        v.problem = 'Keine Waffenkammer für den Bogen - baue eine';
+        return;
+      }
+      // Alle voll: er wartet mit dem Bogen, bis Platz ist - erst dann geht er los.
+      if (v.inside <= 0 && this.world.stock.bows >= this.world.weaponCapacity()) {
+        v.problem = 'Alle Waffenkammern sind voll - baue noch eine';
+        return;
+      }
+      v.problem = null;
+      if (this.deliverTo(v, armory, dt)) task.step = 'fetch';
+      return;
+    }
+    if (task.step === 'fetch') {
+      const store = this.nearestDropSite(v, 'wood');
+      if (!store) {
+        v.problem = 'Kein Lager für Holz - baue ein Holzlager';
+        return;
+      }
+      // Erst losgehen, wenn es genug gibt - sonst wartet er an der Werkbank.
+      if (v.inside <= 0 && !this.world.canPay({ wood: BOWYER.wood })) {
+        v.problem = `Zu wenig Holz im Vorrat (${BOWYER.wood} je Bogen)`;
+        return;
+      }
+      v.problem = null;
+      // Am Lager: was er noch trug, liefert er ab, und nimmt das Holz mit.
+      if (!this.deliverTo(v, store, dt)) return;
+      if (!this.world.canPay({ wood: BOWYER.wood })) return;
+      this.world.pay({ wood: BOWYER.wood });
+      v.pickUp('wood', BOWYER.wood);
+      task.step = 'carve';
+      return;
+    }
+    const def = shop.definition;
+    const spot = modelWorkSpot(shop.model, shop.x, shop.y, def.size, BUILDING_HEADING)
+      ?? { x: shop.x + 0.5, y: shop.y + 1.1, aimX: shop.x + 0.5, aimY: shop.y + 1.5 };
+    if (!this.walk(v, spot.x, spot.y, 0.05, dt)) return;
+    // Das Holz kommt auf die Werkbank.
+    if (v.carryType === 'wood') v.unload();
+    v.heading = Math.atan2(spot.aimY - v.y, spot.aimX - v.x);
+    v.pose = POSE.carve;
+    this.swing(v, dt, 'berries', true);
+    task.progress += dt / BOWYER.craftTime;
+    if (task.progress >= 1) {
+      task.progress = 0;
+      v.pickUp('bows', 1);
+      task.step = 'deliver';
+    }
+    this.world.markDirty();
+  }
+
   /** Rechtsklick auf ein Tier: die Ausgewählten jagen es bzw. zerlegen den Kadaver. */
   hunt(ids: ReadonlySet<number>, animal: Animal) {
     for (const v of this.world.villagers) {
@@ -523,6 +599,10 @@ export class VillagerWork {
 
       case 'hunt':
         this.tickHunter(v, task, dt);
+        return;
+
+      case 'craft':
+        this.tickCrafter(v, task, dt);
         return;
 
       case 'deliver': {
@@ -646,6 +726,14 @@ export class VillagerWork {
         if (!a) return 'jagt' + load;
         return (a.isDead ? `zerlegt ${a.label}` : `jagt ${a.label}`) + load;
       }
+      case 'craft':
+        switch (v.task.step) {
+          case 'fetch': return 'holt Holz für die Bognerei' + load;
+          case 'deliver': return 'bringt einen Bogen zur Waffenkammer';
+          case 'carve': return v.carryType === 'wood'
+            ? 'bringt Holz zur Werkbank' + load
+            : `schnitzt einen Bogen (${Math.floor(v.task.progress * 100)} %)`;
+        }
       case 'farm': {
         const building = this.world.building(v.task.building);
         const f = building?.isFarm() ? building.furrows[v.task.row] : undefined;

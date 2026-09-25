@@ -181,6 +181,26 @@ export class World {
   }
 
   /**
+   * Wie viele Bögen in jeder Waffenkammer liegen: der Vorrat, gleich verteilt -
+   * die ersten bekommen den Rest. Schlüssel: Ankerpunkt.
+   */
+  armoryStock(): Map<string, number> {
+    const anchors: string[] = [];
+    for (const b of this.allBuildings()) if (b.definition.weaponCapacity > 0) anchors.push(b.anchor);
+    const bows = Math.floor(this.stock.bows);
+    const each = Math.floor(bows / Math.max(1, anchors.length));
+    const rest = bows - each * anchors.length;
+    return new Map(anchors.map((a, i) => [a, each + (i < rest ? 1 : 0)]));
+  }
+
+  /** So viele Waffen passen in alle Waffenkammern zusammen. */
+  weaponCapacity(): number {
+    let total = 0;
+    for (const b of this.allBuildings()) total += b.definition.weaponCapacity;
+    return total;
+  }
+
+  /**
    * Dorfbewohner je Ressource - alle mit dem Auftrag, sie zu sammeln, auch
    * wenn sie gerade eine Ladung zum Lager tragen.
    */
@@ -190,6 +210,7 @@ export class World {
     for (const v of this.villagers) {
       if (v.task.kind === 'gather') counts[YIELD[v.task.type]]++;
       else if (v.task.kind === 'farm' || v.task.kind === 'hunt') counts.food++;
+      else if (v.task.kind === 'craft') counts.bows++;
       else if (v.task.kind === 'idle') idle++;
     }
     return { counts, idle };
@@ -460,6 +481,10 @@ export class World {
   remove(building: Building) {
     const def = building.definition;
     this.pay(def.cost, -0.5);
+    // Eine Waffenkammer nimmt ihre Waffen mit: ihr Anteil am Vorrat ist weg.
+    if (def.weaponCapacity > 0) {
+      this.stock.bows = Math.max(0, this.stock.bows - (this.armoryStock().get(building.anchor) ?? 0));
+    }
     // Wer noch in Ausbildung war, wird voll erstattet - er hat ja nie gearbeitet.
     if (building.isUnitProducer()) this.pay(VILLAGER.cost, -building.queuedUnits);
     for (const [tx, ty] of building.footprintTiles()) this.occupied.delete(key(tx, ty));
@@ -471,7 +496,8 @@ export class World {
     // Wer gerade genau hierhin liefern wollte, sucht sich beim nächsten Tick
     // ein anderes Lager oder bleibt mit seiner Ladung stehen.
     for (const v of this.villagers) {
-      if ((v.task.kind === 'deliver' || v.task.kind === 'farm') && v.task.building === anchor) v.task = { kind: 'idle' };
+      const t = v.task;
+      if ((t.kind === 'deliver' || t.kind === 'farm' || t.kind === 'craft') && t.building === anchor) v.task = { kind: 'idle' };
     }
     this.dirty = true;
   }

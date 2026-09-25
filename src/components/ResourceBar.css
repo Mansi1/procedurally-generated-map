@@ -86,8 +86,12 @@
   padding: 1px 6px;
   border-radius: 2px;
 }
-/* Bevölkerungsgrenze erreicht - gelb wie in AoE2 */
-#stock .rb-pop.full {
+/* Bevölkerungsgrenze erreicht bzw. Waffenkammern voll - gelb wie in AoE2 */
+#stock .rb-amount.full {
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+#stock .rb-amount.full {
   background: linear-gradient(180deg, #f0ea5a, #c9c230);
   color: #fffbe0;
   text-shadow: 1px 1px 0 #6a5d00;

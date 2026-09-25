@@ -148,6 +148,7 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
         figure(`${who} · hackt`, female, POSE.work, 6, 0.3),
         figure(`${who} · pflückt`, female, POSE.pick, 6, 0.3),
         figure(`${who} · mäht`, female, POSE.scythe, 6, 0.3),
+        figure(`${who} · schnitzt`, female, POSE.carve, 6, 0.3),
       ];
     }),
   },
@@ -166,6 +167,8 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
       model('Hauptgebäude', SHAPE.townCenter, BUILDINGS.town_center.size),
       ...[SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4].map((s, i) => model(`Haus ${i + 1}`, s, BUILDINGS.house.size)),
       model('Minenlager', SHAPE.miningCamp, BUILDINGS.mining_camp.size),
+      model('Bognerei', SHAPE.bowyer, BUILDINGS.bowyer.size),
+      model('Waffenkammer', SHAPE.armory, BUILDINGS.armory.size),
       model('Sammelpunkt', SHAPE.rallyFlag, 0.54),
       collapse('Abriss', SHAPE.house, BUILDINGS.house.size),
     ],
@@ -243,6 +246,7 @@ const people = (female: boolean) => {
     figure('hackt', female, POSE.work, 6, 0.3),
     figure('pflückt', female, POSE.pick, 6, 0.3),
     figure('mäht', female, POSE.scythe, 6, 0.3),
+    figure('schnitzt', female, POSE.carve, 6, 0.3),
   ], 240, 0.9);
 };
 
@@ -266,6 +270,20 @@ const SHOWCASE: Showcase[] = [
   building('Haus', BUILDINGS.house.models!, BUILDINGS.house.size, 220, 0.7),
   building('Holzlager', BUILDINGS.lumber_camp.models!, BUILDINGS.lumber_camp.size, 220, 0.6),
   building('Minenlager', [SHAPE.miningCamp], BUILDINGS.mining_camp.size, 200, 0.7),
+  building('Bognerei', [SHAPE.bowyer], BUILDINGS.bowyer.size, 200, 0.7),
+  // Wie im Spiel, wenn der Zeiger darauf steht: ohne Dach, mit Bögen gefüllt.
+  {
+    ...showcase('Gebäude', 'Waffenkammer', [
+      model('steht', SHAPE.armory, BUILDINGS.armory.size),
+      model('offen · leer', SHAPE.armory, BUILDINGS.armory.size, [BUILDING_HEADING, 0, 1, 0]),
+      model('offen · halb', SHAPE.armory, BUILDINGS.armory.size, [BUILDING_HEADING, 0.5, 1, 0]),
+      model('offen · voll', SHAPE.armory, BUILDINGS.armory.size, [BUILDING_HEADING, 1, 1, 0]),
+    ], 200, 0.8),
+    demolish: [0, 1, 2, 3].map(() => collapse('Abriss', SHAPE.armory, BUILDINGS.armory.size)),
+    extras: ['Abriss'],
+  },
+  // Etwa 1.6 m lang - das Symbol für den Vorrat an Bögen.
+  showcase('Gebäude', 'Bogen', [model('gespannt', SHAPE.bow, 0.32)], 420, 0.8),
   building('Mühle', BUILDINGS.mill.models!, BUILDINGS.mill.size, 150, 1.4, (i) => millMotion(i, 7)),
   showcase('Gebäude', 'Sammelpunkt', [model('weht', SHAPE.rallyFlag, 0.54)], 420, 0.4),
   ...TREES.map(([label, sh]) => showcase('Bäume', label, [

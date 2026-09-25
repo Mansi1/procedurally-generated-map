@@ -5,7 +5,7 @@
 import { Color } from '../../functions/Color';
 import { SHAPE } from '../../gl/entityRenderer';
 import { VILLAGER } from '../catalog';
-import { RESOURCE_KINDS } from './common';
+import { GATHERED_KINDS } from './common';
 import { defineBuilding } from './definition';
 import { UnitProducer, type TrainableUnit } from './UnitProducer';
 
@@ -22,7 +22,7 @@ export class TownCenter extends UnitProducer {
     footprint: 3,
     cost: { wood: 200, stone: 100 },
     housing: 10,
-    storedResources: RESOURCE_KINDS,
+    storedResources: GATHERED_KINDS,
     hp: 2400,
   });
 

@@ -447,7 +447,8 @@ function collectOverlay(blend: number) {
     resources.update(visible, camera.x, camera.y);
     resources.instances(visible, world, overlay, selection.resource, blend);
   }
-  worldInstances(world, visible, overlay, blend, selection);
+  const hovered = pointer.tile ? world.at(pointer.tile.x, pointer.tile.y)?.anchor : undefined;
+  worldInstances(world, visible, overlay, blend, selection, hovered);
   selectionOverlay(world, selection, blend, overlay);
   const tile = pointer.tile;
   if (placement.placingType !== null && tile) {

@@ -14,16 +14,17 @@ import type { ResourceType } from '../map';
 
 /**
  * Was im Vorrat liegt. Nahrung kommt aus Beeren, Feldern und der Jagd - im
- * Vorrat ist sie eins.
+ * Vorrat ist sie eins. Bögen sammelt man nicht, sie entstehen in der Bognerei
+ * und liegen in der Waffenkammer.
  */
-export type ResourceKind = 'food' | 'wood' | 'stone' | 'gold';
+export type ResourceKind = 'food' | 'wood' | 'stone' | 'gold' | 'bows';
 /** Eine Menge Rohstoffe: der Vorrat, Kosten, eine Ladung. */
 export type Resources = Record<ResourceKind, number>;
 export { RESOURCE_KINDS };
 
 /** Namen der Rohstoffe für die Oberfläche. */
 export const RESOURCE_LABEL: Record<ResourceKind, string> = {
-  food: 'Nahrung', wood: 'Holz', stone: 'Stein', gold: 'Gold',
+  food: 'Nahrung', wood: 'Holz', stone: 'Stein', gold: 'Gold', bows: 'Bögen',
 };
 
 /** Was auf der Karte liegt und gesammelt wird: Baum, Fels, Beerenstrauch. */
@@ -95,7 +96,7 @@ export const RESEED_COST: Partial<Resources> = { wood: 2 };
  * Nahrung, und Nahrung sammeln nur Dorfbewohner.
  */
 export function initialResources(): Resources {
-  return { food: 200, wood: 350, stone: 120, gold: 0 };
+  return { food: 200, wood: 350, stone: 120, gold: 0, bows: 0 };
 }
 
 /** Spielerfarben zur Auswahl in den Einstellungen - wie in AoE2. */
@@ -153,6 +154,13 @@ export { ANIMALS, type AnimalKind, type AnimalDefinition } from './unit';
 
 /** Jagen: Wurfweite des Speers (Tiles), Sekunden zwischen zwei Würfen, Zerlegen (Nahrung je Sekunde). */
 export const HUNT = { range: 2.2, reload: 1.4, butcherRate: 1.0 };
+
+/**
+ * Bognerei, wie der Fletcher in Stronghold: ein Bogner holt so viel Holz aus
+ * dem Vorrat (am nächsten Lager für Holz), schnitzt daraus an der Werkbank
+ * in `craftTime` Sekunden einen Bogen und trägt ihn zur nächsten Waffenkammer.
+ */
+export const BOWYER = { wood: 10, craftTime: 20 };
 
 /** Höchstens so viele Dorfbewohner stehen gleichzeitig in der Warteschlange eines Hauptgebäudes. */
 export const MAX_TRAINING_QUEUE = 25;

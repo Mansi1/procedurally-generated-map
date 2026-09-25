@@ -23,6 +23,8 @@ export interface ResourceBarState {
   labels: Record<ResourceKind, string>;
   /** Sammler je Rohstoff. */
   gatherers: Record<ResourceKind, number>;
+  /** Wie viel höchstens hineinpasst - nur, wo es eine Grenze gibt (Bögen: die Waffenkammern). */
+  capacity?: Partial<Record<ResourceKind, number>>;
   population: { used: number; cap: number; training: number };
   idle: number;
   villagerLabel: string;
@@ -109,9 +111,15 @@ export class ResourceBar {
   update(s: ResourceBarState) {
     for (const r of s.order) {
       const cell = this.cells.get(r)!;
-      setText(cell.amount.current, String(Math.floor(s.stock[r])));
+      const cap = s.capacity?.[r];
+      const amount = Math.floor(s.stock[r]);
+      setText(cell.amount.current, cap === undefined ? String(amount) : `${amount}/${cap}`);
+      cell.amount.current.classList.toggle('full', cap !== undefined && amount >= cap);
       setText(cell.count.current, String(s.gatherers[r]));
-      setTitle(cell.item.current, `${s.labels[r]} - ${s.gatherers[r]} ${s.villagerLabel} sammeln`);
+      // Bögen sammelt man nicht - sie entstehen in der Bognerei.
+      setTitle(cell.item.current, r === 'bows'
+        ? `${s.labels[r]} - ${s.gatherers[r]} in der Bognerei, Platz in den Waffenkammern für ${cap ?? 0}`
+        : `${s.labels[r]} - ${s.gatherers[r]} ${s.villagerLabel} sammeln`);
     }
     const pop = s.population;
     const cell = this.cells.get('population')!;

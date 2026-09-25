@@ -4,8 +4,11 @@
 
 import type { ResourceKind } from '../catalog';
 
-/** Alle Rohstoffe im Vorrat. */
-export const RESOURCE_KINDS: readonly ResourceKind[] = ['food', 'wood', 'stone', 'gold'];
+/** Was Dorfbewohner draußen sammeln - das nimmt das Hauptgebäude an. */
+export const GATHERED_KINDS: readonly ResourceKind[] = ['food', 'wood', 'stone', 'gold'];
+
+/** Alle Rohstoffe im Vorrat: das Gesammelte und was in Werkstätten entsteht. */
+export const RESOURCE_KINDS: readonly ResourceKind[] = [...GATHERED_KINDS, 'bows'];
 
 /** Untergründe, auf denen überhaupt gebaut werden kann. */
 export const BUILDABLE = ['beach', 'desert', 'grass', 'forest', 'snow'] as const;

@@ -5,6 +5,7 @@
 // statisch an der Klasse: `static definition`.
 
 import type { BuildingType, CropType, ResourceKind } from '../catalog';
+import type { Bowyer } from './Bowyer';
 import type { BuildingDefinition } from './definition';
 import type { Farm } from './Farm';
 import type { StorageBuilding } from './StorageBuilding';
@@ -120,6 +121,11 @@ export abstract class BuildingBase {
   }
 
   isFarm(): this is Farm {
+    return false;
+  }
+
+  /** Eine Werkstatt, in der ein Dorfbewohner arbeitet (die Bognerei)? */
+  isWorkshop(): this is Bowyer {
     return false;
   }
 

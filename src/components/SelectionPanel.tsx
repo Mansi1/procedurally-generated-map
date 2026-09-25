@@ -13,8 +13,15 @@ import { formatDuration } from '../format';
 import {
   CROP_ORDER, CROPS, player, type BuildingType, type CropType, type DepositType,
 } from '../world/catalog';
-import { buildingIcon, resourceIcon, villagerIcon } from './modelIcons';
+import { buildingIcon, resourceIcon, stockIcon, villagerIcon } from './modelIcons';
 import { cropIcon } from './cropIcons';
+
+/** Werkstatt fürs Panel: wer dort arbeitet (fehlt, wenn niemand), was er tut, Fortschritt des Bogens. */
+export interface WorkshopView {
+  worker?: string;
+  doing?: string;
+  percent?: number;
+}
 
 /** Stand eines zusammenhängenden Felds. */
 export interface FarmView {
@@ -61,6 +68,9 @@ export type SelectionView =
       storedResources?: string;
       housing?: number;
       farm?: FarmView & { plan: CropType };
+      workshop?: WorkshopView;
+      /** Waffenkammer: so viele Waffen liegen darin, so viele passen hinein. */
+      weapons?: { bows: number; capacity: number };
       trainer?: {
         queue: number;
         max: number;
@@ -173,6 +183,19 @@ function Buildings({ v }: { v: Extract<SelectionView, { kind: 'buildings' }> }) 
   );
 }
 
+/** Werkstatt: der Arbeiter und sein Bogen - oder wie man einen hinschickt. */
+function WorkshopDetails({ workshop }: { workshop: WorkshopView }) {
+  if (!workshop.worker) {
+    return <div class="muted">Niemand arbeitet hier - Rechtsklick mit einem Dorfbewohner auf die Bognerei.</div>;
+  }
+  return (
+    <>
+      <div>Bogner: <b>{workshop.worker}</b> - {workshop.doing}</div>
+      {workshop.percent !== undefined ? <Bar percent={workshop.percent} /> : null}
+    </>
+  );
+}
+
 function Building({ v }: { v: Extract<SelectionView, { kind: 'building' }> }) {
   const t = v.trainer;
   return (
@@ -184,6 +207,16 @@ function Building({ v }: { v: Extract<SelectionView, { kind: 'building' }> }) {
           {v.storedResources ? <div class="muted">Lager für {v.storedResources}</div> : null}
           {v.housing ? <div class="muted">+{v.housing} Bevölkerung</div> : null}
           {v.farm ? <FarmDetails farm={v.farm} /> : null}
+          {v.workshop ? <WorkshopDetails workshop={v.workshop} /> : null}
+          {v.weapons ? (
+            <div class="sel-stock">
+              <img src={stockIcon('bows')} alt="" width="30" height="30" draggable={false} />
+              Bögen: <b>{v.weapons.bows} / {v.weapons.capacity}</b>
+              {v.weapons.bows >= v.weapons.capacity
+                ? <> - <span class="muted">voll</span></>
+                : <span class="muted"> - noch {v.weapons.capacity - v.weapons.bows} frei</span>}
+            </div>
+          ) : null}
           {t && t.queue > 0 ? (
             <>
               <div>
@@ -252,7 +285,7 @@ function Villagers({ v }: { v: Extract<SelectionView, { kind: 'villagers' }> }) 
             : <>{v.activities.map(([text, n]) => <div>{n}× {text}</div>)}</>}
           <div class="muted">
             Rechtsklick auf Holz, Stein, Gold oder Beeren: sammeln · auf ein Tier: jagen · auf ein Feld: bestellen ·
-            auf ein Lager: abliefern · sonst: hingehen
+            auf ein Lager: abliefern · auf die Bognerei: Bögen machen · sonst: hingehen
           </div>
         </div>
       </div>

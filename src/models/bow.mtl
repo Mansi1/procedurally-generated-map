@@ -1,0 +1,50 @@
+# bow.mtl
+
+newmtl Paint
+Kd 0.420 0.300 0.180
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Canvas
+Kd 0.930 0.900 0.820
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Feather
+Kd 0.900 0.880 0.840
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Iron
+Kd 0.400 0.420 0.450
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Wood
+Kd 0.420 0.290 0.170
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl WoodDark
+Kd 0.300 0.200 0.120
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl WoodLight
+Kd 0.600 0.450 0.280
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

@@ -1,7 +1,7 @@
 // Generates the building models in src/models. Scale: 1 tile = 5 m, a
 // villager is 1.75 m, doors are 2.1 m - each building is as wide as its
 // `size` in buildings.ts times 5 m. Usage: node tools/models/buildings.mjs [outDir] (default src/models)
-import { model, slope, hipRoof, barrel, crate, log, lantern, write } from './lib.mjs';
+import { model, slope, hipRoof, barrel, crate, log, lantern, bow, write } from './lib.mjs';
 
 const dir = process.argv[2] ?? new URL('../../src/models', import.meta.url).pathname;
 const header = (file, what, extra = '') => `# ${file}.obj - ${what} fuer procedurally-generated-map
@@ -935,6 +935,286 @@ function miningCamp() {
   write(dir, 'mining_camp', header('mining_camp', 'Minenlager', '# Material Paint (das Dach) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet.\n'), m, '0.590 0.600 0.640');
 }
 
+// --- Bowyer: workshop like the fletcher in Stronghold - timber-framed shop
+// with finished bows on the wall, a lean-to with staves drying, and in the
+// yard the workbench where the bowyer shapes the next stave, an archery
+// target and a barrel of arrows. 5 m wide (size 1). ---------------------------
+function bowyer() {
+  const m = model();
+  const { box, beam } = m;
+  const X0 = -2.15, X1 = 0.55, ZB = -1.95, ZF = -0.35;   // shop walls
+  const P = 0.3, E = 2.3, R = 3.55;                       // plinth, eaves, ridge
+  const ZM = (ZB + ZF) / 2;
+
+  box('Ground', 'Dirt', [-2.45, 2.45], [0, 0.03], [-2.2, 2.2], { r: 0.2 });
+
+  // Shop: plaster in a timber frame on a stone plinth.
+  box('Plinth', 'Stone', [X0 - 0.06, X1 + 0.06], [0, P], [ZB - 0.06, ZF + 0.06]);
+  box('Walls', 'PlasterGrey', [X0, X1], [P, E], [ZB, ZF]);
+  for (const x of [X0, -1.1, X1]) box('Timber.Post', 'Timber', [x - 0.08, x + 0.08], [P, E], [ZF, ZF + 0.06]);
+  box('Timber.Sill', 'Timber', [X0, X1], [P, P + 0.12], [ZF, ZF + 0.06]);
+  box('Timber.Plate', 'Timber', [X0 - 0.04, X1 + 0.04], [E - 0.16, E], [ZF, ZF + 0.07]);
+  for (const x of [X0, X1]) {
+    const s = x < 0 ? -1 : 1;
+    for (const z of [ZB, ZM, ZF]) box('Timber.Post', 'Timber', s < 0 ? [x - 0.06, x] : [x, x + 0.06], [P, E], [z - 0.08, z + 0.08]);
+  }
+  beam('Timber.Brace', 'Timber', [X0 + 0.1, P + 0.12, ZF + 0.03], [-1.2, E - 0.16, ZF + 0.03], 0.1);
+  // Band in the player's colour under the eaves, a shield over the door.
+  box('Band', 'Paint', [X0 - 0.02, X1 + 0.02], [E - 0.36, E - 0.16], [ZF, ZF + 0.05]);
+  const dx = -0.15;
+  m.extrude('Shield', 'Paint', 'z', [ZF + 0.07, ZF + 0.12], [[dx - 0.22, E - 0.02], [dx + 0.22, E - 0.02], [dx + 0.22, E - 0.3], [dx, E - 0.55], [dx - 0.22, E - 0.3]]);
+  beam('Shield.Stripe', 'Canvas', [dx - 0.18, E - 0.06, ZF + 0.125], [dx + 0.18, E - 0.42, ZF + 0.125], 0.06);
+
+  // Door to the front, a lit window on the side.
+  box('Door', 'Wood', [dx - 0.42, dx + 0.42], [P, P + 1.85], [ZF, ZF + 0.05]);
+  for (let i = 1; i < 4; i++) box('Door.Seam', 'WoodDark', [dx - 0.42 + i * 0.21 - 0.01, dx - 0.42 + i * 0.21 + 0.01], [P + 0.05, P + 1.8], [ZF + 0.05, ZF + 0.06]);
+  for (const y of [P + 0.35, P + 1.4]) box('Door.Hinge', 'Iron', [dx - 0.4, dx + 0.1], [y, y + 0.06], [ZF + 0.05, ZF + 0.065]);
+  box('Door.Frame', 'Timber', [dx - 0.54, dx + 0.54], [P + 1.85, P + 1.97], [ZF, ZF + 0.09]);
+  for (const s of [-1, 1]) box('Door.Frame', 'Timber', s < 0 ? [dx - 0.54, dx - 0.42] : [dx + 0.42, dx + 0.54], [P, P + 1.85], [ZF, ZF + 0.08]);
+  box('Window', 'WindowLit', [X0 - 0.03, X0], [1.1, 1.6], [-1.45, -0.85]);
+  box('Window.Frame', 'Timber', [X0 - 0.08, X0], [1.03, 1.1], [-1.52, -0.78]);
+  box('Window.Bar', 'Timber', [X0 - 0.06, X0], [1.1, 1.6], [-1.17, -1.13]);
+  for (const s of [-1, 1]) box('Window.Shutter', 'Shutter', [X0 - 0.05, X0], [1.1, 1.6], s < 0 ? [-1.8, -1.5] : [-0.8, -0.5]);
+
+  // Finished bows hanging on pegs left of the door.
+  for (const [i, x] of [-1.85, -1.5, -1.15].entries()) {
+    box('Peg', 'WoodDark', [x - 0.03, x + 0.03], [1.9, 1.95], [ZF, ZF + 0.14]);
+    bow(m, [x, 1.2 - (i % 2) * 0.08, ZF + 0.12], [0, 1, 0], [0, 0, -1], 1.45, 0.07);
+  }
+
+  // Gable roof, ridge along x, planked gables at the sides.
+  const RZF = ZF + 0.5, RZB = ZB - 0.45, RX0 = X0 - 0.3, RX1 = X1 + 0.1;
+  slope(m, 'Roof', 'Shingle', 'x', [RX0, RX1], [RZF, E - 0.1], [ZM, R], 0.11, 5);
+  slope(m, 'Roof', 'Shingle', 'x', [RX0, RX1], [RZB, E - 0.1], [ZM, R], 0.11, 5);
+  box('Roof.Ridge', 'ShingleDark', [RX0 - 0.04, RX1 + 0.04], [R - 0.02, R + 0.14], [ZM - 0.12, ZM + 0.12], { axis: 'x', n: 6 });
+  for (const x of [X0, X1]) {
+    m.extrude('Gable', 'WoodLight', 'x', [x - 0.04, x + 0.04], [[ZB, E], [ZF, E], [ZM, R - 0.1]]);
+    for (const t of [RZF, RZB]) beam('Gable.Barge', 'Timber', [x < 0 ? RX0 : RX1, E - 0.12, t], [x < 0 ? RX0 : RX1, R + 0.08, ZM], 0.12);
+  }
+
+  // Lean-to on the right: staves drying against the wall, rough billets.
+  const LX = 2.2, LE = 1.85;
+  for (const z of [ZB + 0.05, ZF]) {
+    box('Lean.Foot', 'Stone', [LX - 0.14, LX + 0.14], [0, 0.12], [z - 0.14, z + 0.14], { r: 0.2 });
+    box('Lean.Post', 'Timber', [LX - 0.09, LX + 0.09], [0, LE], [z - 0.09, z + 0.09]);
+  }
+  box('Lean.Beam', 'Timber', [LX - 0.1, LX + 0.1], [LE - 0.18, LE], [ZB - 0.1, ZF + 0.1]);
+  for (const z of [ZB + 0.05, ZF]) beam('Lean.Rafter', 'Timber', [X1, E - 0.25, z], [LX + 0.25, LE - 0.05, z], 0.09);
+  slope(m, 'Lean.Roof', 'Shingle', 'z', [ZB - 0.3, ZF + 0.35], [LX + 0.3, LE - 0.08], [X1 + 0.02, E - 0.2], 0.1, 3);
+  for (let i = 0; i < 10; i++) {
+    const z = ZB + 0.2 + i * 0.14;
+    const lean = 0.35 + (i % 3) * 0.06;
+    beam('Stave', i % 2 ? 'WoodLight' : 'Wood', [X1 + lean, 0.03, z], [X1 + 0.06, 1.75 + (i % 2) * 0.1, z + 0.02], 0.045);
+  }
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 4 - row; i++) {
+      const x = 1.45 + i * 0.22 + row * 0.11, y = 0.1 + row * 0.18;
+      box('Billet', 'Bark', [x - 0.1, x + 0.1], [y - 0.1, y + 0.1], [ZB + 0.15, ZB + 1.1], { axis: 'z', n: 8 });
+      box('Billet.End', 'LogEnd', [x - 0.088, x + 0.088], [y - 0.088, y + 0.088], [ZB + 1.1, ZB + 1.112], { axis: 'z', n: 8 });
+    }
+  }
+
+  // Workbench in the yard, a stave on it being shaped, the drawknife, shavings.
+  const BX0 = 0.15, BX1 = 1.55, BZ0 = 0.8, BZ1 = 1.2, BY = 0.8;
+  box('Bench', 'WoodLight', [BX0, BX1], [BY - 0.08, BY], [BZ0, BZ1]);
+  for (const x of [BX0 + 0.12, BX1 - 0.12]) {
+    for (const z of [BZ0 + 0.08, BZ1 - 0.08]) beam('Bench.Leg', 'Wood', [x + (x < 1 ? -0.08 : 0.08), 0, z], [x, BY - 0.08, z], 0.07);
+  }
+  box('Bench.Rail', 'Wood', [BX0 + 0.1, BX1 - 0.1], [0.3, 0.36], [(BZ0 + BZ1) / 2 - 0.03, (BZ0 + BZ1) / 2 + 0.03]);
+  box('Bench.Vise', 'WoodDark', [BX0 + 0.05, BX0 + 0.2], [BY, BY + 0.12], [BZ0 + 0.1, BZ1 - 0.1]);
+  // Stave: a gentle arc along the bench, thicker in the middle.
+  const staveAt = (t) => [BX0 - 0.25 + t * (BX1 - BX0 + 0.5), BY + 0.05 + 0.05 * (1 - (2 * t - 1) ** 2), (BZ0 + BZ1) / 2 - 0.05];
+  for (let i = 0; i < 6; i++) {
+    const t0 = i / 6, t1 = (i + 1) / 6;
+    const w = (t) => 0.03 + 0.03 * (1 - Math.abs(2 * t - 1));
+    beam('Stave.Work', 'WoodLight', staveAt(t0), staveAt(t1), w(t0), { w1: w(t1) });
+  }
+  box('Drawknife.Blade', 'Iron', [1.0, 1.3], [BY, BY + 0.02], [BZ1 - 0.12, BZ1 - 0.06]);
+  for (const x of [0.95, 1.35]) box('Drawknife.Handle', 'WoodDark', [x - 0.05, x + 0.05], [BY, BY + 0.04], [BZ1 - 0.13, BZ1 - 0.05], { axis: 'x', n: 6 });
+  for (let i = 0; i < 14; i++) {
+    const a = i * 2.3, r = 0.2 + (i % 5) * 0.12;
+    const x = 0.85 + Math.cos(a) * r * 1.3, z = 1.0 + Math.sin(a) * r * 0.8;
+    box('Shaving', i % 3 ? 'LogEnd' : 'WoodLight', [x - 0.06, x + 0.06], [0.03, 0.05], [z - 0.025, z + 0.025], { rot: i });
+  }
+
+  // Archery target on a stand at the front left, arrows in it.
+  const TX = -1.55, TZ = 1.45, TY = 1.05, TR = 0.48;
+  for (const [x0, z0] of [[TX - 0.45, TZ - 0.15], [TX + 0.45, TZ - 0.15], [TX, TZ - 0.6]]) beam('Target.Leg', 'Wood', [x0, 0, z0], [TX, TY + 0.2, TZ - 0.12], 0.07);
+  box('Target', 'Straw', [TX - TR, TX + TR], [TY - TR, TY + TR], [TZ - 0.1, TZ + 0.1], { axis: 'z', n: 16 });
+  for (const [r, mtl, dz] of [[0.36, 'Paint', 0.11], [0.25, 'Canvas', 0.12], [0.14, 'Paint', 0.13], [0.05, 'Gold', 0.14]]) {
+    box('Target.Ring', mtl, [TX - r, TX + r], [TY - r, TY + r], [TZ + 0.1, TZ + dz], { axis: 'z', n: 16 });
+  }
+  for (const [ax, ay, tilt] of [[0.08, 0.1, 0.1], [-0.2, -0.05, -0.15], [0.25, -0.22, 0.2]]) {
+    const p0 = [TX + ax, TY + ay, TZ + 0.1];
+    const p1 = [TX + ax + tilt * 0.4, TY + ay + 0.08, TZ + 0.65];
+    beam('Arrow', 'WoodLight', p0, p1, 0.02);
+    beam('Arrow.Fletch', 'Feather', [p1[0] - tilt * 0.09, p1[1] - 0.02, p1[2] - 0.15], p1, 0.05, { w1: 0.02 });
+  }
+
+  // Barrel of arrows by the lean-to.
+  barrel(m, 1.95, 0.65, 0.75, 0.24);
+  for (let i = 0; i < 9; i++) {
+    const a = i * 2.4, r = 0.03 + (i % 3) * 0.05;
+    const x = 1.95 + Math.cos(a) * r, z = 0.65 + Math.sin(a) * r;
+    const p1 = [x + Math.cos(a) * 0.06, 1.25 + (i % 2) * 0.05, z + Math.sin(a) * 0.06];
+    beam('Arrow', 'WoodLight', [x, 0.5, z], p1, 0.02);
+    beam('Arrow.Fletch', 'Feather', [p1[0], p1[1] - 0.14, p1[2]], p1, 0.05, { w1: 0.02 });
+  }
+  lantern(m, X1 - 0.3, E - 0.75, ZF + 0.35);
+  box('Lantern.Arm', 'Iron', [X1 - 0.32, X1 - 0.28], [E - 0.58, E - 0.54], [ZF, ZF + 0.37]);
+
+  // Markers read by the game, not drawn: the door (bows are carried in), where
+  // the bowyer stands at the bench and what he faces.
+  box('Entry', 'Soot', [dx - 0.03, dx + 0.03], [0, 0.05], [ZF + 0.5, ZF + 0.55]);
+  box('Work.Stand', 'Soot', [0.82, 0.88], [0, 0.05], [0.42, 0.47]);
+  box('Work.Aim', 'Soot', [0.82, 0.88], [0, 0.05], [1.0, 1.05]);
+  write(dir, 'bowyer', header('bowyer', 'Bognerei', '# Material Paint (Band, Wappen, Zielscheibe) bekommt die Gebaeudefarbe aus dem Spiel.\n# Die Objekte Entry und Work.* markieren Eingang und Werkbank und werden nicht gezeichnet.\n'), m, '0.420 0.300 0.180');
+}
+
+// --- Armory: where the weapons go, like in Stronghold - built like the
+// houses (plaster in a timber frame on a stone plinth, shingle gable roof),
+// but without windows: one iron-banded door. Inside, on a plank floor, two
+// racks hold up to 24 bows ('Stock.<n>'). Hovering the armory in the game
+// hides everything named 'Cut.Roof' and cuts 'Cut.Wall' down to a low wall,
+// so you look in and see how many bows are stacked. In the yard on the right
+// a target, spears and arrows. 5 m wide (size 1). -----------------------------
+function armory() {
+  const m = model();
+  const { box, beam } = m;
+  const W = 1.55, D = 1.3;        // half size of the walls
+  const T = 0.18;                 // wall thickness - hollow, to look into
+  const P = 0.35, E = 2.4, R = 3.95;
+  const CX = -0.5;                // the house sits left of the middle, the lean-to right
+  const base = walls(m, W, D);
+  const wall = (face, name, ...rest) => base(face, `Cut.Wall.${name}`, ...rest);
+  const high = (face, name, ...rest) => base(face, `Cut.Roof.${name}`, ...rest);
+
+  // Plinth, plank floor, hollow plastered walls in a timber frame.
+  box('Plinth', 'Stone', [-W - 0.08, W + 0.08], [0, P], [-D - 0.08, D + 0.08]);
+  box('Floor', 'Wood', [-W + T, W - T], [P, P + 0.02], [-D + T, D - T]);
+  for (let i = 1; i < 10; i++) {
+    const x = -W + T + (i * (2 * (W - T))) / 10;
+    box('Floor.Seam', 'WoodDark', [x - 0.01, x + 0.01], [P + 0.02, P + 0.025], [-D + T, D - T]);
+  }
+  box('Cut.Wall.Front', 'PlasterGrey', [-W, W], [P, E], [D - T, D]);
+  box('Cut.Wall.Back', 'PlasterGrey', [-W, W], [P, E], [-D, -D + T]);
+  box('Cut.Wall.Left', 'PlasterGrey', [-W, -W + T], [P, E], [-D + T, D - T]);
+  box('Cut.Wall.Right', 'PlasterGrey', [W - T, W], [P, E], [-D + T, D - T]);
+  for (const face of ['front', 'back', 'left', 'right']) {
+    const half = face === 'front' || face === 'back' ? W : D;
+    const posts = face === 'front' ? [-half, -0.25, half] : [-half, 0, half];
+    for (const u of posts) wall(face, 'Timber.Post', 'Timber', [u - 0.08, u + 0.08], [P, E], [0, 0.06]);
+    wall(face, 'Timber.Sill', 'Timber', [-half, half], [P, P + 0.12], [0, 0.06]);
+    wall(face, 'Timber.Rail', 'Timber', [-half, half], [1.3, 1.4], [0, 0.05]);
+    high(face, 'Timber.Plate', 'Timber', [-half - 0.04, half + 0.04], [E - 0.14, E], [0, 0.07]);
+    // Band in the player's colour under the eaves.
+    high(face, 'Band', 'Paint', [-half, half], [E - 0.36, E - 0.16], [0, 0.04]);
+  }
+  for (const t of [-1, 1]) beam('Cut.Wall.Brace', 'Timber', [t * (W - 0.1), P + 0.12, D + 0.03], [t * 0.7, 1.3, D + 0.03], 0.09);
+
+  // One door, iron-banded, with a shield in the player's colour above it.
+  const dx = 0.75;
+  doorOn(wall, 'front', dx, P, 0.84, 1.8, {});
+  for (const y of [P + 0.25, P + 0.9, P + 1.55]) wall('front', 'Door.Band', 'Iron', [dx - 0.42, dx + 0.42], [y, y + 0.07], [0.06, 0.08]);
+  box('Step', 'StoneLight', [dx - 0.55, dx + 0.55], [0, P], [D + 0.02, D + 0.4], { r: 0.1 });
+  m.extrude('Cut.Roof.Shield', 'Paint', 'z', [D + 0.07, D + 0.12], [[dx - 0.2, E + 0.02], [dx + 0.2, E + 0.02], [dx + 0.2, E - 0.24], [dx, E - 0.48], [dx - 0.2, E - 0.24]]);
+  beam('Cut.Roof.Shield.Stripe', 'Canvas', [dx - 0.16, E - 0.02, D + 0.125], [dx + 0.16, E - 0.36, D + 0.125], 0.06);
+
+  // Gable roof with shingles, ridge along x; plastered gables with a king post.
+  const RX = W + 0.3, RZ = D + 0.42;
+  for (const s of [1, -1]) slope(m, 'Cut.Roof', 'Shingle', 'x', [-RX, RX], [s * RZ, E - 0.1], [0, R], 0.12, 7);
+  box('Cut.Roof.Ridge', 'ShingleDark', [-RX - 0.04, RX + 0.04], [R - 0.02, R + 0.15], [-0.12, 0.12], { axis: 'x', n: 6 });
+  m.extrude('Cut.Roof.Gable', 'PlasterGrey', 'x', [-W, W], [[-D, E], [D, E], [0, R - 0.1]]);
+  for (const s of [-1, 1]) {
+    const x = s * (W + 0.03);
+    beam('Cut.Roof.Gable.KingPost', 'Timber', [x, E, 0], [x, R - 0.2, 0], 0.09);
+    for (const t of [-1, 1]) {
+      beam('Cut.Roof.Gable.Brace', 'Timber', [x, E, t * (D - 0.1)], [x, (E + R) / 2, t * 0.35], 0.08);
+      beam('Cut.Roof.Gable.Barge', 'Timber', [s * (RX + 0.02), E - 0.06, t * (RZ - 0.04)], [s * (RX + 0.02), R + 0.1, 0], 0.12);
+    }
+  }
+
+  // Inside: a rack along the back wall and one in the middle, twelve bows
+  // each, leaning against the upper rail. They appear in this order as the
+  // stock grows.
+  let n = 0;
+  for (const z of [-D + T + 0.12, 0.05]) {
+    for (const x of [-W + T + 0.12, W - T - 0.12]) {
+      box('Rack.Post', 'Timber', [x - 0.06, x + 0.06], [P, P + 1.45], [z - 0.06, z + 0.06]);
+      box('Rack.Foot', 'Timber', [x - 0.06, x + 0.06], [P, P + 0.08], [z - 0.3, z + 0.3]);
+    }
+    for (const y of [P + 0.2, P + 1.3]) box('Rack.Rail', 'Wood', [-W + T + 0.06, W - T - 0.06], [y, y + 0.08], [z - 0.04, z + 0.04]);
+    for (let i = 0; i < 12; i++) {
+      const x = -W + T + 0.3 + (i * (2 * (W - T) - 0.6)) / 11;
+      bow(m, [x - 0.06, P + 0.72, z + 0.1], [0, 1, 0.08], [1, 0, 0], 1.3, 0.12, `Stock.${n++}`);
+    }
+  }
+
+  // The house sits left of the middle: shift what is built so far - in
+  // place, the primitives keep writing into this array.
+  m.out.forEach((l, i) => {
+    if (!l.startsWith('v ')) return;
+    const [x, y, z] = l.split(' ').slice(1);
+    m.out[i] = `v ${(Number(x) + CX).toFixed(3)} ${y} ${z}`;
+  });
+
+  box('Ground', 'Dirt', [-2.3, 2.45], [0, 0.03], [-1.85, 2.1], { r: 0.2 });
+
+  // In the yard on the right: target, spears in a rack, a barrel of arrows -
+  // in the open, no lean-to: nobody lives here.
+  const TX = 1.65, TY = 0.95, TZ = -0.55, TR = 0.4;
+  for (const [x0, z0] of [[TX - 0.35, TZ - 0.1], [TX + 0.35, TZ - 0.1], [TX, TZ - 0.5]]) beam('Target.Leg', 'Wood', [x0, 0, z0], [TX, TY + 0.15, TZ - 0.1], 0.06);
+  box('Target', 'Straw', [TX - TR, TX + TR], [TY - TR, TY + TR], [TZ - 0.08, TZ + 0.08], { axis: 'z', n: 16 });
+  for (const [r, mtl, dz] of [[0.3, 'Paint', 0.09], [0.2, 'Canvas', 0.1], [0.11, 'Paint', 0.11], [0.04, 'Gold', 0.12]]) {
+    box('Target.Ring', mtl, [TX - r, TX + r], [TY - r, TY + r], [TZ + 0.08, TZ + dz], { axis: 'z', n: 16 });
+  }
+  box('Spears.Rack', 'Wood', [1.2, 2.1], [1.1, 1.17], [0.75, 0.82]);
+  for (const x of [1.2, 2.1]) box('Spears.Post', 'Timber', [x - 0.05, x + 0.05], [0, 1.2], [0.73, 0.83]);
+  for (let i = 0; i < 4; i++) {
+    const x = 1.35 + i * 0.22;
+    beam('Spear', 'WoodLight', [x, 0.02, 0.6], [x, 2.15, 0.8], 0.04);
+    beam('Spear.Head', 'Iron', [x, 2.15, 0.8], [x, 2.38, 0.82], 0.08, { w1: 0.005 });
+  }
+  barrel(m, 1.75, 1.6, 0.75, 0.24);
+  for (let i = 0; i < 8; i++) {
+    const a = i * 2.4, r = 0.03 + (i % 3) * 0.05;
+    const x = 1.75 + Math.cos(a) * r, z = 1.6 + Math.sin(a) * r;
+    const p1 = [x + Math.cos(a) * 0.06, 1.2 + (i % 2) * 0.05, z + Math.sin(a) * 0.06];
+    beam('Arrow', 'WoodLight', [x, 0.5, z], p1, 0.02);
+    beam('Arrow.Fletch', 'Feather', [p1[0], p1[1] - 0.14, p1[2]], p1, 0.05, { w1: 0.02 });
+  }
+
+  // Round shields in the player's colour leaning on the front wall, a crate.
+  for (const [x, tilt] of [[-1.55, 0.12], [-1.0, 0.18]]) {
+    const z = D + 0.1;
+    box('Shield', 'Paint', [x - 0.28, x + 0.28], [0.05, 0.61], [z, z + 0.05], { axis: 'z', n: 12, rot: tilt });
+    box('Shield.Rim', 'Iron', [x - 0.3, x + 0.3], [0.03, 0.63], [z - 0.01, z + 0.03], { axis: 'z', n: 12, rot: tilt });
+    box('Shield.Boss', 'Iron', [x - 0.07, x + 0.07], [0.26, 0.4], [z + 0.05, z + 0.1], { axis: 'z', n: 8 });
+  }
+  crate(m, [-2.2, -1.8], 0, [D + 0.05, D + 0.45]);
+
+  // Wo Waffen abgeliefert werden: vor der Tür (unsichtbar, liest das Spiel aus).
+  box('Entry', 'Soot', [dx + CX - 0.03, dx + CX + 0.03], [0, 0.05], [D + 0.6, D + 0.65]);
+  write(dir, 'armory', header('armory', 'Waffenkammer', '# Material Paint (Band, Wappen, Schilde, Zielscheibe) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet. Cut.Roof verschwindet und\n# Cut.Wall wird niedrig, wenn der Zeiger darauf steht; Stock.<n> sind die Boegen im Vorrat.\n'), m, '0.420 0.300 0.180');
+}
+
+// --- A single bow, tilted, with an arrow on the string - for the stock icon
+// (upright it would be a thin line in a square icon). -------------------------
+function bowItem() {
+  const m = model();
+  const a = Math.PI / 4;
+  const up = [-Math.cos(a), Math.sin(a), 0], back = [Math.sin(a), Math.cos(a), 0];
+  const c = [0, 0.7, 0];
+  // Kräftig: als Symbol ist er klein, dünne Linien verschwänden.
+  bow(m, c, up, back, 1.6, 0.3, 'Bow', 2);
+  // Arrow nocked on the string (the middle of which is `c`), past the grip.
+  const at = (d) => c.map((v, i) => v + back[i] * d);
+  m.beam('Arrow', 'WoodLight', at(0), at(0.8), 0.055);
+  m.beam('Arrow.Head', 'Iron', at(0.8), at(1.0), 0.12, { w1: 0.01 });
+  m.beam('Arrow.Fletch', 'Feather', at(0.02), at(0.22), 0.12, { w1: 0.05 });
+  write(dir, 'bow', header('bow', 'Bogen'), m, '0.420 0.300 0.180');
+}
+
 house({ file: 'house' });
 house({ file: 'house_2', stone: true, mirror: true });
 // Halbe Drehungen: eine Vierteldrehung vertauschte Breite und Tiefe, und das
@@ -951,3 +1231,6 @@ lumberCamp({ file: 'lumber_camp_2', stone: true, mirror: true });
 lumberCamp({ file: 'lumber_camp_3', open: true });
 lumberCamp({ file: 'lumber_camp_4', open: true, mirror: true });
 miningCamp();
+bowyer();
+armory();
+bowItem();

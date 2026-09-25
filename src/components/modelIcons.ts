@@ -1,12 +1,12 @@
 // modelIcons.ts
 // Symbole, gezeichnet aus den Modellen des Spiels: für die Rohstoffleiste
-// (Eiche, Beerenstrauch, Goldfels, Steinhaufen, Dorfbewohner) und für die
+// (Eiche, Beerenstrauch, Goldfels, Steinhaufen, Bogen, Dorfbewohner) und für die
 // Befehlsleiste (Gebäude, Tiere - Knöpfe und Porträts; Felder zeichnet cropIcons.ts). Ein eigener
 // EntityRenderer auf einem Canvas außerhalb der Seite zeichnet jedes Motiv
 // einmal; der Ausschnitt um das, was gezeichnet wurde, wird als Bild-URL
 // zurückgegeben. Die Dorfbewohner tragen die Spielerfarbe.
 
-import { ANIMAL_POSE, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
+import { ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
 import { groundToWorld, snapCamera } from '../gl/iso';
 import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type DepositType, type ResourceKind } from '../world/catalog';
 import { cropIcon } from './cropIcons';
@@ -48,13 +48,16 @@ function scene(name: IconName, player: RGB): EntityInstance[] {
     case 'food': return one(SHAPE.berryBush, 0.45, [62, 115, 52], 0.7);
     case 'gold': return one(SHAPE.goldRock, 0.56, [242, 194, 51], 0.7);
     case 'stone': return one(SHAPE.stoneRock, 0.6, [158, 158, 164], 0.7);
+    // Bogen mit Pfeil, von vorn wie ein Gebäude - so sieht man ihn gespannt.
+    // Nicht über one(): motion[3] = 1 hieße bei ihm "eingestürzt".
+    case 'bows': return [{ x: -0.5, y: -0.5, size: 0.5, color: [0, 0, 0], shape: SHAPE.bow, alpha: 1, motion: [BUILDING_HEADING, 0, 0, 0] }];
     // Frau und Mann nebeneinander.
     case 'population': return [villager(true, -0.12, player), villager(false, 0.12, player)];
     case 'idle': return [villager(false, 0, player)];
   }
 }
 
-const NAMES: IconName[] = ['wood', 'food', 'gold', 'stone', 'population', 'idle'];
+const NAMES: IconName[] = ['wood', 'food', 'gold', 'stone', 'bows', 'population', 'idle'];
 
 let stage: { canvas: HTMLCanvasElement; gl: WebGL2RenderingContext; renderer: EntityRenderer } | null = null;
 
@@ -173,6 +176,11 @@ export function animalIcon(kind: AnimalKind, dead = false): string {
     x: -0.5, y: -0.5, size: def.height, color: [0, 0, 0], shape: def.shape, alpha: 1,
     motion: [-Math.PI / 4, 0, dead ? ANIMAL_POSE.dead : ANIMAL_POSE.graze, 0],
   }]);
+}
+
+/** Rohstoff im Vorrat - dasselbe Symbol wie in der Rohstoffleiste (Bögen: Bogen mit Pfeil). */
+export function stockIcon(kind: ResourceKind): string {
+  return cached(`stock:${kind}`, [0, 0, 0], () => scene(kind, [0, 0, 0]));
 }
 
 /** Vorkommen: Eiche, Beerenstrauch, Gold- oder Steinfels. */

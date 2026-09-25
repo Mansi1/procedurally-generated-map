@@ -135,3 +135,13 @@
   height: 100%;
   background: var(--button-gold);
 }
+
+/* Vorrat in einem Gebäude (Waffenkammer): Symbol wie in der Rohstoffleiste vor der Zahl. */
+#selection .sel-stock {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#selection .sel-stock img {
+  flex: none;
+}
