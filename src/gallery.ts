@@ -10,7 +10,7 @@
 // rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot,
+  ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot,
   type EntityInstance,
 } from './gl/entityRenderer';
 import {
@@ -48,6 +48,21 @@ function figure(label: string, female: boolean, pose: number, rate: number, head
       x: x - 0.5, y: y - 0.5, size: VILLAGER.size * ZOOMED, color: PLAYER,
       shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
       motion: [heading, pose === POSE.stand ? t : t * rate, pose, load], accent: WOOD,
+    }),
+  };
+}
+
+/**
+ * Tier spielt einen Clip aus Blender (Nummer in ANIMAL_CLIPS) - die Zeit ist
+ * die Clip-Zeit in Sekunden.
+ */
+function animalClip(kind: AnimalKind, label: string, clip: number): Exhibit {
+  const def = ANIMALS[kind];
+  return {
+    label,
+    draw: (t, x, y, out) => out.push({
+      x: x - 0.5, y: y - 0.5, size: def.height * ZOOMED, color: PLAYER, shape: def.shape, alpha: 1,
+      motion: [-Math.PI / 4, t, CLIP_POSE + clip, 0],
     }),
   };
 }
@@ -288,6 +303,10 @@ const SHOWCASE: Showcase[] = [
   // hier von selbst. Die Zeit ist die Clip-Zeit in Sekunden.
   ...[false, true].map((female) => showcase('Clips aus Blender', female ? 'Frau (Clips)' : 'Mann (Clips)',
     CLIPS.map((clip, i) => figure(clip.name, female, CLIP_POSE + i, 1, Math.PI * 0.25)), 240, 0.9)),
+  // Die Clips der Tiere (src/models/quadruped_clips.glb), je an der ersten Art,
+  // für die der Clip gilt - das Hoppeln am Hasen, das Traben an der Kuh.
+  showcase('Clips aus Blender', 'Tiere (Clips)', ANIMAL_CLIPS.map((clip, i) =>
+    animalClip((clip.species[0] ?? 'deer') as AnimalKind, clip.name, i)), 240, 0.6),
   ...(Object.keys(ANIMALS) as AnimalKind[]).map((kind) => showcase('Tiere', ANIMALS[kind].label, [
     animal(kind, 'äst', ANIMAL_POSE.graze),
     animal(kind, 'geht', ANIMAL_POSE.walk),

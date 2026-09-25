@@ -15,7 +15,11 @@ import MOW from '../models/mow_pose.json';
 import CARVE from '../models/carve_pose.json';
 import humanoidClipsGlb from '../models/humanoid_clips.glb?inline';
 import humanoidClipsManifest from '../models/humanoid_clips.json';
-import { BONE, HUMANOID, KNEEL_BIT, MAX_BONES, TEXELS_PER_BONE, bakeClip, loadClips, type Clip, type Rig } from './clips';
+import quadrupedClipsGlb from '../models/quadruped_clips.glb?inline';
+import quadrupedClipsManifest from '../models/quadruped_clips.json';
+import {
+  BONE, HUMANOID, KNEEL_BIT, MAX_BONES, QUADRUPED, QUADRUPED_BONE, TEXELS_PER_BONE, bakeClip, loadClips, type Clip, type Rig,
+} from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
@@ -287,6 +291,8 @@ const CLIP_TEXTURE_UNIT = 5;
  * Shader weiter.
  */
 export const CLIPS: Clip[] = readClips('humanoid', () => loadClips(humanoidClipsGlb, humanoidClipsManifest, HUMANOID));
+/** Clips der Tiere (src/models/quadruped_clips.glb, aus assets/blender/quadruped.blend). */
+export const ANIMAL_CLIPS: Clip[] = readClips('quadruped', () => loadClips(quadrupedClipsGlb, quadrupedClipsManifest, QUADRUPED));
 
 function readClips(name: string, load: () => Clip[]): Clip[] {
   try {
@@ -301,8 +307,20 @@ function readClips(name: string, load: () => Clip[]): Clip[] {
  * Clip-Bibliotheken und welche Modelle sie nutzen - je Bibliothek ein Skelett.
  * Tiere, Mühle und Fahne kommen hier mit ihrem Rig dazu (docs/ANIMATION.md).
  */
-const CLIP_LIBRARIES: { rig: Rig<any>; clips: Clip[]; shapes: readonly number[] }[] = [
+const CLIP_LIBRARIES: {
+  rig: Rig<any>; clips: Clip[]; shapes: readonly number[];
+  /** Art je Modell (Form) - Clips mit Custom Property "species" gelten nur für ihre Arten. */
+  species?: Readonly<Record<number, string>>;
+}[] = [
   { rig: HUMANOID, clips: CLIPS, shapes: [SHAPE.villager, SHAPE.villagerFemale] },
+  {
+    rig: QUADRUPED, clips: ANIMAL_CLIPS,
+    shapes: [SHAPE.deer, SHAPE.hare, SHAPE.cow, SHAPE.sheep, SHAPE.goat, SHAPE.boar],
+    species: {
+      [SHAPE.deer]: 'deer', [SHAPE.hare]: 'hare', [SHAPE.cow]: 'cow',
+      [SHAPE.sheep]: 'sheep', [SHAPE.goat]: 'goat', [SHAPE.boar]: 'boar',
+    },
+  },
 ];
 
 /** Höchstens so viele Clips je Figur (Uniform-Arrays im Shader). */
@@ -1013,39 +1031,52 @@ void main() {
       // Kühe trotten auch auf der Flucht im Kreuzgang.
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
-      bool hare = shape == ${SHAPE.hare};
-      bool jump = hare || (pose == 5 && shape != ${SHAPE.cow});
-      bool front = part == 24 || part == 25;
-      bool leg = part >= 24 && part <= 27;
-      vec2 pivot = vec2(front ? uLegs.x : uLegs.y, uHip);
-      float bob = 0.0;
-      float dip = 0.0;
-      if (pose == 1 || pose == 5) {
-        float amp = pose == 5 ? 0.8 : 0.45;
-        float s = sin(phase);
-        float a = 0.0;
-        if (jump) {
-          // Hoppeln bzw. Springen: vorn und hinten gegengleich, der Körper hebt ab.
-          a = (front ? s : -s) * amp;
-          bob = max(0.0, sin(phase + 1.2)) * (hare ? 0.25 : 0.1);
-        } else {
-          // Kreuzgang: links vorn mit rechts hinten.
-          a = (part == 24 || part == 27 ? s : -s) * amp;
-          bob = abs(cos(phase)) * 0.015;
+      // Clip aus Blender statt Formel (assets/blender/quadruped.blend): Pose
+      // >= CLIP_POSE (Galerie) oder eine Pose, die ein Clip dieser Art ersetzt.
+      int clip = pose >= ${CLIP_POSE} ? pose - ${CLIP_POSE} : pose < 8 ? uPoseClip[pose] : -1;
+      if (clip >= 0 && uClipRow[clip] < 0) clip = -1;
+      if (clip >= 0) {
+        float time = pose >= ${CLIP_POSE} ? phase : (phase - uPoseShift[pose]) * uPoseRate[pose];
+        // Knochen je Teil (QUADRUPED in clips.ts): die vier Beine, der Kopf, sonst die Wurzel.
+        int bone = part == 24 ? ${QUADRUPED_BONE['leg.FL']} : part == 25 ? ${QUADRUPED_BONE['leg.FR']}
+            : part == 26 ? ${QUADRUPED_BONE['leg.BL']} : part == 27 ? ${QUADRUPED_BONE['leg.BR']}
+            : part == P_HEAD ? ${QUADRUPED_BONE.head} : ${QUADRUPED_BONE.root};
+        p = clipSkin(p, clip, time, bone);
+      } else {
+        bool hare = shape == ${SHAPE.hare};
+        bool jump = hare || (pose == 5 && shape != ${SHAPE.cow});
+        bool front = part == 24 || part == 25;
+        bool leg = part >= 24 && part <= 27;
+        vec2 pivot = vec2(front ? uLegs.x : uLegs.y, uHip);
+        float bob = 0.0;
+        float dip = 0.0;
+        if (pose == 1 || pose == 5) {
+          float amp = pose == 5 ? 0.8 : 0.45;
+          float s = sin(phase);
+          float a = 0.0;
+          if (jump) {
+            // Hoppeln bzw. Springen: vorn und hinten gegengleich, der Körper hebt ab.
+            a = (front ? s : -s) * amp;
+            bob = max(0.0, sin(phase + 1.2)) * (hare ? 0.25 : 0.1);
+          } else {
+            // Kreuzgang: links vorn mit rechts hinten.
+            a = (part == 24 || part == 27 ? s : -s) * amp;
+            bob = abs(cos(phase)) * 0.015;
+          }
+          if (leg) p = swingAt(p, pivot, a);
+          dip = pose == 5 ? 0.15 : -0.1;
+        } else if (pose == 0) {
+          // Äsen: meist mit dem Kopf unten, ab und zu schaut es auf.
+          float up = smoothstep(0.6, 0.9, sin(phase * 0.21 + 1.0));
+          // Weit genug, dass das Maul ans Gras kommt.
+          dip = mix(uGraze, 0.0, up) + sin(phase * 2.3) * 0.05 * (1.0 - up);
         }
-        if (leg) p = swingAt(p, pivot, a);
-        dip = pose == 5 ? 0.15 : -0.1;
-      } else if (pose == 0) {
-        // Äsen: meist mit dem Kopf unten, ab und zu schaut es auf.
-        float up = smoothstep(0.6, 0.9, sin(phase * 0.21 + 1.0));
-        // Weit genug, dass das Maul ans Gras kommt.
-        dip = mix(uGraze, 0.0, up) + sin(phase * 2.3) * 0.05 * (1.0 - up);
-      }
-      if (part == P_HEAD) p = swingAt(p, uNeck, -dip);
-      p.z += bob;
-      if (pose == 6) {
-        // Erlegt: auf die Seite gekippt, die Beine zeigen zur Seite.
-        p = vec3(p.x, -p.z, p.y + uSide);
+        if (part == P_HEAD) p = swingAt(p, uNeck, -dip);
+        p.z += bob;
+        if (pose == 6) {
+          // Erlegt: auf die Seite gekippt, die Beine zeigen zur Seite.
+          p = vec3(p.x, -p.z, p.y + uSide);
+        }
       }
     }
 
@@ -2571,7 +2602,10 @@ export class EntityRenderer {
           frames: Int32Array.from(NO_CLIPS.frames), fps: Float32Array.from(NO_CLIPS.fps), props: new Int32Array(MAX_CLIPS),
           poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
         };
+        const species = library.species?.[m.shape];
         clips.forEach((clip, i) => {
+          // Clips anderer Arten (z. B. das Hoppeln des Hasen) nicht für dieses Tier.
+          if (clip.species.length > 0 && (species === undefined || !clip.species.includes(species))) return;
           u.rows[i] = rows;
           u.frames[i] = clip.frames;
           u.fps[i] = clip.fps;

@@ -12,7 +12,7 @@
     "smoke": "node tools/ui/smoke.mjs",
     "export:bognerei": "node tools/export/bognerei.mjs && node tools/export/bognerei.mjs frau",
     "gen:anim": "node tools/blender/export-all.mjs",
-    "check:anim": "node tools/blender/parity.mjs"
+    "check:anim": "node tools/blender/parity.mjs && node tools/blender/parity-animals.mjs"
   },
   "devDependencies": {
     "defuss-vite": "^1.2.1",

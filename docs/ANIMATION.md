@@ -38,6 +38,23 @@ Schichten (`walk` + `carry`), Takt-Marken (`strike`) und das Löschen der
 Formeln. Solange es die Formeln gibt, sind sie der Rückfall, falls die
 Clip-Bibliothek fehlt.
 
+**Phase 3 ist fertig: Alle sechs Tiere spielen Clips aus
+`assets/blender/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
+Wildschwein).
+
+- **Gleichstand:** Alle Clips stimmen auf den Bildern mit der Formel überein,
+  bei jeder Art auf höchstens 0,01 cm (Hufe, Maul, Körper vorn und hinten;
+  `npm run check:anim`). Zwischen zwei Bildern sind es bis 0,4 cm, am Knick
+  des Anhebens beim Springen.
+- **Wiederverwendet:** Es gibt ein Skelett und eine Bibliothek für alle
+  Arten, bearbeitet wird am Reh. Eigene Clips gibt es nur, wo eine Art anders
+  läuft: `hop` und `hop_flee` (Hase), `trot` (Kuh auf der Flucht).
+- **Je Art gebacken:** Beim Äsen senkt jede Art den Kopf so weit, bis ihr Maul
+  den Boden erreicht. Der Knochen `neck` wird dafür auf ihr eigenes `uGraze`
+  gebracht. Erlegt liegt sie so hoch, wie ihr Körper halb breit ist.
+- **Größe:** `quadruped_clips.glb` hat 0,3 MB, vor allem durch `graze`
+  (35,4 s Schleife).
+
 Aus Phase 1:
 
 - **Gleichstand:** Der Clip entspricht der alten Formel exakt. Die rechte
@@ -49,7 +66,6 @@ Aus Phase 1:
 - **Hin und zurück:** Eine Änderung in Blender ist nach `npm run gen:anim`
   im Spiel zu sehen. Geprüft ist das mit einem nach hinten gedrehten Kopf.
 
-Alle anderen Posen und die Tiere laufen noch über die Formeln.
 
 ## Überblick: wie es aufgebaut ist
 
@@ -99,9 +115,10 @@ Die Migration läuft auf dem Branch `animation-migration`.
 
 | Ich will … | Wo | Danach |
 |---|---|---|
-| eine Bewegung ändern | `humanoid.blend` → die Action gleichen Namens | `npm run gen:anim` |
+| eine Bewegung ändern | `humanoid.blend` bzw. `quadruped.blend` (Tiere) → die Action gleichen Namens | `npm run gen:anim` |
 | einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
 | festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
+| einen Clip nur für bestimmte Tiere | Custom Property `species` der Action (z. B. `hare`) | `npm run gen:anim` |
 | die Form eines Körpers ändern | `tools/models/villagers.mjs` | `npm run gen:models` |
 | einen Clip ansehen | Galerie → „Clips aus Blender“ | – |
 
@@ -135,13 +152,28 @@ Die Migration läuft auf dem Branch `animation-migration`.
 3. `npm run gen:anim` exportiert alle `.blend`-Dateien in `assets/blender/`
    nach `src/models/<name>_clips.glb` + `.json`. Blender wird über die
    Umgebungsvariable `BLENDER` gefunden, sonst am üblichen Ort auf macOS.
-4. In der Galerie zeigen „Clips aus Blender“ → „Mann (Clips)“ und
-   „Frau (Clips)“ jeden Clip der Bibliothek. Im Spiel spielt ihn die Pose,
-   die er ersetzt (`POSE_CLIPS` in `src/gl/entityRenderer.ts`).
+4. In der Galerie zeigen „Clips aus Blender“ → „Mann (Clips)“,
+   „Frau (Clips)“ und „Tiere (Clips)“ jeden Clip der Bibliotheken. Im Spiel
+   spielt ihn die Pose, die er ersetzt (Custom Property `pose`).
 
-Die `.blend`-Dateien liegen in Git LFS (`.gitattributes`). Neu angelegt wird
-`humanoid.blend` nur einmal, mit `tools/blender/bootstrap_humanoid.py` aus dem
-Export `tools/export/bognerei.mjs`.
+**Tiere** (`assets/blender/quadruped.blend`, Skelett `quadruped`, am Reh):
+Die Actions heißen `graze`, `walk`, `hop`, `flee`, `trot`, `hop_flee` und
+`dead`, die Posen sind 0 äsen, 1 gehen, 5 fliehen, 6 erlegt. Dazu kommen zwei
+eigene Custom Properties:
+
+- `species`: für welche Arten der Clip gilt, durch Komma getrennt (`deer`,
+  `hare`, `cow`, `sheep`, `goat`, `boar`). Leer heißt: für alle.
+- `lying`: 1, wenn das Tier auf der Seite liegt. Die Höhe nimmt das Spiel aus
+  der Körperbreite der jeweiligen Art.
+
+Der Knochen `neck` trägt nur das Senken zum Gras. Das Spiel bringt ihn je Art
+auf ihre Halslänge (Custom Property `graze` des Skeletts = so weit senkt das
+Reh). Alles andere am Kopf (Kauen, Heben beim Gehen) gehört auf `head`.
+
+Die `.blend`-Dateien liegen in Git LFS (`.gitattributes`). Neu angelegt werden
+sie nur einmal: `humanoid.blend` mit `tools/blender/bootstrap_humanoid.py`
+aus `tools/export/bognerei.mjs`, `quadruped.blend` mit
+`tools/blender/bootstrap_rig.py` aus `tools/export/animals.mjs`.
 
 ## Heute
 
@@ -403,18 +435,28 @@ Bildrate mit 500 Dorfbewohnern gleich bleibt.
    - die fest eingebauten Werkzeuge in `villagers.mjs` (`hatchet`,
      `scythe`, `drawknife`)
 
-### Phase 3: Tiere (mittel)
+### Phase 3: Tiere (mittel) - erledigt
 
-1. Eine Skelett-Vorlage für Vierbeiner mit `spine`, `neck`, `head` und
-   `leg.FL/FR/BL/BR` (je Ober- und Unterteil). Alle sechs Arten nutzen sie,
-   jede mit ihren eigenen Maßen.
-2. Eine gemeinsame Clip-Bibliothek `quadruped_clips.glb` mit `graze`,
-   `walk`, `flee` und `dead`, aus den heutigen Formeln exportiert. Eigene
-   Clips gibt es nur, wo eine Art anders läuft: `hop` (Hase), `bound` (Reh
-   auf der Flucht), `trot` (Kuh auf der Flucht).
-3. `stride` aus `unit/*.ts` bestimmt die Abspielrate beim Gehen und Fliehen.
-4. **Weg damit:** der Tier-Zweig im Shader (`beast`, `uLegs`, `uNeck`,
-   `uGraze`, `uSide`).
+Umgesetzt mit diesen Abweichungen vom ursprünglichen Plan:
+
+1. **Skelett `QUADRUPED` in `src/gl/clips.ts`:** `root`, `leg.FL/FR/BL/BR`,
+   `neck`, `head`. Die Beine haben kein eigenes Unterteil und keinen
+   `spine`, weil die Formel sie nur um das obere Gelenk schwingt. Beides kann
+   in Blender dazukommen, wenn die Modelle es brauchen.
+2. **Clips:** `graze` und `dead` gelten für alle Arten. `walk` (Kreuzgang) gilt
+   für alle außer dem Hasen, `flee` (Springen) für Reh, Schaf, Ziege und
+   Wildschwein. Eigene Clips: `hop` und `hop_flee` für den Hasen, `trot` für
+   die Kuh. `bound` heißt `flee`. Exportiert wird mit `tools/export/animals.mjs`
+   (Formeln in `tools/export/animal-poses.mjs`), angelegt mit
+   `tools/blender/bootstrap_rig.py`.
+3. **Abspielrate:** Die Phase kommt wie bisher aus `render.ts` (Strecke je
+   Schritt aus `stride`). Die Clips decken je 2π davon ab.
+4. **Je Art gebacken:** Das Rig kann jetzt je Körper Knochen verkürzen oder
+   verlängern (`Rig.scale`) und die Höhe der Wurzel festlegen (`Rig.rootZ`).
+   Bei den Dorfbewohnern sind das Schrittweite und Kniehöhe, bei den Tieren
+   das Senken des Kopfs (`neck` auf uGraze) und die Höhe im Liegen (uSide).
+5. **Noch nicht weg:** Der Tier-Zweig im Shader bleibt als Rückfall, bis
+   Phase 7 aufräumt.
 
 ### Phase 4: Mühle und Fahne (klein)
 
@@ -480,7 +522,7 @@ wenn gewünscht.
 | 0 | Regeln, Ordner, Export-Aufruf | klein | – |
 | 1 | Lader, Clip-Textur, Skinning im Shader, Clip-Bibliothek, Pilot Schnitzen | groß | 0 |
 | 2 | Dorfbewohner (6 Clips, IK, Gewichte, Werkzeuge als Anhänge, Schichten) | groß | 1 |
-| 3 | Tiere (eine Vorlage, gemeinsame Clips, 3 eigene) | mittel | 1 |
+| 3 | Tiere (eine Vorlage, gemeinsame Clips, 3 eigene) - erledigt | mittel | 1 |
 | 4 | Mühle, Fahne | klein | 1 |
 | 5 | Namensregeln absichern, später `extras` | klein bis mittel | – |
 | 6 | Ereignisse (bleiben) | – | – |

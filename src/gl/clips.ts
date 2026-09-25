@@ -39,6 +39,14 @@ export interface Rig<J = never> {
   name: string;
   bones: readonly (readonly [string, string | null])[];
   pivots(joints: J): Vec3[];
+  /**
+   * Was je Körper anders gebacken wird als im Clip gespeichert: Knochen, deren
+   * eigene Drehung (gegenüber dem Eltern) auf einen Anteil verkürzt bzw.
+   * verlängert wird - ihre Kinder behalten ihre eigene Drehung.
+   */
+  scale?(clip: Clip, joints: J, options: BakeOptions): Record<string, number>;
+  /** Feste Höhe der Wurzel (Modell-Einheiten) für diesen Körper statt der aus dem Clip - oder null. */
+  rootZ?(clip: Clip, joints: J): number | null;
 }
 
 /** Was ein Clip in der Hand braucht - Bits wie im Shader (uClipProps). */
@@ -71,6 +79,12 @@ export interface Clip {
   phaseShift: number;
   /** Kniend: der Rock wird gestaucht (KNEEL_BIT). */
   kneel: boolean;
+  /** Tiere: nur für diese Arten (ANIMALS-Schlüssel wie 'hare') - leer: für alle. */
+  species: string[];
+  /** Tiere: liegt auf der Seite (erlegt) - so hoch, wie der Körper des Tiers breit ist. */
+  lying: boolean;
+  /** Tiere: Senken des Kopfs zum Äsen im Clip (Radiant) - je Art auf ihr eigenes uGraze gebracht. */
+  grazeRef: number;
   /** frames * Knochen * 4: Drehung (Quaternion) in Modell-Achsen, je Knochen im Weltsinn. */
   rotations: Float32Array;
   /** frames * 3: Verschiebung der Wurzel in Modell-Achsen und Körperhöhen. */
@@ -80,10 +94,14 @@ export interface Clip {
 interface Manifest {
   height: number;
   fps: number;
+  /** Tiere: wie weit das Tier des Skeletts in Blender den Kopf zum Äsen senkt (uGraze, Radiant). */
+  graze?: number;
   clips: {
     name: string; frames: number; duration: number; props?: string[];
     /** Aus den Custom Properties der Action (tools/blender/export_clips.py) - können fehlen. */
     pose?: number; phase_period?: number; phase_shift?: number; kneel?: boolean;
+    /** Tiere: nur für diese Arten (leer: alle) und ob es auf der Seite liegt. */
+    species?: string[]; lying?: boolean;
   }[];
 }
 
@@ -261,6 +279,9 @@ export function loadClips(glbDataUrl: string, manifest: Manifest, rig: Rig<any> 
       phaseRate: period ? meta.duration / period : 1,
       phaseShift: meta.phase_shift ?? 0,
       kneel: meta.kneel === true,
+      species: meta.species ?? [],
+      lying: meta.lying === true,
+      grazeRef: manifest.graze ?? 0,
       rotations, root,
     }];
   });
@@ -290,7 +311,63 @@ function humanoidPivots(j: Joints): Vec3[] {
 }
 
 /** Das Skelett der Dorfbewohner (assets/blender/humanoid.blend). */
-export const HUMANOID: Rig<Joints> = { name: 'humanoid', bones: HUMANOID_BONES, pivots: humanoidPivots };
+export const HUMANOID: Rig<Joints> = {
+  name: 'humanoid',
+  bones: HUMANOID_BONES,
+  pivots: humanoidPivots,
+  // Gehen: die Frau schreitet im langen Rock kürzer (uStride auf die Oberschenkel).
+  scale: (clip, _joints, options): Record<string, number> => (clip.pose === 1 && (options.stride ?? 1) !== 1
+    ? { 'thigh.L': options.stride!, 'thigh.R': options.stride! } : {}),
+  // Kniend: so tief, dass das Knie dieses Körpers den Boden berührt (wie die Formel: bob = -(uKnee - 0.04)).
+  rootZ: (clip, joints) => (clip.kneel ? -(joints.knee - 0.04) : null),
+};
+
+// --- Vierbeiner ---------------------------------------------------------------
+
+/**
+ * Knochen der Tiere (assets/blender/quadruped.blend): die vier Beine schwingen
+ * um ihr oberes Gelenk, Hals und Kopf drehen um den Halsansatz. Der Hals trägt
+ * das Senken zum Gras - je Art so weit, dass das Maul den Boden erreicht
+ * (uGraze, beim Backen skaliert) -, der Kopf alles andere (Kauen, Heben).
+ */
+export const QUADRUPED_BONES: readonly (readonly [string, string | null])[] = [
+  ['root', null],
+  ['leg.FL', 'root'], ['leg.FR', 'root'], ['leg.BL', 'root'], ['leg.BR', 'root'],
+  ['neck', 'root'], ['head', 'neck'],
+];
+export const QUADRUPED_BONE = Object.fromEntries(QUADRUPED_BONES.map(([name], i) => [name, i])) as Record<string, number>;
+
+/** Maße eines Tiers in Modell-Einheiten (Höhe 1), wie loadModel() sie liest. */
+export interface QuadrupedJoints {
+  /** Oberkante der Beine - dort sitzen ihre Gelenke. */
+  hip: number;
+  /** Vorn-Lage der Vorder- und der Hinterbeine. */
+  legs: [number, number];
+  /** Halsansatz (vorn, oben) - um ihn nickt der Kopf. */
+  neck: [number, number];
+  /** So weit (Radiant) senkt diese Art den Kopf, bis das Maul den Boden erreicht. */
+  graze: number;
+  /** Halbe Breite des Körpers - so hoch liegt es auf der Seite. */
+  side: number;
+}
+
+export const QUADRUPED: Rig<QuadrupedJoints> = {
+  name: 'quadruped',
+  bones: QUADRUPED_BONES,
+  pivots: (j) => {
+    const at: Record<string, Vec3> = {
+      root: [0, 0, 0],
+      'leg.FL': [j.legs[0], 0, j.hip], 'leg.FR': [j.legs[0], 0, j.hip],
+      'leg.BL': [j.legs[1], 0, j.hip], 'leg.BR': [j.legs[1], 0, j.hip],
+      neck: [j.neck[0], 0, j.neck[1]], head: [j.neck[0], 0, j.neck[1]],
+    };
+    return QUADRUPED_BONES.map(([name]) => at[name]);
+  },
+  // Äsen: jede Art senkt den Kopf so weit, bis ihr Maul den Boden erreicht.
+  scale: (clip, joints): Record<string, number> => (clip.grazeRef > 0 ? { neck: joints.graze / clip.grazeRef } : {}),
+  // Erlegt: auf der Seite, so hoch, wie der Körper dieser Art halb breit ist.
+  rootZ: (clip, joints) => (clip.lying ? joints.side : null),
+};
 
 /** Texel je Knochen: drei Zeilen einer 3x4-Matrix. */
 export const TEXELS_PER_BONE = 3;
@@ -319,8 +396,9 @@ function qScale([x, y, z, w]: Quat, share: number): Quat {
 /**
  * Backt einen Clip für eine Figur: je Bild eine Zeile mit den Skinning-
  * Matrizen aller Knochen (Modell-Koordinaten), als RGBA-Texel. Was vom
- * Körper abhängt: die Drehpunkte (Gelenke), beim Knien die Höhe (die Knie
- * auf dem Boden - aus dem eigenen Knie), beim Gehen die Schrittweite.
+ * Körper abhängt: die Drehpunkte (Gelenke) und was das Rig je Körper anders
+ * haben will (Rig.scale, Rig.rootZ) - z. B. Schrittweite und Kniehöhe der
+ * Dorfbewohner, wie weit ein Tier zum Äsen den Kopf senkt.
  */
 export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, rig: Rig<J> = HUMANOID as unknown as Rig<J>): Float32Array {
   const bones = rig.bones.length;
@@ -328,21 +406,22 @@ export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, ri
   const out = new Float32Array(clip.frames * bones * TEXELS_PER_BONE * 4);
   const index = Object.fromEntries(rig.bones.map(([name], i) => [name, i])) as Record<string, number>;
   const parentIndex = rig.bones.map(([, parent]) => (parent === null ? -1 : index[parent]));
-  // Schrittweite nur beim Gehen der Dorfbewohner (sie haben Oberschenkel).
-  const stride = clip.pose === 1 && rig.name === HUMANOID.name ? options.stride ?? 1 : 1;
-  // Kniende Dorfbewohner: die Wurzel so tief, dass das eigene Knie den Boden berührt.
-  const kneelZ = clip.kneel && rig.name === HUMANOID.name ? -((joints as unknown as Joints).knee - 0.04) : null;
+  // Was dieser Körper anders braucht (Rig): Anteil der eigenen Drehung je
+  // Knochen, feste Höhe der Wurzel.
+  const factors = Object.entries(rig.scale?.(clip, joints, options) ?? {}).filter(([, k]) => k !== 1);
+  const factor = new Map(factors.map(([name, k]) => [index[name], k]));
+  const rootZ = rig.rootZ?.(clip, joints) ?? null;
   for (let f = 0; f < clip.frames; f++) {
     const stored = (b: number) => Array.from(clip.rotations.subarray((f * bones + b) * 4, (f * bones + b) * 4 + 4)) as Quat;
     const rot: Quat[] = rig.bones.map((_, b) => stored(b));
-    if (stride !== 1) {
-      // Oberschenkel: ihre eigene Drehung (gegenüber dem Unterkörper)
-      // verkürzen; der Unterschenkel behält seine gegenüber dem Oberschenkel.
-      for (const [thigh, shin] of [['thigh.L', 'shin.L'], ['thigh.R', 'shin.R']]) {
-        const t = index[thigh], s = index[shin], parent = parentIndex[t];
-        const own = qMul(qInv(stored(parent)), stored(t));
-        rot[t] = qMul(rot[parent], qScale(own, stride));
-        rot[s] = qMul(rot[t], qMul(qInv(stored(t)), stored(s)));
+    if (factor.size > 0) {
+      // Eltern vor Kindern: jeder Knochen hängt seine eigene Drehung (gegenüber
+      // dem Eltern im Clip) an die neue des Eltern - verkürzt, wo ein Anteil steht.
+      for (let b = 0; b < bones; b++) {
+        const parent = parentIndex[b];
+        if (parent < 0) continue;
+        const own = qMul(qInv(stored(parent)), stored(b));
+        rot[b] = qMul(rot[parent], factor.has(b) ? qScale(own, factor.get(b)!) : own);
       }
     }
     const w = (b: number) => rot[b];
@@ -351,9 +430,7 @@ export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, ri
     for (let b = 0; b < bones; b++) {
       const parent = parentIndex[b];
       if (parent < 0) {
-        // Kniend: so tief, dass das Knie dieses Körpers den Boden berührt
-        // (wie die Formel: bob = -(uKnee - 0.04)).
-        const z = kneelZ ?? clip.root[f * 3 + 2];
+        const z = rootZ ?? clip.root[f * 3 + 2];
         where.push([clip.root[f * 3], clip.root[f * 3 + 1], z]);
         continue;
       }

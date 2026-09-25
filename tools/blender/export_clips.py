@@ -2,7 +2,9 @@
 #   <out>.glb   nur das Skelett, mit allen seinen Actions als Animationen
 #   <out>.json  je Clip, was glTF nicht trägt: Länge, Werkzeuge (props),
 #               welche Pose er ersetzt (pose, phase_period, phase_shift),
-#               kniend (kneel), dazu die Körperhöhe des Skeletts
+#               kniend (kneel), bei Tieren für welche Arten (species) und
+#               ob es liegt (lying), dazu die Körperhöhe des Skeletts und
+#               bei Tieren, wie weit es den Kopf zum Äsen senkt (graze)
 # Das Spiel (src/gl/clips.ts) liest beides und backt die Clips für jede Figur
 # mit passenden Knochennamen.
 #
@@ -71,6 +73,11 @@ def clip_entry(a):
         'props': listed(a.get('props')),
         'kneel': bool(a.get('kneel', 0)),
     }
+    # Tiere: nur für diese Arten (leer: alle), auf der Seite liegend.
+    if 'species' in a:
+        entry['species'] = listed(a.get('species'))
+    if 'lying' in a:
+        entry['lying'] = bool(a.get('lying', 0))
     # Ersetzt der Clip eine Pose des Spiels: welche, und welcher Phasenbereich.
     if 'pose' in a:
         entry['pose'] = int(a['pose'])
@@ -82,6 +89,9 @@ manifest = {
     'rig': rig.name,
     'height': float(rig.get('height', 1.7)),
     'fps': fps,
+    # Tiere: das Tier des Skeletts senkt den Kopf zum Äsen so weit (uGraze) -
+    # das Spiel rechnet das Senken damit je Art um.
+    **({'graze': float(rig['graze'])} if 'graze' in rig else {}),
     'clips': [clip_entry(a) for a in sorted(clips, key=lambda a: int(a.get('pose', 99)))],
 }
 with open(out + '.json', 'w') as f:

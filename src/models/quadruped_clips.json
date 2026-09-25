@@ -1,0 +1,109 @@
+{
+  "rig": "quadruped",
+  "height": 1.321,
+  "fps": 30.0,
+  "graze": 1.45,
+  "clips": [
+    {
+      "name": "graze",
+      "frames": 1062,
+      "duration": 35.36666666666667,
+      "props": [],
+      "kneel": false,
+      "species": [],
+      "lying": false,
+      "pose": 0,
+      "phase_period": 35.36666666666667,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "hop",
+      "frames": 31,
+      "duration": 1.0,
+      "props": [],
+      "kneel": false,
+      "species": [
+        "hare"
+      ],
+      "lying": false,
+      "pose": 1,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "walk",
+      "frames": 31,
+      "duration": 1.0,
+      "props": [],
+      "kneel": false,
+      "species": [
+        "deer",
+        "cow",
+        "sheep",
+        "goat",
+        "boar"
+      ],
+      "lying": false,
+      "pose": 1,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "flee",
+      "frames": 31,
+      "duration": 1.0,
+      "props": [],
+      "kneel": false,
+      "species": [
+        "deer",
+        "sheep",
+        "goat",
+        "boar"
+      ],
+      "lying": false,
+      "pose": 5,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "hop_flee",
+      "frames": 31,
+      "duration": 1.0,
+      "props": [],
+      "kneel": false,
+      "species": [
+        "hare"
+      ],
+      "lying": false,
+      "pose": 5,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "trot",
+      "frames": 31,
+      "duration": 1.0,
+      "props": [],
+      "kneel": false,
+      "species": [
+        "cow"
+      ],
+      "lying": false,
+      "pose": 5,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "dead",
+      "frames": 2,
+      "duration": 0.03333333333333333,
+      "props": [],
+      "kneel": false,
+      "species": [],
+      "lying": true,
+      "pose": 6,
+      "phase_period": 1.0,
+      "phase_shift": 0.0
+    }
+  ]
+}
