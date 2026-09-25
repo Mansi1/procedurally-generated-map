@@ -11,19 +11,14 @@ import {
 import type { EntityInstance } from './gl/entityRenderer';
 import { setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
-  CROP_ORDER,
-  RESOURCE_LABEL,
-  type ResourceKind,
   player,
   PLAYER_COLORS,
-  VILLAGER,
-  type BuildingType,
-  type CropType,
 } from './world/catalog';
 import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { GameUi } from './game/ui';
 import { steerCamera } from './game/cameraControl';
 import { startPoint } from './game/startPoint';
 import { FixedStep, Interval } from './game/timing';
@@ -39,18 +34,13 @@ import { Compass, isDirection, rotateToFace } from './game/Compass';
 import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
-import { selectionView } from './game/selectionView';
-import { ResourceBar } from './components/ResourceBar';
-import { BuildMenu } from './components/BuildMenu';
 import { mountGame } from './components/Hud';
-import { renderSelection } from './components/SelectionPanel';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
 import { loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound } from './audio';
 import { Music } from './music';
-import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
 import { currentSeed, deleteSave, switchWorld, takeStartRequest } from './worlds';
 
 // Erst Spielfeld-Canvas und Oberfläche (components/Hud.tsx) - danach werden
@@ -59,11 +49,6 @@ mountGame(document.getElementById('app')!);
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
-const stockEl = document.getElementById('stock')!;
-const buildEl = document.getElementById('build')!;
-const hintEl = document.getElementById('hint')!;
-const selectionEl = document.getElementById('selection')!;
-const actionsEl = document.getElementById('actions')!;
 const boxEl = document.getElementById('select-box')!;
 /** Entwickler-Infos oben links (game/DevPanel.ts). */
 const devPanel = new DevPanel();
@@ -119,70 +104,20 @@ music.mute = !sound.enabled;
 /** Baumodus: welche Art gebaut wird, Felder säen, Bauplatz-Prüfung (game/Placement.ts). */
 const placement = new Placement(world);
 
-// --- Baumenü ---------------------------------------------------------------
+// --- Auswahl ---------------------------------------------------------------
 
-const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), {
-  build: (type) => select(placement.placingType === type ? null : type),
-  // Feld aus dem Untermenü: mit dieser Frucht abstecken.
-  crop: (crop) => {
-    world.nextFarmCrop = crop;
-    select('farm');
-  },
-  back: () => {
-    buildMenu.showFarms(false);
-    if (placement.placingType === 'farm') select(null);
-  },
-});
+/** Was ausgewählt ist: Dorfbewohner, Gebäude oder ein Vorkommen (game/Selection.ts). */
+const selection = new Selection(world);
 
-function select(type: BuildingType | null) {
-  placement.placingType = type;
-  // Wer baut, wählt nicht gleichzeitig aus - sonst tut ein Klick zwei Dinge.
-  if (type) clearSelection();
-  // Kein Feld mehr: zurück vom Untermenü der Felder zum Baumenü.
-  if (type !== 'farm') buildMenu.showFarms(false);
-  buildMenu.setPressed(type, world.nextFarmCrop);
-  updateCursor();
-}
-
-/**
- * Zeiger je nach Lage: im Baumodus ein Feld-Zeiger, mit ausgewählten
- * Dorfbewohnern über einem Vorkommen das passende Werkzeug - Axt für Holz,
- * Spitzhacke für Stein und Gold, Beeren für Beeren. Sonst das Fadenkreuz.
- */
-function updateCursor() {
-  let cursor = 'crosshair';
-  const trainer = selection.focused();
-  if (placement.placingType) {
-    cursor = 'copy';
-  } else if (trainer?.isUnitProducer()) {
-    cursor = RALLY_CURSOR;
-  } else if (selection.villagers.size > 0 && pointer.tile) {
-    // Zeigt der Zeiger auf ein Objekt (Baumkrone, Fels), gilt dessen Feld.
-    const { x, y } = pointer.tile;
-    const own = world.resourceInfo(x, y);
-    const t = world.at(x, y) || (own && own.type !== 'wood') ? null : pointer.object;
-    const [tx, ty] = t ? [t.x, t.y] : [x, y];
-    const found = world.remainingAt(tx, ty);
-    if (found.type && found.amount > 0 && !world.at(tx, ty)) {
-      cursor = GATHER_CURSOR[found.type];
-    }
-  }
-  if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
-}
-
-let hintTimer = 0;
-function hint(text: string) {
-  sound.play('error', 0.6);
-  hintEl.textContent = text;
-  hintEl.classList.add('show');
-  clearTimeout(hintTimer);
-  hintTimer = window.setTimeout(() => hintEl.classList.remove('show'), 1800);
-}
-
-/** Reihenfolge in der Rohstoffleiste - wie in AoE2: Holz, Nahrung, Gold, Stein. */
-const RESOURCE_BAR_ORDER: ResourceKind[] = ['wood', 'food', 'gold', 'stone'];
-// Das Zahnrad am Ende öffnet das Menü (wie F10).
-const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER, player.color.toRGB(), () => world.save(), () => menu.toggle());
+/** Die Oberfläche im Spiel: Leisten, Baumenü, Auswahl-Panel, Hinweise, Mauszeiger (game/ui.ts). */
+const ui = new GameUi({ world, selection, placement, pointer, resources, sound, canvas }, {
+  toggleMenu: () => menu.toggle(),
+  save: () => world.save(),
+  selectIdle: (all) => actions.selectIdle(all),
+  train: (count) => actions.trainVillagers(count),
+  demolish: () => actions.demolishSelected(),
+  setFieldCrop: (crop) => actions.setFieldCrop(crop),
+}, player.color.toRGB());
 
 // --- Einstellungen und Menü ------------------------------------------------
 
@@ -195,8 +130,7 @@ function applySettings() {
   sound.volume = settings.volume;
   music.volume = settings.music;
   player.color = (PLAYER_COLORS[settings.playerColor] ?? PLAYER_COLORS.green).color;
-  resourceBar.setPlayerColor(player.color.toRGB());
-  buildMenu.setPlayerColor(player.color.toRGB());
+  ui.setPlayerColor(player.color.toRGB());
   // Mühlenflügel und Fahnen laufen mit der Spielgeschwindigkeit.
   setAnimationSpeed(settings.speed);
   document.getElementById('ui')!.hidden = !settings.showHelp;
@@ -247,9 +181,9 @@ const menu = new SettingsMenu(settings, {
 
 function startNewGame() {
   world.reset();
-  clearSelection();
+  ui.clearSelection();
   if (paused) togglePause();
-  updateResourceUI();
+  ui.refreshResources();
   goToStart();
 }
 
@@ -272,29 +206,6 @@ const start = new StartScreen({
   save: () => world.save(),
   openSettings: () => menu.open(true),
 });
-
-/** Vorrat und Verfügbarkeit der Bauknöpfe. Läuft nicht je Frame, sondern getaktet. */
-function updateResourceUI() {
-  const pop = world.population();
-  const { counts, idle } = world.gatherers();
-  // Wie in AoE2: Holz, Nahrung, Gold, Stein - im Symbol, wie viele
-  // Dorfbewohner gerade daran sammeln.
-  resourceBar.update({
-    order: RESOURCE_BAR_ORDER,
-    stock: world.stock,
-    labels: RESOURCE_LABEL,
-    gatherers: counts,
-    population: pop,
-    idle,
-    villagerLabel: VILLAGER.label,
-  });
-
-  buildMenu.setEnabled((type) => world.affordable(type) && (type === 'town_center' || world.hasTownCenter()));
-  updateSelectionUI();
-  // Der Vorrat wächst von allein: was eben noch zu teuer war, ist es jetzt
-  // vielleicht nicht mehr - die gemerkte Bauplatz-Prüfung muss also mit.
-  placement.invalidate();
-}
 
 // --- Ton -------------------------------------------------------------------
 
@@ -343,58 +254,6 @@ function faceDirection(dir: string) {
 }
 
 
-// --- Auswahl ---------------------------------------------------------------
-
-/** Was ausgewählt ist: Dorfbewohner, Gebäude oder ein Vorkommen (game/Selection.ts). */
-const selection = new Selection(world);
-
-function clearSelection() {
-  selection.clear();
-  updateSelectionUI();
-}
-
-// Die Knöpfe entstehen bei jeder Aktualisierung neu - darum Delegation, und
-// mousedown statt click, damit ein Neuzeichnen zwischen Drücken und Loslassen
-// den Klick nicht verschluckt.
-for (const panel of [stockEl]) {
-  panel.addEventListener('mousedown', (e) => {
-    const button = (e.target as HTMLElement).closest('button');
-    if (e.button !== 0 || button?.dataset.action !== 'idle') return;
-    // Kein Fokus auf dem Knopf - sonst bleibt ein Fokusrahmen stehen.
-    e.preventDefault();
-    e.stopPropagation();
-    actions.selectIdle(!e.shiftKey);
-  });
-}
-
-/**
- * Knöpfe im Auswahl-Panel - per Delegation, weil das Panel neu gezeichnet
- * wird. Auf mousedown statt click: läuft gerade eine Ausbildung, ersetzt die
- * Fortschrittsanzeige das Panel fünfmal je Sekunde, und ein click, dessen
- * mousedown und mouseup auf verschiedenen Knopf-Elementen landen, fiele weg.
- */
-actionsEl.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  const action = (e.target as HTMLElement).closest('button')?.dataset.action;
-  if (action === 'train') actions.trainVillagers(e.shiftKey ? 5 : 1);
-  if (action === 'demolish') actions.demolishSelected();
-  if (action === 'crop') {
-    const crop = (e.target as HTMLElement).closest('button')?.dataset.crop as CropType | undefined;
-    if (crop) actions.setFieldCrop(crop);
-  }
-});
-
-/** Zeigt, was ausgewählt ist und was man damit tun kann. Läuft getaktet mit dem Vorrat. */
-function updateSelectionUI() {
-  selection.prune();
-  // Hat die Auswahl Befehle (ein Gebäude), zeigt die Steintafel sie statt des Baumenüs.
-  const hasCommands = renderSelection(selectionEl, actionsEl, selectionView(world, selection, resources));
-  actionsEl.hidden = !hasCommands;
-  buildEl.hidden = hasCommands;
-  // Auswahl hat sich vielleicht geändert, oder das Feld unter dem Zeiger ist
-  // inzwischen leer gesammelt.
-  updateCursor();
-}
 
 // Der Speicherstand liegt im localStorage, je Welt einer.
 window.addEventListener('beforeunload', () => world.save());
@@ -414,11 +273,11 @@ const picker = new Picker(world, resources, camera, ground, () => simulation.ble
 
 /** Was der Spieler tut: auswählen, Befehle, bauen, ausbilden, abreißen (game/actions.ts). */
 const actions = new PlayerActions({ world, camera, selection, placement, picker, ground, sound }, {
-  hint,
-  refreshSelection: updateSelectionUI,
-  refreshResources: updateResourceUI,
+  hint: (text) => ui.hint(text),
+  refreshSelection: () => ui.refreshSelection(),
+  refreshResources: () => ui.refreshResources(),
   refreshPointer,
-  setPlacing: select,
+  setPlacing: (type) => ui.setPlacing(type),
 });
 
 /** Die Maus über dem Spielfeld (game/MouseInput.ts) - hier, was sie im Spiel bedeutet. */
@@ -438,7 +297,7 @@ new MouseInput(canvas, boxEl, {
   box: (a, b, add) => actions.boxSelect(a.x, a.y, b.x, b.y, add),
   rightClick: (p) => actions.rightClick(p),
   pan: (dx, dy) => camera.panPixels(dx, dy),
-  panEnd: updateCursor,
+  panEnd: () => ui.updateCursor(),
   zoom: (step, p) => setZoom(camera.zoomIndex + step, p.x, p.y),
   move: (p, buttons) => {
     const tileChanged = updateHoveredTile(p.x, p.y);
@@ -487,30 +346,19 @@ const keyboard = new Keyboard({
   togglePause,
   toggleSound,
   zoom: (step) => setZoom(camera.zoomIndex + step),
-  cancel: () => {
-    if (buildMenu.farmsOpen) {
-      buildMenu.showFarms(false);
-      if (placement.placingType === 'farm') select(null);
-    } else if (placement.isActive) select(null);
-    else clearSelection();
-  },
+  cancel: () => ui.cancel(),
   demolish: () => actions.demolishSelected(),
   home: () => actions.cycleTownCenter(),
   toggleHelp: () => setPanels({ showHelp: !settings.showHelp }),
   toggleDebug: () => setPanels({ showDebug: !settings.showDebug }),
   selectIdle: (all) => actions.selectIdle(all),
   train: (count) => actions.trainVillagers(count),
-  farmsOpen: () => buildMenu.farmsOpen,
-  chooseCrop: (index) => {
-    const crop = CROP_ORDER[index];
-    if (!crop || !world.affordable('farm')) return;
-    world.nextFarmCrop = crop;
-    select('farm');
-  },
+  farmsOpen: () => ui.farmsOpen,
+  chooseCrop: (index) => ui.chooseCrop(index),
   // Das Feld öffnet das Untermenü (Weizen, Mais); sonst Baumodus an oder aus.
   build: (type) => {
-    if (type === 'farm') buildMenu.showFarms(true);
-    else select(placement.placingType === type ? null : type);
+    if (type === 'farm') ui.openFarms();
+    else ui.setPlacing(placement.placingType === type ? null : type);
   },
 });
 
@@ -536,10 +384,10 @@ function updateHoveredTile(mouseX: number, mouseY: number): boolean {
   pointer.pixel = { x: mouseX, y: mouseY };
   // Nur mit ausgewählten Dorfbewohnern zählt, worauf der Zeiger zeigt.
   const object = selection.villagers.size > 0 ? picker.resourceObject(mouseX, mouseY) : undefined;
-  if (pointer.setObject(object)) updateCursor();
+  if (pointer.setObject(object)) ui.updateCursor();
   const tile = picker.tile(mouseX, mouseY);
   if (!pointer.setTile(tile)) return false;
-  updateCursor();
+  ui.updateCursor();
   devPanel.showTile({ ...terrain.getTile(tile.x, tile.y), x: tile.x, y: tile.y });
   updateHoverInfo();
   return true;
@@ -634,7 +482,7 @@ function loop(now: number) {
   devPanel.frame(now, camera);
 
   if (uiRefresh.due(now)) {
-    updateResourceUI();
+    ui.refreshResources();
     updateHoverInfo();
   }
   if (autosave.due(now)) world.save();
@@ -648,7 +496,7 @@ devPanel.showZoom(camera.tileSize);
 if (isDirection(settings.facing)) rotateToFace(settings.facing);
 if (settings.paused && !paused) togglePause();
 compass.update();
-updateResourceUI();
+ui.refreshResources();
 // Wer die Seite aufmacht, landet im Hauptmenü - wie bei einem Spiel. Nach
 // der Wahl einer anderen Welt geht es dort gleich los - neu oder geladen.
 const request = takeStartRequest();
