@@ -1,6 +1,6 @@
 // clips.ts
 // Clips aus Blender (docs/ANIMATION.md): liest eine Clip-Bibliothek
-// (src/models/<name>_clips.glb + .json, von tools/blender/export_clips.py) und
+// (src/models/<name>_clips.glb + .json, docs/ANIMATION.md) und
 // backt jeden Clip für eine Figur zu Knochen-Matrizen, die der Shader aus einer
 // Textur holt (Skinning).
 //
@@ -112,7 +112,7 @@ interface Manifest {
   graze?: number;
   clips: {
     name: string; frames: number; duration: number; props?: string[];
-    /** Aus den Custom Properties der Action (tools/blender/export_clips.py) - können fehlen. */
+    /** Angaben je Clip (von Hand in der .json gepflegt) - können fehlen. */
     pose?: number; phase_period?: number; phase_shift?: number; kneel?: boolean; strike?: number[];
     /** Tiere: nur für diese Arten (leer: alle) und ob es auf der Seite liegt. */
     species?: string[]; lying?: boolean;
@@ -337,7 +337,7 @@ function humanoidPivots(j: Joints): Vec3[] {
   return HUMANOID_BONES.map(([name]) => at[name]);
 }
 
-/** Das Skelett der Dorfbewohner (assets/blender/clips/humanoid.blend). */
+/** Das Skelett der Dorfbewohner (src/models/humanoid_clips.glb). */
 export const HUMANOID: Rig<Joints> = {
   name: 'humanoid',
   bones: HUMANOID_BONES,
@@ -352,7 +352,7 @@ export const HUMANOID: Rig<Joints> = {
 // --- Vierbeiner ---------------------------------------------------------------
 
 /**
- * Knochen der Tiere (assets/blender/clips/quadruped.blend): die vier Beine schwingen
+ * Knochen der Tiere (src/models/quadruped_clips.glb): die vier Beine schwingen
  * um ihr oberes Gelenk, Hals und Kopf drehen um den Halsansatz. Der Hals trägt
  * das Senken zum Gras - je Art so weit, dass das Maul den Boden erreicht
  * (uGraze, beim Backen skaliert) -, der Kopf alles andere (Kauen, Heben).
@@ -402,7 +402,7 @@ export interface MillJoints {
 }
 
 /**
- * Die Flügel der Mühlen (assets/blender/clips/mill.blend): ein Knochen an der Nabe,
+ * Die Flügel der Mühlen (src/models/mill_clips.glb): ein Knochen an der Nabe,
  * er dreht um die Blickachse. Alles andere steht still (root).
  */
 export const MILL: Rig<MillJoints> = {
@@ -426,7 +426,7 @@ export interface FlagJoints {
 }
 
 /**
- * Das Tuch der Fahne am Sammelpunkt (assets/blender/clips/flag.blend): Knochen
+ * Das Tuch der Fahne am Sammelpunkt (src/models/flag_clips.glb): Knochen
  * cloth.0 (am Mast) bis cloth.6 (am Ende) in gleichen Abständen - dort liegen
  * die Eckpunkte des Tuchs. Sie verschieben sich seitwärts; dazwischen mischt
  * der Shader die beiden Nachbarn nach der Lage im Tuch.

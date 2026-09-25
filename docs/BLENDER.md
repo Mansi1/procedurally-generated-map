@@ -6,8 +6,8 @@ Jedes Objekt des Spiels ist eine glTF-Datei in `src/models/`: Dorfbewohner,
 Gebäude, Bäume, Sträucher, Stein und Gold, Tiere, Werkzeuge und die Pflanzen
 der Felder. Blender öffnet und speichert sie ohne Zusatz (Datei → Import /
 Export → glTF 2.0) - es gibt keinen Export-Schritt und beim Bauen kein
-Blender. Die Bewegungen stecken in eigenen Clip-Bibliotheken
-(docs/ANIMATION.md), die noch als `.blend` vorliegen.
+Blender. Die Bewegungen stecken in eigenen Clip-Bibliotheken, ebenfalls
+`.glb` (docs/ANIMATION.md).
 
 ## Wo was liegt
 
@@ -23,9 +23,8 @@ src/models/                           Modelle - je Objekt eine .glb, eingecheckt
   prop_axe, prop_knife, prop_scythe_male/_female, bow, rally_flag, marker_arrow
   field_stake, field_cord, field_wheat_leaf,
   field_wheat_stalk(_light, _dark), field_corn_1, field_corn_2
-  <name>_clips.glb + .json            Bewegungen, aus den Clip-Bibliotheken erzeugt
-assets/blender/clips/                 Clip-Bibliotheken - je Skelett eine .blend (Git LFS)
-  humanoid, quadruped, mill, flag
+  humanoid, quadruped, mill, flag _clips.glb + .json
+                                      Bewegungen - je Skelett eine Bibliothek
 ```
 
 Das Spiel liest ein Modell mit `import house from '../models/house.glb?model'`.

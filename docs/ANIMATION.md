@@ -36,13 +36,12 @@ Phase 0 und Phase 1 sind fertig. Von Phase 2 ist der erste Teil fertig:
   (34 s Schleife).
 
 - **Takt-Marken:** Der Ton beim Hacken, Pflücken, Mähen und Schnitzen kommt
-  aus der Custom Property `strike` des Clips (`VillagerWork.swing`). Über
+  aus `strike` des Clips in `humanoid_clips.json` (`VillagerWork.swing`). Über
   20 Minuten Arbeit kommt jeder Ton im selben Takt wie mit der Formel.
-- **IK für die Hände:** In `humanoid.blend` gibt es IK-Ziele für beide Hände,
-  aktiv in `carve` und `mow` (siehe „Hände mit IK“). Die Clips sind dadurch
-  unverändert (`check:anim` wie vorher). Ein verschobenes Ziel kommt im Spiel
-  an: 5 cm verschoben ergibt 5,0 cm an der Hand. Die Hilfsknochen (`ik.*`,
-  `hand.*`) bleiben in Blender und kommen nicht mit ins Spiel.
+- **IK für die Hände:** Die frühere `humanoid.blend` hatte IK-Ziele für beide
+  Hände, aktiv in `carve` und `mow`. Ihr Ergebnis ist in die Clips gebacken;
+  die IK-Ziele selbst gibt es seit dem Wegfall der `.blend`-Dateien
+  (25.09.2026) nicht mehr.
 
 **Werkzeuge sind Anhänge:** Beil, Sense und Zugmesser stecken nicht mehr in
 den Körpern, sondern sind eigene Modelle an der rechten Hand
@@ -73,7 +72,7 @@ bleiben - mit ihnen werden die Clips gebacken. `mow_pose.json` und
 Offen in Phase 2: Schichten (`walk` + `carry`).
 
 **Phase 3 ist fertig: Alle sechs Tiere spielen Clips aus
-`assets/blender/clips/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
+`src/models/quadruped_clips.glb`** (Reh, Hase, Kuh, Schaf, Ziege,
 Wildschwein).
 
 - **Gleichstand:** Alle Clips stimmen auf den Bildern mit der Formel überein,
@@ -90,7 +89,7 @@ Wildschwein).
   (35,4 s Schleife).
 
 **Phase 4 ist fertig: Mühlenflügel und Fahne spielen Clips** aus
-`assets/blender/clips/mill.blend` (Clip `sails`) und `flag.blend` (Clip `wave`).
+`src/models/mill_clips.glb` (Clip `sails`) und `flag_clips.glb` (Clip `wave`).
 
 - **Gleichstand:** Die Fahne weicht an den Eckpunkten des Tuchs um 0,03 cm
   ab. Die Böen der Flügel sind exakt. Die Stellung der Flügel weicht bis 6,4°
@@ -114,30 +113,24 @@ Aus Phase 1:
   Formel-Posen sind es 54–60 ms (Messung ohne Spiel-Logik, Software-GL im
   Test-Browser). Der Clip-Weg ist also schneller: einige Texturzugriffe statt
   viel Trigonometrie je Eckpunkt.
-- **Hin und zurück:** Eine Änderung in Blender ist nach `npm run gen:anim`
-  im Spiel zu sehen. Geprüft ist das mit einem nach hinten gedrehten Kopf.
+- **Hin und zurück:** Eine Änderung in Blender kam damals (Export aus der
+  `.blend`) im Spiel an, geprüft mit einem nach hinten gedrehten Kopf.
 
 
 ## Überblick: wie es aufgebaut ist
 
-Die Migration läuft auf dem Branch `animation-migration`.
+Seit dem 25.09.2026 gibt es keine `.blend`-Dateien und keinen Export mehr:
+Die Clip-Bibliotheken sind selbst die Quelle.
 
 ```
- 1. KÖRPER (in Blender bearbeitet, docs/BLENDER.md)
+ 1. KÖRPER (docs/BLENDER.md)
     src/models/villager_male.glb, src/models/villager_female.glb
-                                   (Import/Export glTF; Teilnamen wie Arm.L.Lower + Materialnamen)
+                                   (Teilnamen wie Arm.L.Lower + Materialnamen)
 
- 2. EINMALIGE EINRICHTUNG (erledigt)
-    tools/export/bognerei.mjs ──► tools/export/out/bognerei.glb
-    tools/blender/bootstrap_humanoid.py ──► assets/blender/clips/humanoid.blend
-
- 3. DER ARBEITSABLAUF
-    assets/blender/clips/humanoid.blend      ◄── hier wird bearbeitet (Skelett "humanoid", Actions)
-            │  npm run gen:anim
-            │  (tools/blender/export-all.mjs → Blender → tools/blender/export_clips.py)
-            ▼
-    src/models/humanoid_clips.glb      Skelett + alle Clips (erzeugt, nicht bearbeiten)
-    src/models/humanoid_clips.json     Länge, Werkzeuge, Pose, Körperhöhe (erzeugt)
+ 2. BEWEGUNGEN - je Skelett eine Bibliothek, eingecheckt
+    src/models/humanoid_clips.glb      Skelett + alle Clips (gebackene Bilder, 30 fps)
+    src/models/humanoid_clips.json     je Clip: Länge, Werkzeuge, Pose, Takt ... (von Hand)
+    ebenso quadruped, mill, flag
             │
             ▼
     src/gl/clips.ts                    liest die Clips (Drehung je Knochen gegenüber
@@ -151,28 +144,28 @@ Die Migration läuft auf dem Branch `animation-migration`.
     Spiel und Galerie („Clips aus Blender“)
 ```
 
-**Quelle und Erzeugtes:**
+**Quellen:**
 
 | Art | Dateien | Bearbeiten? |
 |---|---|---|
-| Quelle: Bewegung | `assets/blender/clips/*.blend` (Git LFS) | ja, in Blender |
-| Quelle: Körperform | `src/models/villager_*.glb` | ja, in Blender (Import/Export glTF) |
-| Quelle: Spiel-Logik | `src/gl/clips.ts`, `src/gl/entityRenderer.ts` | ja, als Code |
-| Erzeugt | `src/models/*_clips.glb` + `.json` | nein, neu erzeugen |
-| Werkzeuge | `tools/blender/*` (Export), `tools/export/*` (Einrichtung, glTF-Vorschau) | nur für die Pipeline |
+| Bewegung | `src/models/*_clips.glb` | in Blender (Import/Export glTF), siehe unten |
+| Angaben je Clip | `src/models/*_clips.json` | von Hand |
+| Körperform | `src/models/villager_*.glb` | in Blender (Import/Export glTF) |
+| Spiel-Logik | `src/gl/clips.ts`, `src/gl/entityRenderer.ts` | als Code |
+| Prüfen | `tools/blender/parity*.mjs` (`npm run check:anim`), `tools/export/*` (glTF-Vorschau) | – |
 
 **Was wo geändert wird:**
 
-| Ich will … | Wo | Danach |
-|---|---|---|
-| eine Bewegung ändern | `humanoid.blend` bzw. `quadruped.blend` (Tiere) → die Action gleichen Namens | `npm run gen:anim` |
-| Mühlenflügel oder Fahne ändern | `mill.blend` → Action `sails`, `flag.blend` → Action `wave` | `npm run gen:anim` |
-| einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
-| festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
-| einen Clip nur für bestimmte Tiere | Custom Property `species` der Action (z. B. `hare`) | `npm run gen:anim` |
-| die Form eines Körpers ändern | `src/models/villager_*.glb` in Blender | – (Export über die Datei) |
-| ein Werkzeug ändern oder neu anhängen | `src/models/prop_*.glb` in Blender, `FIGURE_PROPS` in `entityRenderer.ts` | siehe „Werkzeuge anhängen“ |
-| einen Clip ansehen | Galerie → „Clips aus Blender“ | – |
+| Ich will … | Wo |
+|---|---|
+| eine Bewegung ändern | `humanoid_clips.glb` bzw. `quadruped_clips.glb` (Tiere) → die Animation gleichen Namens |
+| Mühlenflügel oder Fahne ändern | `mill_clips.glb` → `sails`, `flag_clips.glb` → `wave` |
+| einen neuen Clip | neue Animation im `.glb` und ein Eintrag in `clips` der `.json` |
+| festlegen, welche Pose ein Clip ersetzt | `pose` des Clips in der `.json` |
+| einen Clip nur für bestimmte Tiere | `species` des Clips in `quadruped_clips.json` (z. B. `["hare"]`) |
+| die Form eines Körpers ändern | `src/models/villager_*.glb` in Blender |
+| ein Werkzeug ändern oder neu anhängen | `src/models/prop_*.glb` in Blender, `FIGURE_PROPS` in `entityRenderer.ts`, siehe „Werkzeuge anhängen“ |
+| einen Clip ansehen | Galerie → „Clips aus Blender“ |
 
 **Drei Regeln halten es zusammen:**
 
@@ -193,12 +186,12 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
 - **Je Werkzeug und Körper eine Form** (`SHAPE.propAxe`, `propAxeFemale` …).
   Beim Zeichnen leiht sie sich Gelenke, Clip-Uniforms und Handlage ihres
   Körpers (`body` in `MODELS`, `uSocket`). Sie bewegt sich darum genau mit
-  dessen Unterarm, im Clip wie mit den Formeln. Das Modell ist nur einmal
-  geladen, auch wenn zwei Körper es nutzen.
-- **Wann es zu sehen ist,** entscheiden die `props` des Clips (Custom
-  Property der Action in Blender). `figureProps()` in `entityRenderer.ts`
-  gibt für eine Figur die passenden Anhänge als Instanzen. Welt, Galerie und
-  Symbole zeichnen sie mit. Ohne Clip keine - die Figur steht in Ruhelage.
+  dessen Unterarm. Das Modell ist nur einmal geladen, auch wenn zwei Körper
+  es nutzen.
+- **Wann es zu sehen ist,** entscheiden die `props` des Clips
+  (`humanoid_clips.json`). `figureProps()` in `entityRenderer.ts` gibt für
+  eine Figur die passenden Anhänge als Instanzen. Welt, Galerie und Symbole
+  zeichnen sie mit. Ohne Clip keine - die Figur steht in Ruhelage.
 - **Zweihändig:** Das Zugmesser hängt an beiden Unterarmen, der Shader mischt
   nach der Lage zwischen den Händen. Es ist für den Handabstand des Mannes
   gebaut und wird auf den des Trägers gestreckt (`uKnifeScale`). Die Sense
@@ -213,76 +206,45 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
    `MODELS` mit `body`, ein Bit in `PROP_BITS` (`clips.ts`) und ein Eintrag
    in `FIGURE_PROPS`. Die Teile heißen wie beim Beil (`Arm.R.Lower.Tool…`),
    damit der Shader sie am rechten Unterarm führt.
-3. In Blender den Namen in `props` der Actions eintragen, die es brauchen.
-   `npm run gen:anim`.
+3. Den Namen in `props` der Clips eintragen, die es brauchen
+   (`humanoid_clips.json`).
 
 ## So wird jetzt gearbeitet
 
-1. `assets/blender/clips/humanoid.blend` in Blender öffnen. Es enthält das
-   Skelett `humanoid` und dazu die Bognerei mit Werkbank als Vorlage.
-2. Den Clip bearbeiten. Das ist die Action mit demselben Namen wie im Spiel:
-   `stand`, `walk`, `chop`, `pick`, `mow` oder `carve`. Neue Clips sind neue
-   Actions am Skelett `humanoid`. Custom Properties der Action:
-   - `props`: die Werkzeuge in der Hand, durch Komma getrennt (`axe`,
-     `scythe`, `knife`)
+1. Blender: Datei → Import → glTF 2.0, z. B. `src/models/humanoid_clips.glb`.
+   Jeder Clip ist eine Animation (Action) mit dem Namen wie im Spiel:
+   `stand`, `walk`, `chop`, `pick`, `mow`, `carve`.
+2. Bearbeiten, dann Datei → Export → glTF 2.0 (glTF Binary) über dieselbe
+   Datei. **Achtung:** Mit den vorgegebenen Einstellungen rechnet Blender
+   die Bilder beim Export neu ab. Zur Probe (Import und sofort Export, nichts
+   geändert) wichen die Hände danach bis 7 cm ab (`chop`, vorher 0,5 cm),
+   die Tiere bis 0,9 cm. Vor dem ersten echten Export die
+   Animations-Einstellungen so wählen, dass `npm run check:anim` wie vorher
+   bleibt - das ist noch nicht herausgefunden (docs/OFFEN.md).
+3. Die Angaben je Clip stehen in `<name>_clips.json` unter `clips` und werden
+   von Hand gepflegt; `frames` und `duration` müssen zur Animation passen:
+   - `props`: die Werkzeuge in der Hand (`axe`, `scythe`, `knife`)
    - `pose`: welche Pose des Spiels der Clip ersetzt (0 stehen, 1 gehen,
-     2 hacken, 3 pflücken, 4 mähen, 5 schnitzen)
+     2 hacken, 3 pflücken, 4 mähen, 5 schnitzen; Tiere: 0 äsen, 1 gehen,
+     5 fliehen, 6 erlegt)
    - `phase_period`, `phase_shift`: welcher Bereich der Spiel-Phase eine
      Schleife ist. Die Clip-Zeit ist (Phase − shift) × Dauer / period.
-   - `kneel`: 1, wenn der Rock beim Knien gestaucht wird
+   - `kneel`: `true`, wenn der Rock beim Knien gestaucht wird
    - `strike`: Clip-Zeiten in Sekunden, zu denen der Hieb bzw. Griff zu
-     hören ist, durch Komma getrennt (z. B. `chop`: `0.775`). Wer einen Clip
-     umbaut, verschiebt die Marken mit.
-   
-   Mit `npm run check:anim` lässt sich prüfen, wie weit ein Clip von der
-   alten Formel abweicht.
-3. `npm run gen:anim` exportiert alle `.blend`-Dateien in `assets/blender/clips/`
-   nach `src/models/<name>_clips.glb` + `.json`. Blender wird über die
-   Umgebungsvariable `BLENDER` gefunden, sonst am üblichen Ort auf macOS.
-4. In der Galerie zeigen „Clips aus Blender“ → „Mann (Clips)“,
-   „Frau (Clips)“ und „Tiere (Clips)“ jeden Clip der Bibliotheken. Im Spiel
-   spielt ihn die Pose, die er ersetzt (Custom Property `pose`).
+     hören ist (z. B. `chop`: `[0.775]`). Wer einen Clip umbaut, verschiebt
+     die Marken mit.
+   - Tiere: `species` (für welche Arten, leer heißt alle) und `lying`
+     (liegt auf der Seite); `graze` oben in der Datei ist, wie weit das Reh
+     den Kopf senkt - das Spiel bringt den Knochen `neck` je Art auf ihre
+     Halslänge.
+4. `npm run check:anim` zeigt, wie weit ein Clip von der alten Formel
+   abweicht; `npm test`, dass kein Knochen, Clip oder keine Pose verloren
+   ging. In der Galerie zeigen „Clips aus Blender“ jeden Clip.
 
-**Hände mit IK** (`humanoid.blend`, eingerichtet von
-`tools/blender/humanoid_ik.py`):
-
-- Die Knochen `ik.hand.L` und `ik.hand.R` sind die Ziele der Hände. Sie haben
-  keinen Eltern-Knochen. Man verschiebt sie, und Schulter, Oberarm und
-  Unterarm folgen.
-- `hand.L` und `hand.R` hängen am Unterarm (Handgelenk bis Handmitte) und
-  tragen die IK-Einschränkung `IK` (Kette aus 4 Knochen).
-- Jeder Knochen dreht dabei nur um seine Spiel-Achse: Schulter und Ellbogen
-  um x, der Oberarm um z. So ist die Lösung eindeutig, ein Pol ist nicht
-  nötig.
-- Aktiv ist IK in `carve` und `mow`, wo beide Hände ein Werkzeug halten. Dort
-  sind die Ziele je Bild gebacken, und die Kurve `influence` der
-  Einschränkung steht in der Action auf 1. In allen anderen Actions steht sie
-  auf 0.
-- Das Spiel liest nur die bekannten Knochen. Was IK aus ihnen macht, backt
-  der Export (`export_force_sampling`) mit. `hand.*` und `ik.hand.*` kommen
-  zwar mit in die `.glb`, `clips.ts` übergeht sie aber.
-- Neu einrichten (auch nach `bootstrap_humanoid.py`, das es selbst aufruft):
-  `blender -b assets/blender/clips/humanoid.blend --python tools/blender/humanoid_ik.py`.
-  Das setzt die Ziele wieder auf die Hände der Keyframes.
-
-**Tiere** (`assets/blender/clips/quadruped.blend`, Skelett `quadruped`, am Reh):
-Die Actions heißen `graze`, `walk`, `hop`, `flee`, `trot`, `hop_flee` und
-`dead`, die Posen sind 0 äsen, 1 gehen, 5 fliehen, 6 erlegt. Dazu kommen zwei
-eigene Custom Properties:
-
-- `species`: für welche Arten der Clip gilt, durch Komma getrennt (`deer`,
-  `hare`, `cow`, `sheep`, `goat`, `boar`). Leer heißt: für alle.
-- `lying`: 1, wenn das Tier auf der Seite liegt. Die Höhe nimmt das Spiel aus
-  der Körperbreite der jeweiligen Art.
-
-Der Knochen `neck` trägt nur das Senken zum Gras. Das Spiel bringt ihn je Art
-auf ihre Halslänge (Custom Property `graze` des Skeletts = so weit senkt das
-Reh). Alles andere am Kopf (Kauen, Heben beim Gehen) gehört auf `head`.
-
-Die `.blend`-Dateien liegen in Git LFS (`.gitattributes`). Neu angelegt werden
-sie nur einmal: `humanoid.blend` mit `tools/blender/bootstrap_humanoid.py`
-aus `tools/export/bognerei.mjs`, `quadruped.blend` mit
-`tools/blender/bootstrap_rig.py` aus `tools/export/animals.mjs`.
+Die IK-Ziele der Hände (`ik.hand.*`, `hand.*`) lebten in der früheren
+`humanoid.blend`; in den gebackenen Clips stecken nur noch ihre Ergebnisse.
+Die `.blend`-Dateien und die Python-Skripte, die sie angelegt und exportiert
+haben, stehen in der Git-Geschichte.
 
 ## Heute
 
@@ -355,8 +317,8 @@ Bewegungen. Künftig gilt:
 3. **Werkzeuge und Waffen als Anhänge.** Die Hände bekommen Sockel-Knochen
    (`hand.R`, `hand.L`). Beil, Spitzhacke, Hacke, Sense, Zugmesser, Speer und
    Bogen sind eigene kleine Modelle und werden je Tätigkeit angehängt. Welches
-   Werkzeug ein Clip braucht, steht als Custom Property `props` an der
-   Action. Beispiele:
+   Werkzeug ein Clip braucht, steht in `props` des Clips
+   (`humanoid_clips.json`). Beispiele:
    - `chop` mit Beil (Holz), Spitzhacke (Stein, Gold) oder Hacke (Pflügen):
      ein Clip, drei Werkzeuge.
    - Der fertige Bogen auf der Werkbank, im Gestell der Waffenkammer, im

@@ -1,6 +1,6 @@
 // Exportiert Mühle und Fahne am Sammelpunkt mit Skelett und Clip als glTF
-// (.glb) - Ausgangspunkt für assets/blender/clips/mill.blend und flag.blend
-// (tools/blender/bootstrap_rig.py). Die Clips rechnen dieselben Formeln wie
+// (.glb) - Ausgangspunkt für src/models/mill_clips.glb und flag_clips.glb,
+// heute zum Vergleich. Die Clips rechnen dieselben Formeln wie
 // bisher der Shader (src/gl/entityRenderer.ts, P_SAILS und P_CLOTH):
 //
 //   sails  Die Flügel drehen um die Nabe, dazu Böen. Eine Schleife sind 7

@@ -37,8 +37,7 @@ npm run build     # Typprüfung und Build nach dist/
 npm run preview   # den Build lokal ansehen
 ```
 
-Die Hintergrundmusik (`assets/music/*.mp3`) und die Clip-Bibliotheken
-(`assets/blender/clips/*.blend`) liegen in **Git LFS**. Vor dem Klonen `git lfs install`
+Die Hintergrundmusik (`assets/music/*.mp3`) liegt in **Git LFS**. Vor dem Klonen `git lfs install`
 ausführen – sonst kommen statt der Dateien nur kleine Zeiger-Dateien an
 (nachholen mit `git lfs pull`). Beim Hosten auf Vercel muss unter
 *Settings → Git* „Git Large File Storage (LFS)“ eingeschaltet sein.
@@ -79,9 +78,9 @@ glTF 2.0, danach Export → glTF 2.0 (glTF Binary) über dieselbe Datei. Es gibt
 keinen Export-Schritt, und zum Bauen braucht es kein Blender. Wie das Spiel
 die Dateien liest und welche Objektnamen etwas bedeuten: docs/BLENDER.md.
 
-Die Bewegungen stecken in Clip-Bibliotheken unter `assets/blender/clips/`
-(docs/ANIMATION.md). Nach einer Änderung dort `npm run gen:anim` (braucht
-Blender) und die erzeugten `src/models/*_clips.glb` + `.json` einchecken.
+Die Bewegungen stecken in Clip-Bibliotheken, ebenfalls glTF:
+`src/models/<skelett>_clips.glb`, dazu je eine `.json` mit den Angaben je
+Clip (docs/ANIMATION.md).
 
 Die Felder baut das Spiel beim Start selbst (`tools/models/farmsGen.mjs`) –
 ein Weizenfeld besteht aus Tausenden einzelner Halme.

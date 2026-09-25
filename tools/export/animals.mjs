@@ -1,6 +1,6 @@
-// Exportiert das Skelett der Tiere mit allen Clips als glTF (.glb) - daraus
-// wird assets/blender/clips/quadruped.blend (tools/blender/bootstrap_rig.py). Am
-// Reh (REFERENCE) werden die Clips in Blender bearbeitet; das Spiel backt sie
+// Exportiert das Skelett der Tiere mit allen Clips als glTF (.glb), gerechnet
+// aus den früheren Formeln - daraus entstand einmal src/models/quadruped_clips.glb;
+// heute zum Vergleich. Die Clips gelten am Reh (REFERENCE); das Spiel backt sie
 // für jede Art mit deren Gelenken (src/gl/clips.ts, QUADRUPED).
 //
 // Im Shader (Zweig "beast") schwingen die Beine um ihr oberes Gelenk und der
@@ -9,8 +9,7 @@
 // (tools/export/animal-poses.mjs) als Animation hineingerechnet.
 //
 // Daneben schreibt es <Ausgabe>.clips.json: je Clip Pose, Arten, Phasenbereich
-// und ob das Tier liegt - bootstrap_rig.py macht daraus Custom Properties der
-// Actions. Dazu Höhe und uGraze des Rehs: das Spiel rechnet damit die
+// und ob das Tier liegt (wie in src/models/quadruped_clips.json). Dazu Höhe und uGraze des Rehs: das Spiel rechnet damit die
 // Verschiebung der Wurzel in Körperhöhen und das Senken des Kopfs je Art um.
 //
 // Aufruf: node tools/export/animals.mjs [Ausgabedatei]

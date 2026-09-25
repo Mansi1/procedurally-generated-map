@@ -11,8 +11,7 @@
 // Objekte, die per Skalierung ein- und ausgeblendet werden.
 //
 // Daneben schreibt es <Ausgabe>.clips.json: je Clip Pose, Werkzeuge und den
-// Phasenbereich - tools/blender/bootstrap_humanoid.py macht daraus Custom
-// Properties der Actions.
+// Phasenbereich (wie in src/models/humanoid_clips.json).
 //
 // Aufruf: node tools/export/bognerei.mjs [frau] [Ausgabedatei]
 //   Standard: Bogner (Mann), tools/export/out/bognerei.glb
@@ -284,9 +283,8 @@ const figureNode = addNode({
   rotation: qAxis(Y, yaw),
   // Im Spiel ist die Figur 1.7 m groß (VILLAGER.size in src/world/catalog.ts).
   scale: [1.7 / H, 1.7 / H, 1.7 / H],
-  // Körperhöhe des Skeletts in Metern - Blender übernimmt sie als Custom
-  // Property; tools/blender/export_clips.py gibt sie weiter, damit das Spiel
-  // die Verschiebung der Wurzel in Körperhöhen umrechnen kann.
+  // Körperhöhe des Skeletts in Metern (`height` in humanoid_clips.json) - damit
+  // rechnet das Spiel die Verschiebung der Wurzel in Körperhöhen um.
   extras: { height: H },
   children: [boneNodes[0], figureMeshNode],
 });

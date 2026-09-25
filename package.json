@@ -14,7 +14,6 @@
     "smoke": "node tools/ui/smoke.mjs",
     "export:bognerei": "node tools/export/bognerei.mjs && node tools/export/bognerei.mjs frau",
     "export:props": "node tools/export/props.mjs",
-    "gen:anim": "node tools/blender/export-all.mjs",
     "check:anim": "node tools/blender/parity.mjs && node tools/blender/parity-animals.mjs"
   },
   "devDependencies": {

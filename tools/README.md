@@ -2,17 +2,15 @@
 
 Skripte rund um die Modelle und Bilder in `src/`. Die Modelle sind `.glb`-Dateien
 in `src/models/`, die Blender direkt öffnet und speichert (docs/BLENDER.md) -
-sie brauchen keinen Export. Die Bewegungen kommen aus den `.blend`-Dateien in
-`assets/blender/clips/`; nach einer Änderung neu erzeugen und mit einchecken.
+sie brauchen keinen Export; ebenso die Clip-Bibliotheken `src/models/*_clips.glb`.
 
 | Befehl | erzeugt |
 | --- | --- |
-| `npm run gen:anim` | `src/models/*_clips.glb` + `.json` aus `assets/blender/clips/*.blend` (Bewegungen) |
 | `npm run gen:ui` | `src/icons/*.png`: Symbole der Rohstoffleiste und ihre Holztextur |
 
 - `models/glb.mjs` - liest und schreibt die Modelle (`.glb` ↔ OBJ/MTL-Text), mit den Regeln für
   Objektnamen; `models/check-models.mjs` prüft die Namen mit Bedeutung (`npm run check:models`)
-- `blender/` - Export der Clip-Bibliotheken aus Blender und ihr Vergleich mit den früheren Formeln
+- `blender/parity*.mjs` - vergleicht die Clips mit den früheren Formeln (`npm run check:anim`)
 - `models/primitives.mjs` - Grundformen (für das L-System und die Felder)
 - `models/farmsGen.mjs` - stellt die Felder (Weizen, Mais) aus ihren Teilen aus Blender auf
   (`src/models/field_*.glb`); `node tools/models/farms.mjs <Ordner>` schreibt sie zum Ansehen als OBJ

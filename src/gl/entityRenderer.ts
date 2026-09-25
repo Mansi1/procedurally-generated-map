@@ -307,7 +307,7 @@ export const CLIP_LIBRARIES_LOADED: Record<string, number> = {};
  * der Rauchtest schlägt an (CLIP_LIBRARIES_LOADED).
  */
 export const CLIPS: Clip[] = readClips('humanoid', () => loadClips(humanoidClipsGlb, humanoidClipsManifest, HUMANOID));
-/** Clips der Tiere (src/models/quadruped_clips.glb, aus assets/blender/clips/quadruped.blend). */
+/** Clips der Tiere (src/models/quadruped_clips.glb). */
 export const ANIMAL_CLIPS: Clip[] = readClips('quadruped', () => loadClips(quadrupedClipsGlb, quadrupedClipsManifest, QUADRUPED));
 const FLAG_CLIPS: Clip[] = readClips('flag', () => loadClips(flagClipsGlb, flagClipsManifest, FLAG));
 
@@ -342,10 +342,10 @@ const CLIP_LIBRARIES: {
       [SHAPE.sheep]: 'sheep', [SHAPE.goat]: 'goat', [SHAPE.boar]: 'boar',
     },
   },
-  // Mühlenflügel (assets/blender/clips/mill.blend): ein Clip "sails" für alle vier Mühlen.
+  // Mühlenflügel (src/models/mill_clips.glb): ein Clip "sails" für alle vier Mühlen.
   { rig: MILL, clips: readClips('mill', () => loadClips(millClipsGlb, millClipsManifest, MILL)),
     shapes: [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4] },
-  // Fahne am Sammelpunkt und auf dem Hauptgebäude (assets/blender/clips/flag.blend):
+  // Fahne am Sammelpunkt und auf dem Hauptgebäude (src/models/flag_clips.glb):
   // Clip "wave". Gemacht ist er für das Tuch am Sammelpunkt - ein längeres
   // (in Modell-Einheiten) schlägt entsprechend weiter aus.
   {
@@ -825,7 +825,7 @@ void main() {
     if (figure) {
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
-      // Clip aus Blender (assets/blender/clips/humanoid.blend): Pose >=
+      // Clip aus Blender (src/models/humanoid_clips.glb): Pose >=
       // CLIP_POSE (Galerie) oder die Pose, die ein Clip ersetzt (uPoseClip).
       int clip = pose >= ${CLIP_POSE} ? pose - ${CLIP_POSE} : pose < 8 ? uPoseClip[pose] : -1;
       if (clip >= 0 && uClipRow[clip] < 0) clip = -1;
@@ -868,7 +868,7 @@ void main() {
     }
 
     if (beast) {
-      // Tiere: Clip aus Blender (assets/blender/clips/quadruped.blend) - Pose
+      // Tiere: Clip aus Blender (src/models/quadruped_clips.glb) - Pose
       // >= CLIP_POSE (Galerie) oder die Pose, die ein Clip dieser Art ersetzt.
       // Ohne Clip (Bibliothek nicht geladen) steht es still.
       float phase = aMotion.y;
