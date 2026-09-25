@@ -24,6 +24,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { FixedStep, Interval } from './game/timing';
 import { Pointer } from './game/Pointer';
 import { DevPanel } from './game/DevPanel';
 import { Keyboard } from './game/keyboard';
@@ -432,19 +433,13 @@ const minimap = new MiniMap(minimapCanvas, seed, camera.pixelRatio);
 
 camera.moveTo(startX, startY);
 
-/**
- * Geländehöhe in Tiles für die Mausabfrage. Abgetastet so grob wie das
- * Gitter des Gelände-Shaders, damit der Treffer auf derselben Fläche liegt,
- * die man sieht.
- */
-let lastAnimalCheck = 0;
 
 /** Gelände, wie man es sieht, und sein Abgleich mit dem Shader (game/Ground.ts). */
 const ground = new Ground(mapGen, world, renderer, camera);
 world.groundAt = (x, y) => ground.groundAt(x, y);
 
 /** Was unter dem Zeiger liegt: Welt-Punkt, Tile, Dorfbewohner, Vorkommen (game/Picker.ts). */
-const picker = new Picker(world, resources, camera, ground, () => tickAccumulator / TICK);
+const picker = new Picker(world, resources, camera, ground, () => simulation.blend);
 
 /** Was der Spieler tut: auswählen, Befehle, bauen, ausbilden, abreißen (game/actions.ts). */
 const actions = new PlayerActions({ world, camera, selection, placement, picker, ground, sound }, {
@@ -602,22 +597,18 @@ function updateHoverInfo() {
 }
 
 let lastTime = performance.now();
-let lastUiUpdate = 0;
-let lastSave = 0;
+/** Die Simulation läuft in festen Schritten von 0.1 s (game/timing.ts). */
+const simulation = new FixedStep(0.1);
+/** Vorrat, Auswahl und Hover fünfmal je Sekunde - je Bild wäre es nur unruhig und teuer. */
+const uiRefresh = new Interval(200);
+/** Neue Stücke mit Wild nahe der Kamera nur ab und zu prüfen. */
+const animalCheck = new Interval(500);
 /**
- * Einmal je Minute speichern (ms) - der Spielstand wird mit der Welt immer
+ * Einmal je Minute speichern - der Spielstand wird mit der Welt immer
  * größer, ihn alle paar Sekunden zu schreiben kostet unnötig. Beim Verlassen
  * der Seite wird zusätzlich gespeichert (beforeunload).
  */
-const SAVE_INTERVAL = 60_000;
-
-/**
- * Die Wirtschaft läuft in festen Schritten, unabhängig von der Bildrate. Sonst
- * fördert ein schneller Rechner mehr als ein langsamer - und beim Zurückkehren
- * aus einem anderen Tab würde ein einzelner riesiger Schritt alles leerräumen.
- */
-const TICK = 0.1;
-let tickAccumulator = 0;
+const autosave = new Interval(60_000);
 
 /** Wird je Frame neu befüllt statt neu angelegt. */
 const overlay: EntityInstance[] = [];
@@ -684,19 +675,12 @@ function loop(now: number) {
 
   // Feste Schritte. Der Rest bleibt für den nächsten Frame liegen, damit über
   // die Zeit weder etwas verloren geht noch doppelt gefördert wird.
-  if (!paused && !start.isOpen()) tickAccumulator += dt * settings.speed;
-  while (tickAccumulator >= TICK) {
-    world.tick(TICK);
-    tickAccumulator -= TICK;
-  }
+  simulation.advance(paused || start.isOpen() ? 0 : dt * settings.speed, (step) => world.tick(step));
 
   ground.update(now);
   // Wild rund um die Kamera - neue Stücke nur ab und zu prüfen.
-  if (now - lastAnimalCheck > 500) {
-    lastAnimalCheck = now;
-    world.ensureAnimals(camera.x, camera.y);
-  }
-  collectOverlay(tickAccumulator / TICK);
+  if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
+  collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
   renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
 
@@ -706,17 +690,11 @@ function loop(now: number) {
 
   devPanel.frame(now, camera);
 
-  // Der Vorrat wächst kontinuierlich, aber fünfmal je Sekunde abzulesen reicht -
-  // je Frame wäre es nur unruhig und würde das Layout ständig neu rechnen.
-  if (now - lastUiUpdate > 200) {
+  if (uiRefresh.due(now)) {
     updateResourceUI();
     updateHoverInfo();
-    lastUiUpdate = now;
   }
-  if (now - lastSave > SAVE_INTERVAL) {
-    world.save();
-    lastSave = now;
-  }
+  if (autosave.due(now)) world.save();
 
   requestAnimationFrame(loop);
 }
