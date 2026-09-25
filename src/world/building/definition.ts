@@ -5,7 +5,7 @@
 
 import type { Color } from '../../functions/Color';
 import type { TileType } from '../../noise';
-import type { GatherType, Stock } from '../buildings';
+import type { GatherType, Stock } from '../catalog';
 import { BUILDABLE } from './common';
 
 export interface BuildingDefinition<T extends string = string> {

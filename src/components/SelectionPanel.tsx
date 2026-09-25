@@ -12,7 +12,7 @@ import './buttons.css';
 import { formatDuration } from '../format';
 import {
   CROP_ORDER, CROPS, player, type BuildingType, type CropType, type Stock,
-} from '../world/buildings';
+} from '../world/catalog';
 import { buildingIcon, resourceIcon, villagerIcon } from './modelIcons';
 import { cropIcon } from './cropIcons';
 

@@ -4,7 +4,7 @@
 
 import { Color } from '../../functions/Color';
 import { SHAPE } from '../../gl/entityRenderer';
-import { VILLAGER } from '../buildings';
+import { VILLAGER } from '../catalog';
 import { GATHER_TYPES } from './common';
 import { defineBuilding } from './definition';
 import { UnitProducer, type TrainableUnit } from './UnitProducer';

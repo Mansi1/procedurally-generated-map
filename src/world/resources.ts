@@ -9,7 +9,7 @@ import type { EntityInstance } from '../gl/entityRenderer';
 import { SHAPE, TREES, modelSize } from '../gl/entityRenderer';
 import type { TileProbe } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
-import type { GatherType } from './buildings';
+import type { GatherType } from './catalog';
 import type { ViewRect, World } from './world';
 
 /** Klein genug, dass ein Stück das Zeitbudget eines Bildes nicht sprengt. */

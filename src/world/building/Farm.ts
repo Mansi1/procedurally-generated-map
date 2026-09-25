@@ -7,7 +7,7 @@
 
 import { Color } from '../../functions/Color';
 import { SHAPE } from '../../gl/entityRenderer';
-import { CROPS, FIELD_ROWS, type CropType } from '../buildings';
+import { CROPS, FIELD_ROWS, type CropType } from '../catalog';
 import { BuildingBase, type BuildingOptions, type BuildingSave } from './BuildingBase';
 import { defineBuilding } from './definition';
 

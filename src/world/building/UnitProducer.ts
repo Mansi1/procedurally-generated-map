@@ -3,7 +3,7 @@
 // Warteschlange, Ausbildung der vordersten Einheit, Sammelpunkt für frisch
 // Ausgebildete. Welche Einheit es ausbildet, sagt die Unterklasse (`unit`).
 
-import { MAX_TRAINING_QUEUE, type Stock } from '../buildings';
+import { MAX_TRAINING_QUEUE, type Stock } from '../catalog';
 import { BuildingBase, type BuildingSave } from './BuildingBase';
 
 /** Was ein UnitProducer über die Einheit wissen muss, die er ausbildet. */

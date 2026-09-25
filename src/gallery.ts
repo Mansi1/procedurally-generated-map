@@ -14,7 +14,7 @@ import {
   groundToWorld, setViewRotation, snapCamera, viewRotation, worldToGround, worldToScreen, type IsoView,
 } from './gl/iso';
 import { mountGallery, type GalleryItem } from './components/GalleryOverlay';
-import { ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, VILLAGER, type AnimalKind, type CropType } from './world/buildings';
+import { ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, VILLAGER, type AnimalKind, type CropType } from './world/catalog';
 
 type RGB = [number, number, number];
 

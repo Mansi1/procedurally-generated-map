@@ -35,7 +35,7 @@ import {
   type BuildingType,
   type CropType,
   type Stock,
-} from './world/buildings';
+} from './world/catalog';
 import { World, type Villager } from './world/world';
 import type { UnitProducer } from './world/building';
 import { FIELD_WINDOW } from './gl/terrainRenderer';

@@ -268,7 +268,7 @@ export const BUILDING_HEADING = 0.5;
 /** Wo die Pflanzen ansetzen, in Metern (SOIL in tools/models/farmsGen.mjs). */
 const FIELD_SOIL_METERS = '0.02';
 
-/** Furchen je Feld (FIELD_ROWS in world/buildings.ts, ROWS in farmsGen.mjs). */
+/** Furchen je Feld (FIELD_ROWS in world/catalog.ts, ROWS in farmsGen.mjs). */
 const FIELD_FURROWS = 9;
 const FIELD_BASES = [SHAPE.farmWheat, SHAPE.farmCorn];
 

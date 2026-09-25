@@ -4,7 +4,7 @@
 // Knopf kaum zu erkennen - darum hier gezeichnet, als Bild-URL wie die
 // Symbole aus modelIcons.ts.
 
-import type { CropType } from '../world/buildings';
+import type { CropType } from '../world/catalog';
 
 /** Gepflügte Erde unten: Raute mit Furchen. */
 const SOIL = `

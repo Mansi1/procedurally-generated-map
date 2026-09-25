@@ -12,7 +12,7 @@ import { RESOURCE_TYPE_LABEL } from '../map';
 import { formatDuration } from '../format';
 import {
   BUILDINGS, BUILDING_ORDER, CROP_ORDER, CROPS, type BuildingType, type CropType, type Stock,
-} from '../world/buildings';
+} from '../world/catalog';
 import { buildingIcon } from './modelIcons';
 import { cropIcon } from './cropIcons';
 

@@ -26,8 +26,8 @@ import {
   VILLAGER,
   RESEED_COST,
   initialStock,
-} from './buildings';
-import type { AnimalKind, BuildingType, CropType, GatherType, Stock } from './buildings';
+} from './catalog';
+import type { AnimalKind, BuildingType, CropType, GatherType, Stock } from './catalog';
 import {
   buildingFromSave, createBuilding, furrowFood, furrowPosition, maskCovers, CENTER_TILE,
   type Building, type BuildingSave, type Farm, type Furrow, type UnitProducer,

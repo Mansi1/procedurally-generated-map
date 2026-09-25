@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import { MapGenerator } from '../../src/noise';
 import { TileProbe } from '../../src/map';
 import { World } from '../../src/world/world';
-import { VILLAGER, type BuildingType } from '../../src/world/buildings';
+import { VILLAGER, type BuildingType } from '../../src/world/catalog';
 
 // Die Welt speichert in den localStorage - hier ein Ersatz im Speicher.
 const store = new Map<string, string>();

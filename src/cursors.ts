@@ -4,7 +4,7 @@
 // arbeiten würden. Die Bilder sind kleine SVGs mit dunklem Rand, damit sie auf
 // hellem wie dunklem Gelände lesbar bleiben.
 
-import type { GatherType } from './world/buildings';
+import type { GatherType } from './world/catalog';
 
 /** CSS-Wert für `cursor`. Der Klickpunkt liegt an der Werkzeugspitze. */
 function svgCursor(body: string, hotX: number, hotY: number): string {

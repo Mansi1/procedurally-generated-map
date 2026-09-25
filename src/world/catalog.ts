@@ -1,8 +1,8 @@
-// buildings.ts
-// Die Gebäudetypen und der Dorfbewohner: Aussehen, Bauplatz-Regeln, Kosten,
-// Arbeitstempo - was Welt-Logik und Oberfläche darüber wissen müssen. Die
-// Definition jedes Gebäudes steht in seiner Klasse (building/TownCenter.ts,
-// House.ts, ...); BUILDINGS sammelt sie hier für alle, die nach Art fragen.
+// catalog.ts
+// Die Daten des Spiels an einer Stelle: Rohstoffe, Dorfbewohner, Früchte,
+// Tiere, Spielerfarben - was Welt-Logik und Oberfläche darüber wissen müssen.
+// Gebäude stehen als Klassen in building/ (je Art ihre Definition); ihre
+// Arten, Definitionen und Reihenfolge werden hier nur weitergereicht.
 //
 // Gefördert wird wie in AoE2 von Dorfbewohnern: Sie sammeln am Vorkommen und
 // tragen die Ladung zum nächsten Lager, das diese Ressource annimmt.

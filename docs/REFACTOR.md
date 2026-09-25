@@ -147,7 +147,7 @@ src/
   world/
     World.ts               Kern: Vorrat, Bevölkerung, tick-Reihenfolge
     save.ts                SaveData, speichern, laden, alte Versionen
-    catalog.ts             Daten: Dorfbewohner, Früchte, Spielerfarben (heute buildings.ts)
+    catalog.ts             Daten: Rohstoffe, Dorfbewohner, Früchte, Tiere, Spielerfarben
     building/
       index.ts             EINZIGE Liste der Gebäudearten -> Typ, BUILDINGS, Reihenfolge
       definition.ts        BuildingDefinition + defineBuilding() mit Vorgaben

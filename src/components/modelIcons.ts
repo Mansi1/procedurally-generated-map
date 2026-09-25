@@ -8,7 +8,7 @@
 
 import { ANIMAL_POSE, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
 import { groundToWorld, snapCamera } from '../gl/iso';
-import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type Stock } from '../world/buildings';
+import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type Stock } from '../world/catalog';
 import { cropIcon } from './cropIcons';
 
 export type IconName = keyof Stock | 'population' | 'idle';

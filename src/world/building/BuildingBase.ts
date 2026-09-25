@@ -4,7 +4,7 @@
 // belegte Tiles, Speichern. Was für alle Gebäude einer Art gilt, steht
 // statisch an der Klasse: `static definition`.
 
-import type { BuildingType, CropType } from '../buildings';
+import type { BuildingType, CropType } from '../catalog';
 import type { BuildingDefinition } from './definition';
 import type { Farm } from './Farm';
 import type { StorageBuilding } from './StorageBuilding';
