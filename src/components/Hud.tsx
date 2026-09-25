@@ -73,15 +73,66 @@ function SoundButton() {
   );
 }
 
-/** Kompass: Nadel und die vier Himmelsrichtungen - main.ts stellt sie je nach Blickrichtung. */
+/**
+ * Kompass auf dem Ring um die Minimap: die vier Himmelsrichtungen stehen an
+ * den Spitzen der Raute, in die sie zeigen - main.ts stellt sie je nach
+ * Blickrichtung (game/Compass.ts). Ein Klick dreht die Richtung nach oben.
+ */
 function Compass() {
   return (
     <div id="compass" title="Blickrichtung - klicke auf eine Himmelsrichtung">
-      <div class="needle" />
       <button type="button" data-dir="N">N</button>
       <button type="button" data-dir="E">O</button>
       <button type="button" data-dir="S">S</button>
       <button type="button" data-dir="W">W</button>
+    </div>
+  );
+}
+
+/** Pfeil im Halbkreis - `flip` spiegelt ihn für die Drehung im Uhrzeigersinn. */
+function TurnIcon({ flip }: { flip?: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2"
+      stroke-linecap="round" stroke-linejoin="round" style={flip ? 'transform:scaleX(-1)' : ''}>
+      <path d="M15 16V10a5 5 0 0 0-5-5H5" />
+      <path d="M8 2 5 5l3 3" />
+    </svg>
+  );
+}
+
+/**
+ * Minimap wie in AoE4: die Raute der Karte in goldenem Rand, dahinter ein Ring
+ * mit Zacken auf dunklem Stein. Unten links der Ton, unten rechts das Drehen
+ * der Ansicht um eine Vierteldrehung.
+ */
+function Minimap() {
+  // Maße wie in Hud.css: Rahmen 312 px, Raute 280 px, Mitte bei 156.
+  const c = 156;
+  const ring = 146;
+  const tip = 140;
+  // Zacken zwischen den Spitzen der Raute, wie eine Windrose.
+  const spikes = [45, 135, 225, 315].map((deg) => {
+    const a = (deg * Math.PI) / 180;
+    const p = (r: number, off: number) => `${c + Math.cos(a + off) * r},${c + Math.sin(a + off) * r}`;
+    return `${p(ring + 14, 0)} ${p(ring - 2, 0.06)} ${p(ring - 2, -0.06)}`;
+  });
+  return (
+    <div id="minimap-frame">
+      <svg class="minimap-ring" viewBox="0 0 312 312" width="312" height="312">
+        {spikes.map((points) => <polygon points={points} />)}
+        <circle cx={c} cy={c} r={ring} class="ring-outer" />
+        <circle cx={c} cy={c} r={ring - 5} class="ring-inner" />
+      </svg>
+      <canvas id="minimap" />
+      <svg class="minimap-edge" viewBox="0 0 312 312" width="312" height="312">
+        <polygon points={`${c},${c - tip} ${c + tip},${c} ${c},${c + tip} ${c - tip},${c}`} />
+      </svg>
+      <Compass />
+      <SoundButton />
+      <div class="minimap-turn">
+        <button type="button" id="turn-left" title="Ansicht gegen den Uhrzeigersinn drehen"><TurnIcon /></button>
+        <button type="button" id="turn-right" title="Ansicht im Uhrzeigersinn drehen"><TurnIcon flip /></button>
+      </div>
     </div>
   );
 }
@@ -103,9 +154,7 @@ function Hud() {
         </div>
         <div id="selection" />
       </div>
-      <canvas id="minimap" />
-      <SoundButton />
-      <Compass />
+      <Minimap />
       <div id="paused" hidden>Pause</div>
     </>
   );

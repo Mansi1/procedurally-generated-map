@@ -4,7 +4,9 @@ import { EntityRenderer, type EntityInstance } from './gl/entityRenderer';
 import { TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
+  setViewElevation,
   snapCamera,
+  viewElevation,
   visibleWorldRect,
   type IsoView,
 } from './gl/iso';
@@ -366,14 +368,16 @@ export class MapRenderer {
 }
 
 /**
- * Übersichtskarte - dieselbe Rautenansicht wie die Hauptkarte, aber flach, so
- * wie die Minimap in AoE2. Der Ausschnitt der Hauptansicht ist darauf ein
- * achsenparalleles Rechteck.
+ * Übersichtskarte wie in AoE4: ein Quadrat der Welt rund um die Stelle, die
+ * man gerade sieht, von oben und über Eck - eine Raute, deren obere Spitze in
+ * Blickrichtung zeigt. Das Canvas ist quadratisch, die Raute schneidet
+ * Hud.css aus; der Ausschnitt der Hauptansicht ist darauf ein Rechteck.
  */
 export class MiniMap {
   private terrain: TerrainRenderer;
   private entities: EntityRenderer;
-  private cssSize = 300;
+  /** Kantenlänge des Canvas in CSS-Pixeln - die Raute reicht von Rand zu Rand (Hud.css). */
+  private cssSize = 280;
 
   /**
    * Wie viel breiter als die Hauptansicht die Minimap zeigt - bei jeder
@@ -384,6 +388,8 @@ export class MiniMap {
   /** Grenzen (u-Einheiten): ganz nah noch die Nachbarschaft, ganz weit nicht der halbe Kontinent. */
   private static readonly MIN_COVERAGE = 160;
   private static readonly MAX_COVERAGE = 6000;
+  /** Senkrecht von oben: die Raute ist dann so hoch wie breit. */
+  private static readonly TOP_DOWN = Math.PI / 2;
 
   constructor(
       private canvas: HTMLCanvasElement,
@@ -407,6 +413,21 @@ export class MiniMap {
     this.canvas.style.height = `${this.cssSize}px`;
   }
 
+  /**
+   * Führt `fn` mit dem Blick senkrecht von oben aus - der Blickwinkel gilt für
+   * alle Umrechnungen und Shader, die Hauptansicht bekommt danach ihren zurück.
+   * `stretch`: wie viel höher ein Stück Boden hier ist als in der Hauptansicht.
+   */
+  private topDown<T>(fn: (stretch: number) => T): T {
+    const main = viewElevation();
+    setViewElevation(MiniMap.TOP_DOWN);
+    try {
+      return fn(Math.sin(viewElevation()) / Math.sin(main));
+    } finally {
+      setViewElevation(main);
+    }
+  }
+
   /** u-Einheiten, die die Minimap waagerecht abdeckt. */
   private coverage(view: IsoView): number {
     return Math.min(Math.max((view.width / view.tileSize) * MiniMap.OVERVIEW, MiniMap.MIN_COVERAGE), MiniMap.MAX_COVERAGE);
@@ -424,41 +445,49 @@ export class MiniMap {
   }
 
   render(view: IsoView, overlay: EntityInstance[] = []) {
-    const mini = this.miniView(view);
-    const scale = this.canvas.width / this.cssSize;
-    const camera = snapCamera({
-      centerX: view.centerX,
-      centerY: view.centerY,
-      pixelsPerTile: mini.tileSize * scale,
-      reliefScale: 0,
-    }, this.canvas.width, this.canvas.height);
+    this.topDown((stretch) => {
+      const mini = this.miniView(view);
+      const scale = this.canvas.width / this.cssSize;
+      const camera = snapCamera({
+        centerX: view.centerX,
+        centerY: view.centerY,
+        pixelsPerTile: mini.tileSize * scale,
+        reliefScale: 0,
+      }, this.canvas.width, this.canvas.height);
 
-    const w = (view.width / view.tileSize) * mini.tileSize * scale;
-    const h = (view.height / view.tileSize) * mini.tileSize * scale;
-    this.terrain.viewRect = {
-      x: (this.canvas.width - w) / 2,
-      y: (this.canvas.height - h) / 2,
-      width: w,
-      height: h,
-    };
-    this.terrain.render(camera);
-    // Auf der Minimap zählt nur, dass überhaupt etwas dasteht - vier Pixel
-    // reichen dafür, die Form ist auf dieser Größe ohnehin nicht zu erkennen.
-    this.entities.render(overlay, camera, 4 / camera.pixelsPerTile);
+      const w = (view.width / view.tileSize) * mini.tileSize * scale;
+      const h = (view.height / view.tileSize) * mini.tileSize * scale * stretch;
+      this.terrain.viewRect = {
+        x: (this.canvas.width - w) / 2,
+        y: (this.canvas.height - h) / 2,
+        width: w,
+        height: h,
+      };
+      this.terrain.render(camera);
+      // Auf der Minimap zählt nur, dass überhaupt etwas dasteht - vier Pixel
+      // reichen dafür, die Form ist auf dieser Größe ohnehin nicht zu erkennen.
+      this.entities.render(overlay, camera, 4 / camera.pixelsPerTile);
+    });
   }
 
-  /** Welt-Ausschnitt, den die Minimap zeigt - für das Einsammeln der Instanzen. */
   /** CSS-Pixel der Minimap je Welt-Tile bei dieser Hauptansicht. */
   pixelsPerTile(view: IsoView): number {
     return this.miniView(view).tileSize;
   }
 
+  /** Welt-Ausschnitt, den die Minimap zeigt - für das Einsammeln der Instanzen. */
   viewRectOf(view: IsoView) {
-    return visibleWorldRect({ ...this.miniView(view) });
+    return this.topDown(() => visibleWorldRect(this.miniView(view)));
+  }
+
+  /** Liegt die Stelle (CSS-Pixel im Canvas) auf der Raute? Die Ecken daneben sind Rahmen. */
+  inside(x: number, y: number): boolean {
+    const half = this.cssSize / 2;
+    return Math.abs(x - half) + Math.abs(y - half) <= half;
   }
 
   /** Rechnet einen Klick (in CSS-Pixeln) auf die Minimap in Welt-Tiles um. */
   toWorld(clickX: number, clickY: number, view: IsoView): { x: number; y: number } {
-    return screenToGround(this.miniView(view), clickX, clickY);
+    return this.topDown(() => screenToGround(this.miniView(view), clickX, clickY));
   }
 }

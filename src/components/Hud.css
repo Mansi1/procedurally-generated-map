@@ -1,5 +1,5 @@
 /* Hud.css - Spielfeld, Panels, Tastenhilfe, Legende, Pause-Schild, Hinweis,
-   Auswahlrechteck, Minimap, Kompass und Ton-Knopf. */
+   Auswahlrechteck, Minimap mit Rahmen, Kompass und Knöpfen. */
 #game {
   display: block;
   image-rendering: pixelated;
@@ -193,48 +193,130 @@
   background: rgba(110, 231, 160, 0.12);
   pointer-events: none;
 }
-#minimap {
+/* Minimap wie in AoE4: Raute mit goldenem Rand, dahinter ein Ring mit Zacken
+   auf dunklem Stein (Hud.tsx). Maße: Rahmen 312 px breit, Raute 280 px, Ring 146 px
+   Radius - main.ts und Hud.tsx rechnen mit denselben Zahlen. */
+#minimap-frame {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  width: 312px;
+  /* Unter dem Ring eine Leiste für die Knöpfe. */
+  height: 342px;
+  border-radius: 14px 14px 8px 8px;
+  background:
+    radial-gradient(circle at 156px 156px, rgba(0, 0, 0, 0.55) 0 150px, transparent 151px),
+    linear-gradient(160deg, #3a3a3d, #232326 55%, #1a1a1c);
+  border: 2px solid #121213;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.minimap-ring,
+.minimap-edge {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  pointer-events: none;
+}
+.minimap-ring polygon {
+  fill: #b08a4a;
+  stroke: #3b2a12;
+  stroke-width: 1;
+}
+.minimap-ring .ring-outer {
+  fill: none;
+  stroke: #8a6a34;
+  stroke-width: 4;
+}
+.minimap-ring .ring-inner {
+  fill: none;
+  stroke: rgba(201, 164, 90, 0.45);
+  stroke-width: 1.5;
+}
+/* Goldener Rand um die Raute: außen dunkel abgesetzt, innen Gold. */
+.minimap-edge polygon {
+  fill: none;
+  stroke: #d8b56a;
+  stroke-width: 3;
+  stroke-linejoin: miter;
+  filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+}
+#minimap {
+  position: absolute;
+  left: 16px;
+  top: 16px;
   background: #05070a;
   image-rendering: pixelated;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
   cursor: pointer;
 }
-/* Kompass über der Minimap: Klick auf eine Himmelsrichtung dreht die
-   Ansicht so, dass sie nach oben zeigt. */
+/* Himmelsrichtungen auf dem Ring (game/Compass.ts setzt left/top auf die Mitte
+   des Buchstabens). Klick dreht die Richtung nach oben. */
 #compass {
   position: absolute;
-  bottom: 326px;
-  right: 12px;
-  width: 78px;
-  height: 78px;
-  border-radius: 50%;
-  background: var(--panel);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  left: -2px;
+  top: -2px;
+  width: 312px;
+  height: 312px;
+  pointer-events: none;
 }
-/* Ton an/aus, links neben dem Kompass */
-#sound {
+#compass button {
   position: absolute;
-  bottom: 349px;
-  right: 100px;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  padding: 0;
+  border: 2px solid #8a6a34;
+  border-radius: 50%;
+  background: #1c1c1e;
+  color: #e7d3a3;
+  font: 700 13px Georgia, 'Times New Roman', serif;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: left 0.25s, top 0.25s;
+}
+#compass button:hover {
+  border-color: #d8b56a;
+  color: #fff3d0;
+}
+#compass button[data-dir='N'] {
   width: 32px;
   height: 32px;
-  padding: 6px;
+  margin: -16px 0 0 -16px;
+  border-color: #d8b56a;
+  color: #ffd98a;
+  font-size: 16px;
+}
+/* Runde Knöpfe in den unteren Ecken: Ton links, Drehen rechts. */
+#sound,
+.minimap-turn button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid #8a6a34;
   border-radius: 50%;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
+  background: radial-gradient(circle at 50% 35%, #3a3a3e, #19191b);
+  color: #e7d3a3;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
   cursor: pointer;
 }
-#sound:hover {
-  background: rgba(110, 231, 160, 0.18);
+#sound:hover,
+.minimap-turn button:hover {
+  border-color: #d8b56a;
+  color: #fff3d0;
+}
+#sound {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+}
+.minimap-turn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  gap: 6px;
 }
 #sound .off {
   display: none;
@@ -244,35 +326,4 @@
 }
 #sound.muted .off {
   display: inline;
-}
-#compass button {
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text);
-  font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-  cursor: pointer;
-  transition: left 0.25s, top 0.25s;
-}
-#compass button:hover {
-  background: rgba(110, 231, 160, 0.18);
-}
-#compass button[data-dir='N'] {
-  color: #ff7a6b;
-}
-#compass .needle {
-  position: absolute;
-  left: 35px;
-  top: 17px;
-  width: 8px;
-  height: 44px;
-  pointer-events: none;
-  transition: transform 0.3s;
-  transform-origin: 4px 22px;
-  background: linear-gradient(#ff7a6b 0 50%, rgba(207, 233, 214, 0.55) 50% 100%);
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }

@@ -31,7 +31,7 @@ import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
 import { hoverDescription, type HoverTarget } from './game/hoverInfo';
-import { Compass, isDirection, rotateToFace } from './game/Compass';
+import { Compass, directionAt, isDirection, rotateToFace } from './game/Compass';
 import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
@@ -233,8 +233,11 @@ world.onEvent = worldSounds(sound, camera, (x, y) => ground.heightAt(x, y));
 
 // --- Kompass ---------------------------------------------------------------
 
-/** Kompass über der Minimap (game/Compass.ts). */
-const compass = new Compass(document.getElementById('compass')!, (dir) => faceDirection(dir));
+/** Kompass auf dem Ring der Minimap (game/Compass.ts) - Radius wie in Hud.tsx. */
+const compass = new Compass(document.getElementById('compass')!, 146, (dir) => faceDirection(dir));
+// Die Pfeile unter der Minimap drehen um eine Vierteldrehung: was rechts bzw. links liegt, kommt nach oben.
+document.getElementById('turn-left')!.addEventListener('click', () => faceDirection(directionAt(1)));
+document.getElementById('turn-right')!.addEventListener('click', () => faceDirection(directionAt(-1)));
 
 /** Dreht die Ansicht so, dass die Richtung `dir` nach oben zeigt. */
 function faceDirection(dir: string) {
@@ -378,6 +381,8 @@ function minimapView(): IsoView {
 
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
+  // Nur die Raute ist Karte - die Ecken des Canvas gehören zum Rahmen.
+  if (!minimap.inside(e.clientX - rect.left, e.clientY - rect.top)) return;
   const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView());
   // Die angeklickte Stelle mit ihrer Höhe in die Bildmitte - nicht den Punkt auf Meereshöhe.
   camera.centerOn(target.x, target.y, ground.heightAt(target.x, target.y));

@@ -1,7 +1,7 @@
 // Compass.ts
-// Der Kompass über der Minimap: vier Himmelsrichtungen, die dorthin wandern,
-// wohin sie gerade im Bild zeigen, und eine Nadel nach Norden. Ein Klick auf
-// eine Richtung dreht die Ansicht so, dass sie oben liegt.
+// Der Kompass auf dem Ring um die Minimap: vier Himmelsrichtungen, die an die
+// Spitze der Raute wandern, in die sie gerade zeigen. Ein Klick auf eine
+// Richtung dreht die Ansicht so, dass sie oben liegt.
 
 import { setViewRotation, worldToGround } from '../gl/iso';
 
@@ -30,31 +30,42 @@ export function rotateToFace(dir: string) {
   }
 }
 
+/**
+ * Die Richtung, die gerade rechts (`side` = 1) oder links (-1) im Bild liegt.
+ * Sie nach oben zu drehen, dreht die Ansicht um eine Vierteldrehung - von
+ * rechts gegen, von links mit dem Uhrzeigersinn.
+ */
+export function directionAt(side: 1 | -1): string {
+  for (const [dir, [dx, dy]] of Object.entries(COMPASS)) {
+    const g = worldToGround(dx, dy);
+    if (Math.sign(g.u) === side && Math.abs(g.v) < 1e-9) return dir;
+  }
+  return 'N';
+}
+
 export class Compass {
-  /** @param onFace Klick auf eine Richtung - main.ts dreht die Ansicht und merkt sie sich */
-  constructor(private root: HTMLElement, onFace: (dir: string) => void) {
+  /**
+   * @param root Fläche so groß wie der Rahmen der Minimap, mittig auf ihr
+   * @param radius Abstand der Buchstaben von der Mitte - auf dem Ring
+   * @param onFace Klick auf eine Richtung - main.ts dreht die Ansicht und merkt sie sich
+   */
+  constructor(private root: HTMLElement, private radius: number, onFace: (dir: string) => void) {
     root.addEventListener('click', (e) => {
       const dir = (e.target as HTMLElement).closest('button')?.dataset.dir;
       if (dir) onFace(dir);
     });
   }
 
-  /** Stellt die Buchstaben dorthin, wohin ihre Richtung gerade im Bild zeigt. */
+  /** Stellt die Buchstaben an die Spitze, in deren Richtung sie gerade im Bild zeigen. */
   update() {
-    const size = this.root.clientWidth;
+    const center = this.root.clientWidth / 2;
     for (const button of this.root.querySelectorAll<HTMLButtonElement>('button')) {
       const [dx, dy] = COMPASS[button.dataset.dir!];
       const g = worldToGround(dx, dy);
-      // u zeigt nach rechts, v nach unten; die Länge ist egal.
+      // u zeigt nach rechts, v nach unten; auf der Minimap von oben ist v so lang wie u.
       const len = Math.hypot(g.u, g.v * 2);
-      const x = (g.u / len) * (size / 2 - 14);
-      const y = ((g.v * 2) / len) * (size / 2 - 14);
-      button.style.left = `${size / 2 + x - 11}px`;
-      button.style.top = `${size / 2 + y - 11}px`;
-      if (button.dataset.dir === 'N') {
-        const needle = this.root.querySelector<HTMLElement>('.needle')!;
-        needle.style.transform = `rotate(${Math.atan2(x, -y)}rad)`;
-      }
+      button.style.left = `${center + (g.u / len) * this.radius}px`;
+      button.style.top = `${center + ((g.v * 2) / len) * this.radius}px`;
     }
   }
 }
