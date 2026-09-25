@@ -32,7 +32,7 @@ const LOOK: Record<DepositType, { shape: number; size: number; color: [number, n
     variants: [SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3],
   },
   berries: {
-    shape: SHAPE.berryBush, size: 0.45, color: [62, 115, 52],
+    shape: SHAPE.berryBush, size: 0.55, color: [62, 115, 52],
     variants: [SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4],
   },
 };
@@ -216,8 +216,9 @@ export class ResourceField {
         // besteht: Größe, Drehung, Farbton und Lage im Tile.
         const size = look.size * (0.8 + 0.4 * hash(x, y, 1));
         const shade = 0.82 + 0.3 * hash(x, y, 2);
-        const ox = x + (hash(x, y, 3) - 0.5) * 0.35;
-        const oy = y + (hash(x, y, 4) - 0.5) * 0.35;
+        const [px, py] = found.type === 'berries' ? this.towardGroup(x, y) : [0, 0];
+        const ox = x + px + (hash(x, y, 3) - 0.5) * 0.35;
+        const oy = y + py + (hash(x, y, 4) - 0.5) * 0.35;
         const shape = shapeAt(x, y, found.type as DepositType, found.height);
         nodes.push({
           x,
@@ -239,6 +240,26 @@ export class ResourceField {
       }
     }
     return nodes;
+  }
+
+  /**
+   * Verschiebung eines Beerenstrauchs zur Mitte seiner Gruppe (Tiles): ein
+   * Stück hin zum Schwerpunkt der Beeren-Tiles ringsum. Die Sträucher am Rand
+   * rücken so an die inneren heran, und eine Gruppe steht dicht wie ein Busch.
+   */
+  private towardGroup(x: number, y: number): [number, number] {
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (this.terrain.resourceAt(x + dx, y + dy).type !== 'berries') continue;
+        sx += dx;
+        sy += dy;
+        n++;
+      }
+    }
+    return [(sx / n) * 0.45, (sy / n) * 0.45];
   }
 
   /**
