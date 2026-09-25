@@ -2012,6 +2012,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     }
   }
   const lods: number[][] = LOD_PARTS.map(() => []);
+  /** Je Dreieck der gröbsten Fassung: ob es zu einer Blattkarte gehört (die wird nicht gerastert). */
+  const coarseCards: boolean[] = [];
 
   const v: number[] = [];
   let hip = 0;
@@ -2074,7 +2076,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     // Blattkarte: statt einer Farbe ihre Lage auf der Karte (u, v) und ein
     // Zufall je Karte - der Shader malt Zweig und Blätter danach.
     const card = CARD_MATERIALS.has(t.material) ? cardFrame(t.index) : undefined;
-    for (const p of t.points) {
+    for (const [corner, p] of t.points.entries()) {
       const [x, y, z] = local(p);
       let rgb = color;
       if (card) {
@@ -2107,7 +2109,10 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
           // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
           // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
           // Blattkarten auch: ohne sie stünde die Birke weit draußen kahl da.
-          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) lods[i].push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], role);
+          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) {
+            lods[i].push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], role);
+            if (i === LOD_PARTS.length - 1 && corner === 0) coarseCards.push(!!card);
+          }
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
@@ -2167,7 +2172,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     work: stand && aim && { stand, aim },
     stockSlots,
     vertices: new Float32Array(v),
-    lods: lod ? lods.map((l) => new Float32Array(l)) : undefined,
+    lods: lod ? [...lods, clusterVertices(lods[lods.length - 1], coarseCards, LOD_CLUSTER_CELL)].map((l) => new Float32Array(l)) : undefined,
     hip,
     shoulder,
     knee,
@@ -2215,7 +2220,55 @@ function grazeAngle(neck: [number, number], mouth: [number, number]): number {
  * sind Beeren und Blattbüschel ohnehin kleiner als ein Pixel.
  */
 const LOD_PARTS = [0.12, 0.45];
-const LOD_ZOOM = [32, 12];
+/**
+ * Unter LOD_ZOOM[2] die dritte Fassung: die zweite, aber gerastert (siehe
+ * clusterVertices). Ganz draußen ist ein Baum nur noch ein paar Pixel groß -
+ * seine Krone besteht trotzdem aus über tausend Dreiecken, und das mal
+ * Tausende Bäume bremst die Grafikkarte auf die halbe Bildrate.
+ */
+const LOD_ZOOM = [32, 12, 6];
+/** Rasterweite der dritten Fassung in Modell-Einheiten (1 = Modellbreite). */
+const LOD_CLUSTER_CELL = 1 / 6;
+
+/** Werte je Eckpunkt: x, y, z, Teil, r, g, b, Rolle. */
+const VERTEX_FLOATS = 8;
+
+/**
+ * Vereinfacht ein Modell durch Rastern (Vertex-Clustering): jeder Eckpunkt
+ * rückt auf das nächste Rasterkreuz der Weite `cell`; Dreiecke, deren Ecken
+ * dabei zusammenfallen, und doppelte fallen weg. Teil, Farbe und Rolle
+ * bleiben je Dreieck - Schattierung, Absägen und Laub funktionieren weiter.
+ * Blattkarten (`cards`, je Dreieck) bleiben wie sie sind: gerastert fielen
+ * die kleinen Karten zusammen, und die Birke stünde kahl da.
+ */
+function clusterVertices(vertices: number[], cards: boolean[], cell: number): number[] {
+  const out: number[] = [];
+  const seen = new Set<string>();
+  const triangle = VERTEX_FLOATS * 3;
+  for (let t = 0; t * triangle < vertices.length; t++) {
+    const o = t * triangle;
+    if (cards[t]) {
+      for (let i = 0; i < triangle; i++) out.push(vertices[o + i]);
+      continue;
+    }
+    const corners: string[] = [];
+    const snapped: number[] = [];
+    for (let c = 0; c < 3; c++) {
+      const v = o + c * VERTEX_FLOATS;
+      const x = Math.round(vertices[v] / cell) * cell;
+      const y = Math.round(vertices[v + 1] / cell) * cell;
+      const z = Math.round(vertices[v + 2] / cell) * cell;
+      corners.push(`${x},${y},${z}`);
+      snapped.push(x, y, z, ...vertices.slice(v + 3, v + VERTEX_FLOATS));
+    }
+    if (corners[0] === corners[1] || corners[1] === corners[2] || corners[0] === corners[2]) continue;
+    const key = `${[...corners].sort().join('|')}|${vertices[o + 3]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(...snapped);
+  }
+  return out;
+}
 /**
  * Felder wechseln früher: Tausende Halme lohnen sich nur ganz nah; schon ab
  * 32 CSS-Pixeln je Tile reicht die Fassung mit weniger (FIELD_DETAIL).
@@ -2779,7 +2832,8 @@ export class EntityRenderer {
       gl.uniform1fv(this.location('uPoseRate'), clips.poseRate);
       gl.uniform1fv(this.location('uPoseShift'), clips.poseShift);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
-      this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);
+      // Hat ein Modell weniger Fassungen (Felder: zwei), gilt seine gröbste.
+      this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[Math.min(level, m.lodMeshes.length) - 1] : m.mesh, offset, m.list.length);
     };
     // Erst alles außer den Figuren, dann die Figuren - dazwischen ihr Umriss,
     // wo etwas vor ihnen steht (wie in AoE2). Die Figuren sind dann noch nicht
