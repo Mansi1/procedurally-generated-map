@@ -297,6 +297,7 @@ uniform vec3 uBiomeHi[8];
 uniform vec3 uWaterRamp[4];
 uniform vec3 uSurf;
 uniform vec3 uResourceColor[5];
+uniform float uResourceTint[5];
 
 
 // Biome (Reihenfolge = TILE_TYPE_GRADIENT)
@@ -1009,7 +1010,7 @@ void main() {
 
   vec2 res = resourceAt(tile, biome);
   if (res.x > 0.0) {
-    float alpha = min(res.y / 100.0, 1.0) * 0.3;
+    float alpha = min(res.y / 100.0, 1.0) * uResourceTint[int(res.x)];
     color = mix(color, uResourceColor[int(res.x)], alpha);
   }
 

@@ -30,6 +30,8 @@ export interface TerrainPalette {
   waterRamp: [number, number, number][];
   surf: [number, number, number];
   resourceColors: Color[];
+  /** Tönung je Ressource, gleiche Reihenfolge wie resourceColors (RESOURCE_TYPE_TINT). */
+  resourceTints: number[];
   resourceScale: number;
   /** Maßstab und Versatz je Regel für das Häufchen-Rauschen (siehe RESOURCE_RULES). */
   resourceClusterScale: number;
@@ -291,6 +293,7 @@ export class TerrainRenderer {
     gl.uniform3fv(this.fillLocation('uSurf'), flat([palette.surf]));
     gl.uniform3fv(this.fillLocation('uResourceColor[0]'),
         flat(palette.resourceColors.map((c) => c.toRGB())));
+    gl.uniform1fv(this.fillLocation('uResourceTint[0]'), palette.resourceTints);
     gl.uniform1f(this.fillLocation('uResourceScale'), palette.resourceScale);
     gl.uniform1f(this.fillLocation('uResourceClusterScale'), palette.resourceClusterScale);
     gl.uniform2fv(this.fillLocation('uResourceClusterOffset'), palette.resourceClusterOffset);
