@@ -27,6 +27,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { MouseInput } from './game/MouseInput';
 import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
@@ -388,92 +389,6 @@ function clearSelection() {
   updateSelectionUI();
 }
 
-/** Ab so vielen Pixeln Bewegung wird aus dem Klick ein Auswahlrechteck. */
-const DRAG_THRESHOLD = 5;
-let drag: { x: number; y: number; active: boolean } | null = null;
-/** Felder werden Tile für Tile markiert - mit gedrückter Taste auch im Ziehen. */
-
-function canvasPoint(e: MouseEvent) {
-  const rect = canvas.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-}
-
-canvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 0) return;
-  const p = canvasPoint(e);
-
-  if (placement.placingType) {
-    const { x, y } = picker.tile(p.x, p.y);
-    placement.sowing = placement.placingType === 'farm';
-    actions.placeAt(x, y);
-    return;
-  }
-  drag = { x: p.x, y: p.y, active: false };
-});
-
-// Auf window statt canvas: das Rechteck darf über Panels und den Rand hinaus
-// gezogen werden, ohne hängen zu bleiben.
-window.addEventListener('mousemove', (e) => {
-  if (!drag) return;
-  const p = canvasPoint(e);
-  if (!drag.active && Math.hypot(p.x - drag.x, p.y - drag.y) < DRAG_THRESHOLD) return;
-  drag.active = true;
-  boxEl.hidden = false;
-  boxEl.style.left = `${Math.min(p.x, drag.x)}px`;
-  boxEl.style.top = `${Math.min(p.y, drag.y)}px`;
-  boxEl.style.width = `${Math.abs(p.x - drag.x)}px`;
-  boxEl.style.height = `${Math.abs(p.y - drag.y)}px`;
-});
-
-window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) placement.sowing = false;
-  if (e.button !== 0 || !drag) return;
-  const p = canvasPoint(e);
-  if (drag.active) actions.boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
-  // e.detail zählt die Klicks kurz hintereinander - 2 ist ein Doppelklick.
-  else actions.clickSelect(p.x, p.y, e.shiftKey, e.detail >= 2);
-  drag = null;
-  boxEl.hidden = true;
-});
-
-/**
- * Rechte Maustaste: gedrückt halten und ziehen verschiebt die Karte (wie
- * WASD), kurz klicken ist ein Befehl. Entschieden wird erst beim Loslassen -
- * das Kontextmenü-Ereignis kommt auf dem Mac schon beim Drücken.
- */
-let rightDrag: { x: number; y: number; moved: boolean } | null = null;
-
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
-canvas.addEventListener('mousedown', (e) => {
-  if (e.button !== 2) return;
-  rightDrag = { x: e.clientX, y: e.clientY, moved: false };
-});
-
-window.addEventListener('mousemove', (e) => {
-  if (!rightDrag || !(e.buttons & 2)) return;
-  const dx = e.clientX - rightDrag.x;
-  const dy = e.clientY - rightDrag.y;
-  if (!rightDrag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-  rightDrag.moved = true;
-  canvas.style.cursor = 'grabbing';
-  // Die Karte folgt der Maus: die Kamera geht in die Gegenrichtung.
-  camera.panPixels(-dx, -dy);
-  rightDrag.x = e.clientX;
-  rightDrag.y = e.clientY;
-});
-
-window.addEventListener('mouseup', (e) => {
-  if (e.button !== 2 || !rightDrag) return;
-  const moved = rightDrag.moved;
-  rightDrag = null;
-  if (moved) {
-    updateCursor();
-    return;
-  }
-  if (e.target === canvas) actions.rightClick(canvasPoint(e));
-});
-
 // Die Knöpfe entstehen bei jeder Aktualisierung neu - darum Delegation, und
 // mousedown statt click, damit ein Neuzeichnen zwischen Drücken und Loslassen
 // den Klick nicht verschluckt.
@@ -548,6 +463,45 @@ const actions = new PlayerActions({ world, camera, selection, placement, picker,
     if (mousePixelX !== undefined && mousePixelY !== undefined) updateHoveredTile(mousePixelX, mousePixelY);
   },
   setPlacing: select,
+});
+
+/** Die Maus über dem Spielfeld (game/MouseInput.ts) - hier, was sie im Spiel bedeutet. */
+new MouseInput(canvas, boxEl, {
+  // Im Baumodus setzt ein Klick das Gebäude; Felder weiter beim Ziehen (move).
+  press: (p) => {
+    if (!placement.isActive) return false;
+    const { x, y } = picker.tile(p.x, p.y);
+    placement.sowing = placement.placingType === 'farm';
+    actions.placeAt(x, y);
+    return true;
+  },
+  release: () => {
+    placement.sowing = false;
+  },
+  click: (p, add, double) => actions.clickSelect(p.x, p.y, add, double),
+  box: (a, b, add) => actions.boxSelect(a.x, a.y, b.x, b.y, add),
+  rightClick: (p) => actions.rightClick(p),
+  pan: (dx, dy) => camera.panPixels(dx, dy),
+  panEnd: updateCursor,
+  zoom: (step, p) => setZoom(camera.zoomIndex + step, p.x, p.y),
+  move: (p, buttons) => {
+    const [beforeX, beforeY] = [mouseTileX, mouseTileY];
+    updateHoveredTile(p.x, p.y);
+    // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
+    if (placement.sowing && placement.placingType === 'farm' && (buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
+        && (mouseTileX !== beforeX || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
+      actions.placeAt(mouseTileX, mouseTileY, true);
+    }
+  },
+  leave: () => {
+    mouseTileX = undefined;
+    mouseTileY = undefined;
+    mousePixelX = undefined;
+    mousePixelY = undefined;
+    cursorCoordsEl.textContent = '-, -';
+    tileInfoEl.textContent = '-';
+    updateHoverInfo();
+  },
 });
 
 window.addEventListener('resize', resize);
@@ -649,38 +603,6 @@ window.addEventListener('keydown', (e) => {
   else if (byKey) select(placement.placingType === byKey ? null : byKey);
 });
 
-/**
- * Mausrad und Trackpad: jede Zoomstufe verdoppelt den Maßstab, also nicht je
- * Ereignis eine Stufe. Ein Mausrad schickt je Raste ein Ereignis (~100 px),
- * ein Trackpad beim Wischen Dutzende kleine samt Nachschwung - gesammelt
- * wird bis etwa eine Raste, dann eine Stufe und kurz Ruhe, damit der
- * Nachschwung nicht weiterzoomt. Zusammenziehen/Spreizen (Pinch, kommt als
- * Rad mit Strg) zählt stärker.
- */
-const WHEEL_STEP = 100;
-const WHEEL_PAUSE = 220;
-let wheelSum = 0;
-let wheelLast = 0;
-let wheelLocked = 0;
-
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const now = performance.now();
-  // Zeilen bzw. Seiten (Firefox mit Mausrad) in Pixel umrechnen.
-  const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1;
-  const delta = e.deltaY * unit * (e.ctrlKey ? 4 : 1);
-  // Nach längerer Pause oder in die andere Richtung: von vorn zählen.
-  if (now - wheelLast > 250 || Math.sign(delta) !== Math.sign(wheelSum)) wheelSum = 0;
-  wheelLast = now;
-  if (now < wheelLocked) return;
-  wheelSum += delta;
-  if (Math.abs(wheelSum) < WHEEL_STEP) return;
-  const rect = canvas.getBoundingClientRect();
-  setZoom(camera.zoomIndex + (wheelSum < 0 ? 1 : -1), e.clientX - rect.left, e.clientY - rect.top);
-  wheelSum = 0;
-  wheelLocked = now + WHEEL_PAUSE;
-}, { passive: false });
-
 window.addEventListener('keyup', (e) => {
   keys[e.key.toLowerCase()] = false;
 });
@@ -753,27 +675,6 @@ function updateHoverInfo() {
 function setText(el: Element, text: string) {
   if (el.textContent !== text) el.textContent = text;
 }
-
-canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const [before, beforeY] = [mouseTileX, mouseTileY];
-  updateHoveredTile(e.clientX - rect.left, e.clientY - rect.top);
-  // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
-  if (placement.sowing && placement.placingType === 'farm' && (e.buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
-      && (mouseTileX !== before || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
-    actions.placeAt(mouseTileX, mouseTileY, true);
-  }
-});
-
-canvas.addEventListener('mouseleave', () => {
-  mouseTileX = undefined;
-  mouseTileY = undefined;
-  mousePixelX = undefined;
-  mousePixelY = undefined;
-  cursorCoordsEl.textContent = '-, -';
-  tileInfoEl.textContent = '-';
-  updateHoverInfo();
-});
 
 // FPS Counter
 let lastTime = performance.now();
