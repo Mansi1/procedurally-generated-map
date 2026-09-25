@@ -80,7 +80,9 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, Color> = {
  * erste legt grob fest, in welcher Gegend etwas vorkommt, das zweite teilt die
  * Gegend in kleine Vorkommen von einigen Tiles - wie in AoE2 ein paar
  * Beerensträucher oder ein Häufchen Stein statt einer ganzen Wiese voll.
- * Die Menge ist (r + 1) * yield, abgerundet.
+ * `threshold: -Infinity` heißt: in jeder Gegend - jeder Wald trägt Holz, und
+ * Beeren gibt es auf der ganzen Wiese. Die Menge ist (r + 1) * yield,
+ * abgerundet, mindestens yield (r unter 0 zählt wie 0).
  *
  * Die Reihenfolge ist Teil der Regel - die erste passende gewinnt. Gold steht
  * deshalb vor Stein: beide liegen im Gebirge, Gold nur in der oberen Spitze
@@ -99,10 +101,10 @@ export interface ResourceRule {
 }
 
 export const RESOURCE_RULES: readonly ResourceRule[] = [
-  { biome: "forest", type: "wood", threshold: 0.15, cluster: -2, yield: 50 },
+  { biome: "forest", type: "wood", threshold: -Infinity, cluster: -2, yield: 50 },
   { biome: "mountain", type: "gold", threshold: 0.4, cluster: 0.75, yield: 40 },
   { biome: "mountain", type: "stone", threshold: 0.1, cluster: 0.72, yield: 40 },
-  { biome: "grass", type: "berries", threshold: 0.3, cluster: 0.7, yield: 30 },
+  { biome: "grass", type: "berries", threshold: -Infinity, cluster: 0.7, yield: 30 },
 ];
 
 /**
@@ -125,7 +127,7 @@ export function resourceFromNoise(
   for (let i = 0; i < RESOURCE_RULES.length; i++) {
     const rule = RESOURCE_RULES[i];
     if (rule.biome === tileType && r > rule.threshold && (rule.cluster < -1 || cluster(i) > rule.cluster)) {
-      return { type: rule.type, amount: Math.floor((r + 1) * rule.yield) };
+      return { type: rule.type, amount: Math.floor((Math.max(r, 0) + 1) * rule.yield) };
     }
   }
   return { type: "none", amount: 0 };
