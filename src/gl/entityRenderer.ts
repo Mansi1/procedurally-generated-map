@@ -428,6 +428,7 @@ uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
 uniform vec2  uLegs;         // Tiere: Gelenk (vorn) der Vorder- und Hinterbeine
 uniform vec2  uNeck;         // Tiere: Gelenk des Halses (vorn, oben)
+uniform float uGraze;        // Tiere: so weit senkt sich der Kopf beim Äsen (Radiant)
 uniform float uSide;         // Tiere: halbe Breite des Körpers - so liegt es tot auf der Seite
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
@@ -758,7 +759,7 @@ void main() {
         // Äsen: meist mit dem Kopf unten, ab und zu schaut es auf.
         float up = smoothstep(0.6, 0.9, sin(phase * 0.21 + 1.0));
         // Weit genug, dass das Maul ans Gras kommt.
-        dip = mix(1.45, 0.0, up) + sin(phase * 2.3) * 0.05 * (1.0 - up);
+        dip = mix(uGraze, 0.0, up) + sin(phase * 2.3) * 0.05 * (1.0 - up);
       }
       if (part == P_HEAD) p = swingAt(p, uNeck, -dip);
       p.z += bob;
@@ -1576,6 +1577,8 @@ interface Model {
   /** Tiere: Gelenke (vorn) der Vorder- und Hinterbeine, des Halses (vorn, oben), halbe Breite. */
   legs: [number, number];
   neck: [number, number];
+  /** Tiere: so weit (Radiant) senkt sich der Kopf beim Äsen - bis das Maul am Boden ist. */
+  graze: number;
   side: number;
   /** Höchster Punkt in Modell-Einheiten - dort sitzt der Lebensbalken. */
   top: number;
@@ -1731,6 +1734,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   const legSum = [0, 0];
   const legCount = [0, 0];
   let neck: [number, number] = [0, Infinity];
+  /** Vorderster Punkt von Kopf und Hals - das Maul. */
+  let mouth: [number, number] = [-Infinity, 0];
   let side = 0;
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
@@ -1818,6 +1823,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       }
       // Halsansatz: der tiefste Punkt von Kopf und Hals, hinten.
       if (part === 5 && (z < neck[1] || (z === neck[1] && x < neck[0]))) neck = [x, z];
+      if (part === 5 && (x > mouth[0] || (x === mouth[0] && z < mouth[1]))) mouth = [x, z];
       if (part === 0) side = Math.max(side, Math.abs(y));
       if (FOLIAGE_MATERIALS.has(t.material)) {
         [x, y, z].forEach((c, i) => {
@@ -1865,10 +1871,27 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     canopyHalf: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (crown.hi[i] - l) / 2) as [number, number, number] : [0.5, 0.5, 0.5],
     legs: [legSum[0] / Math.max(1, legCount[0]), legSum[1] / Math.max(1, legCount[1])],
     neck: Number.isFinite(neck[1]) ? neck : [0, 0],
+    graze: Number.isFinite(neck[1]) && Number.isFinite(mouth[0]) ? grazeAngle(neck, mouth) : 0,
     side,
     top: (maxY - minY) / unitLength,
     meters: unitLength,
   };
+}
+
+/**
+ * Winkel, um den sich der Kopf um den Halsansatz drehen muss, damit das Maul
+ * (knapp über) den Boden erreicht. Kurze Hälse (Wildschwein) brauchen weniger
+ * als lange (Reh, Kuh) - ein fester Winkel ließe den Kopf sonst nach hinten
+ * vor den Körper klappen. Höchstens 1.45 - so weit senken Reh und Kuh den Kopf.
+ */
+function grazeAngle(neck: [number, number], mouth: [number, number]): number {
+  const dx = mouth[0] - neck[0];
+  const dz = mouth[1] - neck[1];
+  const length = Math.hypot(dx, dz);
+  const ground = 0.03;
+  const reach = (ground - neck[1]) / length;
+  const angle = Math.atan2(dz, dx) - (reach <= -1 ? -Math.PI / 2 : Math.asin(reach));
+  return Math.min(1.45, Math.max(0.2, angle));
 }
 
 /**
@@ -2265,6 +2288,7 @@ export class EntityRenderer {
       gl.uniform3fv(this.location('uCanopy'), m.model.canopy);
       gl.uniform3fv(this.location('uCanopyHalf'), m.model.canopyHalf);
       gl.uniform2fv(this.location('uNeck'), m.model.neck);
+      gl.uniform1f(this.location('uGraze'), m.model.graze);
       gl.uniform1f(this.location('uSide'), m.model.side);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
       this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);

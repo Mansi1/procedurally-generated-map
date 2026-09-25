@@ -186,7 +186,7 @@ function boar() {
   m.beam('Body.Tail', 'BoarDark', [0, 0.6, -0.67], [0, 0.42, -0.72], 0.03, { w1: 0.02 });
   // Short, thick neck, then the head as a wedge down to the snout - both dip
   // together to root in the ground.
-  m.beam('Head.Neck', 'Boar', [0, 0.58, 0.26], [0, 0.56, 0.5], 0.3, { w1: 0.24, n: 8 });
+  m.beam('Head.Neck', 'Boar', [0, 0.44, 0.2], [0, 0.56, 0.5], 0.3, { w1: 0.24, n: 8 });
   m.box('Head.Skull', 'Boar', [-0.15, 0.15], [0.36, 0.72], [0.44, 0.7], { r: 0.3, x: [-0.1, 0.1] });
   m.box('Head.Face', 'BoarDark', [-0.09, 0.09], [0.34, 0.56], [0.68, 0.9], { r: 0.3, x: [-0.06, 0.06] });
   m.box('Head.Snout', 'Snout', [-0.06, 0.06], [0.36, 0.46], [0.9, 0.93], { r: 0.4 });
