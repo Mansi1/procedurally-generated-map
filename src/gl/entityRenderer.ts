@@ -248,6 +248,8 @@ export const TREES: number[] = [
 ];
 
 /** Rolle des Laubs (außer Paint) - es wird im Shader weich schattiert. */
+/** Muster der Dorfbewohner (vTex) - nur auf Figuren, das Schaf hat auch "Wool". */
+const FIGURE_TEX = { cloth: 15, leather: 16, hair: 17, skin: 18 } as const;
 const FOLIAGE_ROLE = 12;
 /** Textur-Einheit der Blatt-Textur - 0..2 belegt das Gelände. */
 const LEAF_TEXTURE_UNIT = 3;
@@ -1037,7 +1039,11 @@ void main() {
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
-    vTex = role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
+    bool villager = shape == 5 || shape == 18;
+    bool figureTex = role >= ${FIGURE_TEX.cloth} && role <= ${FIGURE_TEX.skin};
+    vTex = figureTex ? (villager ? role : 0)
+      : villager && (role == 1 || role == 2) ? ${FIGURE_TEX.cloth}
+      : role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
     vLocal = aCorner.xyz * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
@@ -1142,6 +1148,52 @@ bool birchLeaf(vec2 d, vec2 dir, float len, float h, float px, out vec3 col) {
   if (h > 0.97) c = mix(c, vec3(0.82, 0.72, 0.26), 0.7);
   col = c;
   return true;
+}
+
+// Dorfbewohner: Muster in Metern am unbewegten Modell (vLocal: x vorn, y
+// links, z oben) - sie wandern also nicht über die Figur, wenn sie sich
+// bewegt. Was feiner als ein Pixel ist, geht in den Mittelwert über.
+vec3 figureTexture(vec3 base) {
+  float px = max(length(fwidth(vLocal)), 1e-4);
+  vec3 p = vLocal;
+  // Waagerecht um die Figur herum - x + y deckt vorn und die Seiten ab.
+  vec2 q = vec2(p.x + p.y, p.z);
+  if (vTex == ${FIGURE_TEX.cloth}) {
+    // Leinen: Kett- und Schussfäden im Wechsel, längs fallende Falten und
+    // leicht fleckig vom Tragen.
+    float weave = 0.5 + 0.5 * sin(q.x * 420.0) * sin(q.y * 420.0);
+    float thread = texNoise(q * vec2(160.0, 40.0));
+    float fold = 0.5 + 0.5 * sin((p.x - p.y) * 28.0 + texNoise(q * vec2(3.0, 1.5)) * 5.0);
+    float mottle = texNoise(q * 5.0 + 1.3);
+    vec3 c = base * (0.9 + 0.2 * mix(0.5, weave * 0.7 + thread * 0.3, texDetail(67.0, px)));
+    c *= 0.88 + 0.16 * mix(0.5, fold, texDetail(5.0, px));
+    return c * (0.93 + 0.12 * mottle);
+  }
+  if (vTex == ${FIGURE_TEX.leather}) {
+    // Leder: feine Narbung, dunkle Knitterfalten, hell abgewetzte Stellen.
+    float id;
+    float e = texCells(q * vec2(16.0, 28.0), id);
+    float crease = (1.0 - smoothstep(0.02, 0.07, e)) * texDetail(28.0, px);
+    float grain = mix(0.5, texNoise(q * 90.0), texDetail(90.0, px));
+    float worn = smoothstep(0.62, 0.85, texNoise(q * 7.0 + 4.1));
+    vec3 c = base * (0.92 + 0.08 * id) * (0.88 + 0.24 * grain);
+    c = mix(c, base * 1.3 + vec3(0.03), worn * 0.3);
+    return mix(c, base * 0.6, crease * 0.35);
+  }
+  if (vTex == ${FIGURE_TEX.hair}) {
+    // Haar: Strähnen, die um den Kopf herum senkrecht fallen, mit hellen
+    // Glanzlichtern auf einzelnen Strähnen.
+    float around = atan(p.y, p.x) * 0.13;
+    float strands = texNoise(vec2(around * 140.0, p.z * 7.0)) * 0.6 + texNoise(vec2(around * 330.0, p.z * 16.0)) * 0.4;
+    float shine = smoothstep(0.7, 0.95, texNoise(vec2(around * 60.0, p.z * 3.0) + 7.3));
+    vec3 c = base * (0.72 + 0.56 * mix(0.5, strands, texDetail(50.0, px)));
+    return mix(c, base * 1.6 + vec3(0.06), shine * 0.3);
+  }
+  // Haut: kaum sichtbar fleckig, stellenweise etwas röter.
+  float mottle = texNoise(q * 18.0);
+  float flush = smoothstep(0.55, 0.9, texNoise(q * 4.0 + 2.2));
+  vec3 c = base * (0.95 + 0.1 * mix(0.5, mottle, texDetail(18.0, px)));
+  return mix(c, c * vec3(1.06, 0.93, 0.9), flush * 0.4);
 }
 
 // Rinde als Textur: Stamm abgewickelt (Umfang, Höhe) in Metern.
@@ -1413,7 +1465,8 @@ void main() {
   }
 
   vec3 base = vColor;
-  if (vTex != 0) base = treeTexture(base);
+  if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
+  else if (vTex != 0) base = treeTexture(base);
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
     // auseinanderhält. Flachdächer bleiben in der Gebäudefarbe.
@@ -1550,6 +1603,22 @@ const MATERIAL_ROLE: Record<string, number> = {
   SoilDark: 9,
   SoilLight: 9,
   CornCob: 11,
+  // Dorfbewohner (nur Figuren, siehe figureTexture): Stoff, Leder, Haar, Haut.
+  // Der Kittel (Tunic, Rolle 1) und die Last (Load, Rolle 2) sind auch Stoff.
+  Wool: FIGURE_TEX.cloth,
+  WoolShade: FIGURE_TEX.cloth,
+  Apron: FIGURE_TEX.cloth,
+  ApronShade: FIGURE_TEX.cloth,
+  Patch: FIGURE_TEX.cloth,
+  Band: FIGURE_TEX.cloth,
+  Leather: FIGURE_TEX.leather,
+  LeatherLight: FIGURE_TEX.leather,
+  Boots: FIGURE_TEX.leather,
+  BootsDark: FIGURE_TEX.leather,
+  BootsLight: FIGURE_TEX.leather,
+  Hair: FIGURE_TEX.hair,
+  Skin: FIGURE_TEX.skin,
+  SkinShade: FIGURE_TEX.skin,
 };
 
 interface Model {
