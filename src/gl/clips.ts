@@ -89,6 +89,13 @@ export interface Clip {
   rotations: Float32Array;
   /** frames * 3: Verschiebung der Wurzel in Modell-Achsen und Körperhöhen. */
   root: Float32Array;
+  /**
+   * frames * Knochen * 3: Verschiebung der anderen Knochen gegenüber ihrer
+   * Ruhelage beim Eltern - in den Achsen des Eltern in Ruhelage (Modell-Achsen,
+   * Körperhöhen). Bei den Dorfbewohnern überall 0 (nur Drehungen); das
+   * Fahnentuch bewegt seine Knochen so seitwärts (FLAG).
+   */
+  moves: Float32Array;
 }
 
 interface Manifest {
@@ -259,6 +266,9 @@ export function loadClips(glbDataUrl: string, manifest: Manifest, rig: Rig<any> 
     const bones = rig.bones.length;
     const rotations = new Float32Array(meta.frames * bones * 4);
     const root = new Float32Array(meta.frames * 3);
+    const moves = new Float32Array(meta.frames * bones * 3);
+    // Knochen mit eigener Verschiebung (nicht nur die Wurzel).
+    const moving = boneNodes.map((node, b) => b > 0 && node !== undefined && channels.has(`${node}.translation`));
     for (let f = 0; f < meta.frames; f++) {
       const t = f / manifest.fps;
       boneNodes.forEach((node, b) => {
@@ -269,6 +279,15 @@ export function loadClips(glbDataUrl: string, manifest: Manifest, rig: Rig<any> 
       const now = global(rootNode, t).p;
       const move = toModel([now[0] - rest[0]!.p[0], now[1] - rest[0]!.p[1], now[2] - rest[0]!.p[2]]);
       root.set(move.map((v) => v / manifest.height), f * 3);
+      boneNodes.forEach((node, b) => {
+        if (!moving[b]) return;
+        // Verschiebung beim Eltern, gedreht in dessen Ruhelage - so dreht das
+        // Backen sie mit der Drehung des Eltern im Clip mit.
+        const now = local(node!, t).p, was = local(node!, null).p;
+        const parentRest = global(parentOf.get(node!)!, null).r;
+        const d = toModel(qRotate(parentRest, [now[0] - was[0], now[1] - was[1], now[2] - was[2]]));
+        moves.set(d.map((v) => v / manifest.height), (f * bones + b) * 3);
+      });
     }
     const pose = meta.pose ?? null;
     const period = meta.phase_period;
@@ -282,7 +301,7 @@ export function loadClips(glbDataUrl: string, manifest: Manifest, rig: Rig<any> 
       species: meta.species ?? [],
       lying: meta.lying === true,
       grazeRef: manifest.graze ?? 0,
-      rotations, root,
+      rotations, root, moves,
     }];
   });
 }
@@ -369,6 +388,44 @@ export const QUADRUPED: Rig<QuadrupedJoints> = {
   rootZ: (clip, joints) => (clip.lying ? joints.side : null),
 };
 
+/** Maße einer Mühle für ihr Skelett: die Nabe der Flügel (links, oben) in Modell-Einheiten. */
+export interface MillJoints {
+  hub: [number, number];
+}
+
+/**
+ * Die Flügel der Mühlen (assets/blender/mill.blend): ein Knochen an der Nabe,
+ * er dreht um die Blickachse. Alles andere steht still (root).
+ */
+export const MILL: Rig<MillJoints> = {
+  name: 'mill',
+  bones: [['root', null], ['sails', 'root']],
+  pivots: (j) => [[0, 0, 0], [0, j.hub[0], j.hub[1]]],
+};
+
+/** Abschnitte des Fahnentuchs am Sammelpunkt: so viele Knochen + 1 längs des Tuchs. */
+export const FLAG_SEGMENTS = 6;
+
+/** Maße einer Fahne für ihr Skelett: das Tuch vom Mast (y0) bis zum Ende (y1), seine Höhe z. */
+export interface FlagJoints {
+  cloth: [number, number, number];
+}
+
+/**
+ * Das Tuch der Fahne am Sammelpunkt (assets/blender/flag.blend): Knochen
+ * cloth.0 (am Mast) bis cloth.6 (am Ende) in gleichen Abständen - dort liegen
+ * die Eckpunkte des Tuchs. Sie verschieben sich seitwärts; dazwischen mischt
+ * der Shader die beiden Nachbarn nach der Lage im Tuch.
+ */
+export const FLAG: Rig<FlagJoints> = {
+  name: 'flag',
+  bones: [['root', null], ...Array.from({ length: FLAG_SEGMENTS + 1 }, (_, i) => [`cloth.${i}`, 'root'] as const)],
+  pivots: ({ cloth: [y0, y1, z] }) => [
+    [0, 0, 0],
+    ...Array.from({ length: FLAG_SEGMENTS + 1 }, (_, i) => [0, y0 + ((y1 - y0) * i) / FLAG_SEGMENTS, z] as Vec3),
+  ],
+};
+
 /** Texel je Knochen: drei Zeilen einer 3x4-Matrix. */
 export const TEXELS_PER_BONE = 3;
 
@@ -434,8 +491,12 @@ export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, ri
         where.push([clip.root[f * 3], clip.root[f * 3 + 1], z]);
         continue;
       }
-      // Der Drehpunkt hängt am Eltern: dessen Drehung, um dessen Drehpunkt.
-      const offset = qRotate(w(parent), [p[b][0] - p[parent][0], p[b][1] - p[parent][1], p[b][2] - p[parent][2]]);
+      // Der Drehpunkt hängt am Eltern: dessen Drehung, um dessen Drehpunkt -
+      // dazu, was der Knochen selbst beim Eltern verschoben ist.
+      const mo = (f * bones + b) * 3;
+      const offset = qRotate(w(parent), [
+        p[b][0] - p[parent][0] + clip.moves[mo], p[b][1] - p[parent][1] + clip.moves[mo + 1], p[b][2] - p[parent][2] + clip.moves[mo + 2],
+      ]);
       where.push([where[parent][0] + offset[0], where[parent][1] + offset[1], where[parent][2] + offset[2]]);
     }
     for (let b = 0; b < bones; b++) {

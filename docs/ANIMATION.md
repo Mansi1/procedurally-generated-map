@@ -55,6 +55,24 @@ Wildschwein).
 - **Größe:** `quadruped_clips.glb` hat 0,3 MB, vor allem durch `graze`
   (35,4 s Schleife).
 
+**Phase 4 ist fertig: Mühlenflügel und Fahne spielen Clips** aus
+`assets/blender/mill.blend` (Clip `sails`) und `flag.blend` (Clip `wave`).
+
+- **Gleichstand:** Die Fahne weicht an den Eckpunkten des Tuchs um 0,03 cm
+  ab. Die Böen der Flügel sind exakt. Die Stellung der Flügel weicht bis 6,4°
+  ab, weil alle Mühlen eine gebackene Schleife teilen. Wegen der vier Flügel
+  ist das nicht zu sehen.
+- **Ruinen:** Eine eingestürzte Mühle hält die Flügel an. Der Zeitpunkt
+  kommt jetzt aus der Spieluhr (`animationTime()`). Vorher lag der Winkel nach
+  Pause oder Tempowechsel daneben.
+- Die Fahne auf dem Hauptgebäude weht weiter über die Formel. Sie gehört zu
+  einem Modell ohne Skelett.
+
+**Alle Clips zusammen:** rund 16 000 Bilder (Dorfbewohner 4118, Tiere 6756,
+Mühlen 5032, Fahne 39). Das sind 16 Spalten in einer Textur von 768 × 1024
+Texeln, etwa 12,6 MB Grafikspeicher. Die vier Bibliotheken zusammen haben
+1,7 MB.
+
 Aus Phase 1:
 
 - **Gleichstand:** Der Clip entspricht der alten Formel exakt. Die rechte
@@ -116,6 +134,7 @@ Die Migration läuft auf dem Branch `animation-migration`.
 | Ich will … | Wo | Danach |
 |---|---|---|
 | eine Bewegung ändern | `humanoid.blend` bzw. `quadruped.blend` (Tiere) → die Action gleichen Namens | `npm run gen:anim` |
+| Mühlenflügel oder Fahne ändern | `mill.blend` → Action `sails`, `flag.blend` → Action `wave` | `npm run gen:anim` |
 | einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
 | festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
 | einen Clip nur für bestimmte Tiere | Custom Property `species` der Action (z. B. `hare`) | `npm run gen:anim` |
@@ -458,14 +477,34 @@ Umgesetzt mit diesen Abweichungen vom ursprünglichen Plan:
 5. **Noch nicht weg:** Der Tier-Zweig im Shader bleibt als Rückfall, bis
    Phase 7 aufräumt.
 
-### Phase 4: Mühle und Fahne (klein)
+### Phase 4: Mühle und Fahne (klein) - erledigt
 
-1. **Mühle:** ein Knochen an der Nabe, Clip `sails` mit gebackenen Böen über
-   20 s als Schleife. `millMotion()` liefert nur noch Zeitversatz und Tempo.
-   Bei einem Einsturz bleibt die Zeit stehen.
-2. **Fahne:** eine Knochenkette durchs Tuch, Clip `wave`.
-3. **Weg damit:** `P_SAILS`, `P_CLOTH`, `uHub`, `SAIL_SPEED`,
-   `GUST_AMOUNT`, `GUST_RATE`.
+Mühlenflügel und die Fahne am Sammelpunkt kommen als Clips aus Blender
+(`assets/blender/mill.blend`, `flag.blend`; eingerichtet mit
+`npm run export:props` und `tools/blender/bootstrap_rig.py`).
+
+- **Mühle:** Skelett `mill` (`root`, `sails` an der Nabe), Clip `sails`:
+  125,7 s bei 10 Bildern je Sekunde, das sind 7 Böen-Takte und genau
+  16 Umdrehungen. Die Zeit ist „Mühlenzeit“ (Spielzeit × Drehzahl der
+  Mühle), versetzt je Mühle (`millClipOffset`). Eine eingestürzte Mühle
+  bleibt mit der Mühlenzeit beim Abriss stehen (`frozenMillMotion`,
+  gemessen an der Animations-Uhr wie `uTime`). Die Böen treffen genau wie
+  bei der Formel, Abweichung der Drehzahl 0,005 rad/s. Die Stellung
+  der Flügel weicht bis zu 6,4° ab (an der Flügelspitze bis 47 cm bei
+  4,65 m Breite). Das kommt daher, dass eine Schleife mit gemeinsamen Böen
+  nicht jede Startstellung erreicht. Man sieht es nicht: jede Mühle dreht in
+  ihrem eigenen Takt, und nach einer Vierteldrehung sehen die Flügel gleich aus.
+- **Fahne:** Skelett `flag` (`root`, `cloth.0` bis `cloth.6` gleichmäßig
+  längs des Tuchs, wo seine Eckpunkte liegen). Die Knochen verschieben sich
+  seitwärts, der Shader mischt je Eckpunkt die beiden Nachbarn nach der Lage.
+  Clip `wave`: 39 Bilder, eine Welle. Abweichung an den Eckpunkten 0,03 cm.
+- **Neu im Rückweg:** Knochen dürfen sich auch verschieben (`Clip.moves`),
+  nicht nur drehen. Clips ohne Pose laufen nach der Spielzeit:
+  (Zeit − `phase_shift`) × Dauer / `phase_period`.
+- **Rückfall:** Die Formeln (`P_SAILS`, `P_CLOTH`) bleiben im Shader, falls
+  eine Bibliothek fehlt. Die Fahne auf dem Hauptgebäude weht weiter über die
+  Formel, sie hat kein eigenes Skelett.
+- **Galerie:** Beim Abriss bleiben die Flügel jetzt auch dort stehen.
 
 ### Phase 5: Zustands-Teile Blender-fest machen (klein bis mittel)
 
@@ -523,7 +562,7 @@ wenn gewünscht.
 | 1 | Lader, Clip-Textur, Skinning im Shader, Clip-Bibliothek, Pilot Schnitzen | groß | 0 |
 | 2 | Dorfbewohner (6 Clips, IK, Gewichte, Werkzeuge als Anhänge, Schichten) | groß | 1 |
 | 3 | Tiere (eine Vorlage, gemeinsame Clips, 3 eigene) - erledigt | mittel | 1 |
-| 4 | Mühle, Fahne | klein | 1 |
+| 4 | Mühle, Fahne - erledigt | klein | 1 |
 | 5 | Namensregeln absichern, später `extras` | klein bis mittel | – |
 | 6 | Ereignisse (bleiben) | – | – |
 | 7 | Tests, Messung, Aufräumen | klein | 2–4 |

@@ -1,7 +1,8 @@
 # Legt eine .blend-Datei mit einem Skelett und seinen Clips an - aus einem
 # Export von tools/export/*.mjs (<glb> + <glb ohne .glb>.clips.json). Wie
 # bootstrap_humanoid.py, aber für jedes Skelett: Tiere (tools/export/animals.mjs
-# -> assets/blender/quadruped.blend) usw.
+# -> quadruped.blend), Mühle und Fahne (tools/export/props.mjs -> mill.blend,
+# flag.blend).
 #
 # Danach ist die .blend-Datei die Quelle: Clips werden dort bearbeitet und mit
 # `npm run gen:anim` (tools/blender/export_clips.py) ins Spiel exportiert.
@@ -13,29 +14,37 @@
 # werte zu 0/1. Höhe und weitere Maße des Skeletts (height, graze) werden
 # Custom Properties des Skeletts.
 #
-# Aufruf: blender -b --python tools/blender/bootstrap_rig.py -- <glb> <blend> <Skelett> <Clip beim Öffnen>
+# Aufruf: blender -b --python tools/blender/bootstrap_rig.py -- <glb> <blend> [<Skelett> [<Clip beim Öffnen>]]
+# Ohne Skelett-Namen gilt "rig" aus der .clips.json, ohne Clip der erste.
+# Die Bildrate kommt aus "fps" der .clips.json (sonst 30).
 
 import json
 import sys
 import bpy
 
-glb, blend, rig_name, show = sys.argv[sys.argv.index('--') + 1:][:4]
+args = sys.argv[sys.argv.index('--') + 1:]
+glb, blend = args[:2]
+rig_name = args[2] if len(args) > 2 else None
+show = args[3] if len(args) > 3 else None
 with open(glb[:-len('.glb')] + '.clips.json') as f:
     sidecar = json.load(f)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scene = bpy.context.scene
-# 30 Bilder je Sekunde, wie das Spiel die Clips backt (docs/ANIMATION.md).
-scene.render.fps = 30
+# Bilder je Sekunde, wie das Spiel die Clips backt (docs/ANIMATION.md) -
+# 30, die Mühle mit ihrer langen Schleife weniger.
+scene.render.fps = int(sidecar.get('fps', 30))
 scene.render.fps_base = 1
 bpy.ops.import_scene.gltf(filepath=glb)
 
 rig = next(o for o in scene.objects if o.type == 'ARMATURE')
 name_at_import = rig.name
+rig_name = rig_name or sidecar['rig']
 rig.name = rig_name
 rig.data.name = rig_name
+# Maße des Skeletts (height, graze ...) werden Custom Properties.
 for key, value in sidecar.items():
-    if key != 'clips' and isinstance(value, (int, float)):
+    if key not in ('clips', 'fps') and isinstance(value, (int, float)) and not isinstance(value, bool):
         rig[key] = float(value)
 
 def prop(value):
@@ -66,6 +75,7 @@ for name, action in found.items():
     if frames != c['frames']:
         raise SystemExit(f'{name}: {frames} Bilder nach dem Import, erwartet {c["frames"]}')
 
+show = show if show in found else next(iter(found))
 rig.animation_data.action = found[show]
 scene.frame_start = 0
 scene.frame_end = int(found[show].frame_range[1])
