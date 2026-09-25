@@ -522,7 +522,7 @@ function clearSelection() {
 
 /** Bildschirmposition (CSS-Pixel) der Figurmitte - die Stelle, auf die man klickt. */
 function villagerScreen(v: Villager) {
-  const p = world.villagerPosition(v, tickAccumulator / TICK);
+  const p = v.positionAt(tickAccumulator / TICK);
   return worldToScreen(view(), p.x, p.y, zAt(p.x, p.y) + VILLAGER.size * 0.8);
 }
 
@@ -840,7 +840,7 @@ function selectIdleVillager(all = true) {
   }
   clearBuildingSelection();
   selectedResource = null;
-  let target: Villager;
+  let target: { x: number; y: number };
   if (all) {
     selectedVillagers.clear();
     for (const v of idle) selectedVillagers.add(v.id);
@@ -848,15 +848,16 @@ function selectIdleVillager(all = true) {
     const mx = idle.reduce((sum, v) => sum + v.x, 0) / idle.length;
     const my = idle.reduce((sum, v) => sum + v.y, 0) / idle.length;
     const spread = Math.max(...idle.map((v) => Math.hypot(v.x - mx, v.y - my)));
-    target = spread < 40 ? { ...idle[0], x: mx, y: my } : idle[0];
+    target = spread < 40 ? { x: mx, y: my } : idle[0];
   } else {
     // Nach dem gerade ausgewählten weitermachen, damit wiederholtes Klicken
     // alle der Reihe nach durchgeht.
     const current = selectedVillagers.size === 1 ? [...selectedVillagers][0] : -1;
     const index = idle.findIndex((v) => v.id === current);
-    target = idle[(index + 1) % idle.length];
+    const next = idle[(index + 1) % idle.length];
+    target = next;
     selectedVillagers.clear();
-    selectedVillagers.add(target.id);
+    selectedVillagers.add(next.id);
   }
   const center = centerFor(view(), target.x, target.y, zAt(target.x, target.y),
       viewWidth / 2, viewHeight / 2);
@@ -1569,7 +1570,7 @@ function collectOverlay(blend: number) {
   // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.
   for (const v of world.villagers) {
     if (!selectedVillagers.has(v.id)) continue;
-    const p = world.villagerPosition(v, blend);
+    const p = v.positionAt(blend);
     overlay.push({
       x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 2,
       color: [110, 231, 160], shape: SHAPE.ring, alpha: 1,

@@ -3,6 +3,7 @@
 // ANIMAL_CLASSES. Daraus folgen AnimalKind und ANIMALS (Definition je Art).
 //
 //   UnitBase (abstrakt)          Lage, Blickrichtung, Trefferpunkte, Schritte
+//    ├─ Villager                 Auftrag, Ladung, Name
 //    └─ AnimalBase (abstrakt)    äsen, umherziehen, fliehen, Kadaver
 //        ├─ Deer
 //        └─ Hare
@@ -12,8 +13,9 @@ import type { AnimalDefinition } from './definition';
 import { Deer } from './Deer';
 import { Hare } from './Hare';
 import { UnitBase } from './UnitBase';
+import { Villager, type Task } from './Villager';
 
-export { UnitBase, AnimalBase, Deer, Hare, type AnimalDefinition, type AnimalOptions, type AnimalState, type AnimalSurroundings };
+export { UnitBase, Villager, type Task, AnimalBase, Deer, Hare, type AnimalDefinition, type AnimalOptions, type AnimalState, type AnimalSurroundings };
 
 /** Alle Tierklassen. */
 export const ANIMAL_CLASSES = [Deer, Hare] as const;

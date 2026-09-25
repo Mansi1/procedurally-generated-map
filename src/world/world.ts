@@ -31,72 +31,14 @@ import {
   type Building, type Farm, type UnitProducer,
 } from './building';
 import { readSave, writeSave, type LoadedSave, type SaveData } from './save';
-import { isAnimalKind, type Animal, type AnimalSurroundings } from './unit';
+import { isAnimalKind, Villager, type Animal, type AnimalSurroundings, type Task } from './unit';
 import { Wildlife } from './wildlife';
 import { Farming, farmSpot, furrowKey, furrowNeeds, FIELD_INNER, METERS_PER_TILE, type FarmPhase } from './farming';
 import { RUIN_DURATION, type Ruin } from './ruin';
 
 // Gebäude sind Klassen (building/) - hier weiter unter diesen Namen erreichbar.
-export type { Building, FarmPhase };
-
-/**
- * Was ein Dorfbewohner gerade tun soll. Der Zustand (hingehen, sammeln,
- * abliefern) ergibt sich daraus und aus dem, was er trägt.
- */
-export type Task =
-  | { kind: 'idle' }
-  | { kind: 'move'; x: number; y: number }
-  /** Sammelt am Feld (x, y), bringt volle Ladungen zum nächsten Lager. */
-  | { kind: 'gather'; type: DepositType; x: number; y: number; delivering: boolean }
-  /** Bringt die Ladung zu genau diesem Gebäude, danach untätig. */
-  | { kind: 'deliver'; building: string }
-  /**
-   * Jagt dieses Tier (Speerwurf aus der Nähe), zerlegt den Kadaver und bringt
-   * das Fleisch zum nächsten Lager für Nahrung. `cooldown`: Sekunden bis zum
-   * nächsten Wurf.
-   */
-  | { kind: 'hunt'; animal: number; delivering: boolean; cooldown: number }
-  /** Bestellt und erntet das Feld, bringt die Ernte zum nächsten Lager für Nahrung. */
-  | { kind: 'farm'; building: string; row: number; delivering: boolean };
-
-export interface Villager {
-  id: number;
-  /** Vorname - solange er lebt, trägt ihn kein anderer (siehe names.ts). */
-  name: string;
-  /** Dorfbewohnerin (Kleid, Schürze) oder Dorfbewohner. */
-  female: boolean;
-  /** Position in Welt-Tiles (Mitte der Figur). */
-  x: number;
-  y: number;
-  /** Position vor dem letzten Tick - zum Überblenden zwischen den Ticks. */
-  prevX: number;
-  prevY: number;
-  carrying: number;
-  carryType: ResourceKind | null;
-  task: Task;
-  /** Warum er untätig ist, falls es einen Grund gibt - für die Anzeige. */
-  problem: string | null;
-  /** Verbleibende Trefferpunkte - höchstens VILLAGER.hp. */
-  hp: number;
-  /** Blickrichtung in Radiant (Weltkoordinaten). */
-  heading: number;
-  /** Was er im letzten Tick getan hat - steuert die Animation (POSE). */
-  pose: number;
-  /** Zurückgelegte Strecke in Tiles - die Beine schwingen danach, nicht nach der Uhr. */
-  stride: number;
-  prevStride: number;
-  /** Sekunden bei der Arbeit - Takt der Arm-Animation. */
-  workTime: number;
-  prevWorkTime: number;
-  /**
-   * Weg zum aktuellen Ziel: die noch offenen Wegpunkte und für welches Ziel
-   * er berechnet ist. Nicht gespeichert - nach dem Laden neu gesucht.
-   */
-  path: { x: number; y: number }[] | null;
-  /** Sekunden, die er noch im Gebäude ist (abladen) - solange unsichtbar. */
-  inside: number;
-  pathTarget: { x: number; y: number } | null;
-}
+export type { Building, FarmPhase, Task };
+export { Villager };
 
 /**
  * Eine Schrittfolge (links + rechts) in Tiles. Sie wächst mit der Figur, sonst
@@ -137,27 +79,6 @@ const key = (x: number, y: number) => `${x},${y}`;
 const BERRY_REST = 90 * 60;
 const BERRY_REGROW_TIME = 5 * 60;
 
-/** Neue Figur an (x, y) - alle Laufzeit-Felder auf Anfang. */
-function newVillager(id: number, x: number, y: number, name: string, female: boolean): Villager {
-  return {
-    id, name, female, x, y, prevX: x, prevY: y,
-    carrying: 0,
-    carryType: null,
-    task: { kind: 'idle' },
-    problem: null,
-    hp: VILLAGER.hp,
-    // Zur Kamera gewandt: die schaut entlang -(1, 1).
-    heading: Math.PI * 0.25,
-    pose: POSE.stand,
-    stride: 0,
-    prevStride: 0,
-    workTime: 0,
-    prevWorkTime: 0,
-    path: null,
-    pathTarget: null,
-    inside: 0,
-  };
-}
 
 /** Abstand der Sammelplätze von der Feldmitte, in Tiles. */
 const GATHER_SPREAD = 0.4;
@@ -778,12 +699,8 @@ export class World {
     this.regrowBerries(dt);
     if (this.farming.grow(dt)) this.dirty = true;
     if (this.wildlife.tick(dt, this.animalSurroundings)) this.dirty = true;
-    // Leer zerlegte Kadaver verschwinden.
     for (const v of this.villagers) {
-      v.prevX = v.x;
-      v.prevY = v.y;
-      v.prevStride = v.stride;
-      v.prevWorkTime = v.workTime;
+      v.rememberPosition();
       v.pose = POSE.stand;
       this.tickVillager(v, dt);
     }
@@ -803,7 +720,7 @@ export class World {
     const y = building.y + 0.5 + r - spread * 0.5;
     // Etwa jeder zweite ist eine Frau.
     const female = Math.random() < 0.5;
-    const villager = newVillager(this.nextId++, x, y, this.freeName(female), female);
+    const villager = new Villager(this.nextId++, x, y, this.freeName(female), female);
     this.villagers.push(villager);
     this.onEvent?.({ kind: 'trained', x: villager.x, y: villager.y });
     if (building.rallyPoint) this.command(new Set([villager.id]), building.rallyPoint.x, building.rallyPoint.y);
@@ -1166,9 +1083,7 @@ export class World {
   hunt(ids: ReadonlySet<number>, animal: Animal) {
     for (const v of this.villagers) {
       if (!ids.has(v.id)) continue;
-      v.inside = 0;
-      v.task = { kind: 'hunt', animal: animal.id, delivering: false, cooldown: 0 };
-      v.problem = null;
+      v.assign({ kind: 'hunt', animal: animal.id, delivering: false, cooldown: 0 });
     }
   }
 
@@ -1443,10 +1358,6 @@ export class World {
     return this.time + blend * this.lastDt;
   }
 
-  /** Überblendete Position zwischen zwei Ticks. */
-  villagerPosition(v: Villager, blend: number): { x: number; y: number } {
-    return { x: v.prevX + (v.x - v.prevX) * blend, y: v.prevY + (v.y - v.prevY) * blend };
-  }
 
   // --- Speichern -----------------------------------------------------------
 
@@ -1513,7 +1424,7 @@ export class World {
     for (const s of data.villagers) {
       // Ältere Speicherstände kennen weder Namen noch Geschlecht.
       const female = s.f ?? this.nextId % 2 === 1;
-      const v = newVillager(this.nextId++, s.x * scale, s.y * scale, s.n ?? this.freeName(female), female);
+      const v = new Villager(this.nextId++, s.x * scale, s.y * scale, s.n ?? this.freeName(female), female);
       v.carrying = s.c;
       v.carryType = s.ct;
       v.task = s.task;

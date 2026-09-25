@@ -215,7 +215,7 @@ src/
 - [x] 2.3 Tiere als Klassen (`unit/UnitBase`, `AnimalBase`, `Deer`, `Hare`, Liste in `unit/index.ts`) und `wildlife.ts` (entstehen lassen, suchen, Kadaver); Jagd bleibt bei den Dorfbewohnern
 - [ ] 2.4 `villagers.ts`: Aufgaben, Laufen, Sammeln, Abliefern, `describe()`
 - [x] 2.5 `render.ts`: Instanzen für den Renderer (Gebäude, Felder, Figuren, Tiere, Einsturz); `ruin.ts` für einstürzende Gebäude
-- [ ] 2.6 `Villager` und `Animal` als Klassen, wie die Gebäude
+- [x] 2.6 `Villager` und `Animal` als Klassen (unit/), `Task` bei `Villager`
 
 ### Phase 3: `main.ts` aufteilen (B8)
 

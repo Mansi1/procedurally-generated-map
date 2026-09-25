@@ -83,9 +83,8 @@ export function worldInstances(
   }
 
   for (const v of world.villagers) {
-    // Im Gebäude (beim Abladen) sieht man ihn nicht.
-    if (v.inside > 0) continue;
-    const { x, y } = world.villagerPosition(v, blend);
+    if (!v.isVisible) continue;
+    const { x, y } = v.positionAt(blend);
     if (x < x0 || x > x1 || y < y0 || y > y1) continue;
     const phase = v.pose === POSE.walk
       ? lerp(v.prevStride, v.stride, blend) * (Math.PI * 2 / STRIDE_LENGTH)
@@ -112,8 +111,7 @@ export function worldInstances(
     });
   }
   for (const a of world.wildlife.animals) {
-    const x = a.prevX + (a.x - a.prevX) * blend;
-    const y = a.prevY + (a.y - a.prevY) * blend;
+    const { x, y } = a.positionAt(blend);
     if (x < x0 || x > x1 || y < y0 || y > y1) continue;
     const def = a.definition;
     const pose = a.state === 'dead' ? ANIMAL_POSE.dead
