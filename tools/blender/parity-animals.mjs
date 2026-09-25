@@ -16,6 +16,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { SPECIES, animalPart, measureAnimal } from '../export/animal-poses.mjs';
 import { parseObj } from '../export/gltf.mjs';
+import { readModel } from '../models/glb.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const out = process.argv[2] ?? `${tmpdir()}/pgm-parity-animals`;
@@ -86,7 +87,7 @@ const lerp3 = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 
 let worstAll = 0;
 for (const kind of SPECIES) {
-  const tris = parseObj(readFileSync(`${root}src/models/${kind}.obj`, 'utf8'));
+  const tris = parseObj(readModel(kind).obj);
   const J = measureAnimal(tris);
   const local = ([x, y, z]) => [z / J.H, x / J.H, (y - J.minY) / J.H];
   // Messpunkte: je Bein der tiefste Punkt, am Kopf der vorderste (Maul), am

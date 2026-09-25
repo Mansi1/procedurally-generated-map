@@ -1,76 +1,77 @@
-# Alles aus Blender
+# Modelle und Blender
 
 Was noch offen ist: docs/OFFEN.md.
 
-Jedes Objekt des Spiels ist eine Blender-Datei: Dorfbewohner, Gebäude, Bäume,
-Sträucher, Stein und Gold, Tiere, Werkzeuge und die Pflanzen der Felder. Die Bewegungen stecken in eigenen
-Clip-Bibliotheken (docs/ANIMATION.md). Blender ist die Quelle - die Dateien
-in `src/models/` werden daraus erzeugt und nicht von Hand bearbeitet.
-
-Die früheren Generator-Skripte (`tools/models/villagers.mjs`,
-`buildings.mjs`, `trees.mjs` ...) sind entfallen. Sie haben die `.blend`-
-Dateien einmal angelegt und stehen in der Git-Geschichte.
+Jedes Objekt des Spiels ist eine glTF-Datei in `src/models/`: Dorfbewohner,
+Gebäude, Bäume, Sträucher, Stein und Gold, Tiere, Werkzeuge und die Pflanzen
+der Felder. Blender öffnet und speichert sie ohne Zusatz (Datei → Import /
+Export → glTF 2.0) - es gibt keinen Export-Schritt und beim Bauen kein
+Blender. Die Bewegungen stecken in eigenen Clip-Bibliotheken, ebenfalls
+`.glb` (docs/ANIMATION.md).
 
 ## Wo was liegt
 
 ```
-assets/blender/                       (Git LFS)
-  models/                             Formen - je Objekt eine Datei
-    villagers/  villager_male, villager_female
-    buildings/  town_center, house(_2.._4), lumber_camp(_2.._4), mining_camp,
-                mill(_2.._4), bowyer, armory
-    trees/      tree_spruce, tree_pine, tree_oak(_young, _old), tree_birch(_2, _3),
-                tree_maple, tree_poplar
-    nature/     berry_bush_1..4, stone_1..3, gold_1..3
-    animals/    deer, hare, cow, sheep, goat, boar
-    props/      prop_axe, prop_knife, prop_scythe_male/_female, bow,
-                rally_flag, marker_arrow
-    fields/     field_stake, field_cord, field_wheat_leaf,
-                field_wheat_stalk(_light, _dark), field_corn_1, field_corn_2
-  clips/                              Bewegungen - je Skelett eine Datei
-    humanoid, quadruped, mill, flag
+src/models/                           Modelle - je Objekt eine .glb, eingecheckt
+  villager_male, villager_female
+  town_center, house(_2.._4), lumber_camp(_2.._4), mining_camp,
+  mill(_2.._4), bowyer, armory
+  tree_spruce, tree_pine, tree_oak(_young, _old), tree_birch(_2, _3),
+  tree_maple, tree_poplar
+  berry_bush_1..4, stone_1..3, gold_1..3
+  deer, hare, cow, sheep, goat, boar
+  prop_axe, prop_knife, prop_scythe_male/_female, bow, rally_flag, marker_arrow
+  field_stake, field_cord, field_wheat_leaf,
+  field_wheat_stalk(_light, _dark), field_corn_1, field_corn_2
+  humanoid, quadruped, mill, flag _clips.glb + .json
+                                      Bewegungen - je Skelett eine Bibliothek
 ```
 
-| Befehl | macht |
-|---|---|
-| `npm run gen:models` | alle Dateien in `models/` → `src/models/<name>.obj` + `.mtl` |
-| `npm run gen:anim` | alle Dateien in `clips/` → `src/models/<name>_clips.glb` + `.json` |
-
-Blender wird über die Umgebungsvariable `BLENDER` gefunden, sonst am
-üblichen Ort auf macOS (`/Applications/Blender.app`).
+Das Spiel liest ein Modell mit `import house from '../models/house.glb?model'`.
+Beim Bauen wandelt `vite.config.ts` die Datei in OBJ- und MTL-Text
+(`tools/models/glb.mjs`) - damit arbeiten Spiel und Werkzeuge weiter; in Node
+liefert `readModel('house')` dasselbe.
 
 ## Ein Modell bearbeiten
 
-1. Die Datei in Blender öffnen, z. B. `assets/blender/models/buildings/house.blend`.
+1. Blender: Datei → Import → glTF 2.0, z. B. `src/models/house.glb`
+   (Einstellungen wie vorgegeben).
 2. Bearbeiten: Objekte verschieben, drehen, skalieren, im Edit Mode formen,
    neue Objekte anlegen, Materialfarben ändern. Lage, Drehung und Größe
-   eines Objekts werden beim Export eingerechnet.
-3. Speichern, dann `npm run gen:models`.
-4. Im Spiel oder in der Galerie ansehen (`npm run dev`, `/galerie`).
+   eines Objekts rechnet das Spiel ein.
+3. Datei → Export → glTF 2.0, Format **glTF Binary (.glb)**, über dieselbe
+   Datei. Die übrigen Einstellungen wie vorgegeben (+Y oben bleibt an).
+4. `npm test` prüft die Namen mit Bedeutung; ansehen im Spiel oder in der
+   Galerie (`npm run dev`, `/galerie`).
 
-Achsen und Maße: Z ist oben, die Vorderseite zeigt nach -Y (Vorderansicht,
-Taste 1). Einheit Meter, 1 Tile = 5 m, ein Dorfbewohner ist 1,7 m groß,
-Türen 2,1 m. Gebäude werden im Spiel auf ihre Breite gebracht (`size` der
-Gebäudeart), Figuren auf ihre Höhe - wird ein Gebäude breiter, wirkt es im
-Spiel also kleiner.
+Blender exportiert alle Objekte der Szene, auch ausgeblendete. Hilfsobjekte,
+die nicht ins Spiel sollen, vor dem Export löschen - oder unter Include
+„Visible Objects“ anhaken und sie ausblenden.
 
-## Was das Spiel aus Blender liest
+Achsen und Maße: In Blender ist Z oben, die Vorderseite zeigt nach -Y
+(Vorderansicht, Taste 1); der glTF-Export dreht das richtig. Einheit Meter,
+1 Tile = 5 m, ein Dorfbewohner ist 1,7 m groß, Türen 2,1 m. Gebäude werden im
+Spiel auf ihre Breite gebracht (`size` der Gebäudeart), Figuren auf ihre
+Höhe - wird ein Gebäude breiter, wirkt es im Spiel also kleiner.
 
-Das Spiel kennt keine Blender-Datei, nur das exportierte OBJ. Darin zählen:
+## Was das Spiel aus der Datei liest
 
-- **Der Name jedes Objekts.** Er sagt dem Spiel, was das Teil ist. Weil
-  Blender doppelte Namen durchnummeriert (`Window.Frame.001`, `Berry.94`),
-  steht der Name fürs Spiel in der Custom Property **`obj_name`** des Objekts
-  (Object Properties → Custom Properties). Sie gilt, solange das Objekt in
-  Blender so heißt wie nach dem Anlegen (`obj_blender_name`). Umbenennen in
-  Blender wirkt also: dann gilt der neue Name. Eine Kopie (Shift+D) von
-  `Window.Frame` heißt in Blender `Window.Frame.003` und im Spiel wieder
-  `Window.Frame`; ein neues Objekt heißt im Spiel wie in Blender.
-- **Der Name des Materials.** Er bestimmt das Aussehen: Farbe aus der MTL,
-  Muster aus dem Shader (Holz, Stroh, Leinen, Marmor ...). `Paint` und
-  `Tunic` werden zur Spielerfarbe. Materialnamen beim Bearbeiten behalten;
-  ein neues Material mit neuem Namen bekommt nur seine Farbe.
-- **Die Farbe des Materials** (Viewport Display → Color) wird Kd in der MTL.
+- **Der Name jedes Objekts.** Er sagt dem Spiel, was das Teil ist, und darf
+  sich wiederholen (viele `Window.Bar`). Blender duldet keine doppelten Namen
+  - darum heißt ab dem zweiten gleichen Namen das Objekt `Window.Bar#2`,
+  `#3` ...; das Spiel liest den Namen bis zum `#`. Eine Kopie (Shift+D) von
+  `Window.Bar` heißt in Blender `Window.Bar.001` und im Spiel wieder
+  `Window.Bar`. Umbenennen wirkt; ein neues Objekt heißt im Spiel wie in
+  Blender. Achtung bei Namen, die schon auf eine Zahl enden (`Berry.93`,
+  `Stock.42`): Blender gibt der Kopie die nächste freie Nummer (`Berry.94`)
+  - bei `Stock` und `Craft` zählt die Nummer, dort von Hand benennen.
+- **Der Name des Materials.** Er bestimmt das Aussehen: Farbe aus dem
+  Material, Muster aus dem Shader (Holz, Stroh, Leinen, Marmor ...). `Paint`
+  und `Tunic` werden zur Spielerfarbe. Materialnamen beim Bearbeiten
+  behalten; ein neues Material mit neuem Namen bekommt nur seine Farbe.
+- **Die Farbe des Materials:** Base Color des Principled BSDF, genau der
+  Zahlenwert (in glTF `baseColorFactor`). Texturen und alles andere am
+  Material liest das Spiel nicht.
 
 Namen mit Bedeutung (nicht umbenennen, beim Kopieren mitnehmen):
 
@@ -89,40 +90,36 @@ Namen mit Bedeutung (nicht umbenennen, beim Kopieren mitnehmen):
 | `Craft.<n>` | Stufen des Bogens auf der Werkbank |
 | `Cut.Roof`, `Cut.Wall` | Dach und Wände der Waffenkammer, beim Hineinsehen weg bzw. niedrig |
 
-**Geprüft bei jedem Export:** `npm run gen:models` bricht mit einer Meldung
-ab, wenn einem Modell ein Name mit Bedeutung fehlt - z. B. ein Gebäude ohne
-`Entry`, eine Mühle ohne `Sails`, Lücken in `Stock.0` bis `Stock.99`, ein
-Werkzeug im Körper eines Dorfbewohners - oder wenn eine Fläche kein Material
-hat. Die Regeln stehen in `tools/blender/check-models.mjs`, einzeln:
-`npm run check:models`.
-
-Hilfsobjekte, die nicht ins Spiel sollen: in eine Collection legen, deren
-Name mit `Vorlage` beginnt, oder im Render ausblenden (Kamera-Symbol).
+**Geprüft von `npm test`:** Es schlägt an, wenn einem Modell ein Name mit
+Bedeutung fehlt - z. B. ein Gebäude ohne `Entry`, eine Mühle ohne `Sails`,
+Lücken in `Stock.0` bis `Stock.99`, ein Werkzeug im Körper eines
+Dorfbewohners -, wenn eine Fläche kein Material hat oder wenn ein Name von
+früher verloren geht (`tests/ids.snapshot.json`). Die Regeln stehen in
+`tools/models/check-models.mjs`, einzeln: `npm run check:models`.
 
 ## Ein neues Modell
 
-1. Eine vorhandene Datei als Vorlage kopieren (z. B. `house.blend` →
-   `bakery.blend`) oder neu anlegen. In den Scene Properties die Custom
-   Properties setzen: `obj_file` (Dateiname, z. B. `bakery.obj`),
-   `obj_mtllib` (`bakery.mtl`), optional `obj_header` (Kommentar oben im OBJ).
-2. `npm run gen:models`.
-3. Im Spiel eintragen: Import, Form in `SHAPE` und Eintrag in `MODELS`
-   (`src/gl/entityRenderer.ts`), bei einem Gebäude dazu seine Klasse in
-   `src/world/building/`.
+1. In Blender bauen - neu oder aus einem importierten Modell als Vorlage -
+   und als `src/models/<name>.glb` exportieren (glTF Binary).
+2. Im Spiel eintragen: `import bakeryModel from '../models/bakery.glb?model'`,
+   Form in `SHAPE` und Eintrag in `MODELS` (`src/gl/entityRenderer.ts`), bei
+   einem Gebäude dazu seine Klasse in `src/world/building/`.
 
-## Der Umzug (einmalig)
+## Die Umzüge (einmalig)
 
-`node tools/blender/models.mjs init` hat aus jedem OBJ in `src/models/` eine
-`.blend`-Datei angelegt (`tools/blender/obj_to_blend.py`) und geprüft, dass
-der Export (`tools/blender/blend_to_obj.py`) genau dasselbe ergibt:
-alle 51 Modelle Fläche für Fläche gleich (`tools/blender/compare-obj.mjs`),
-50 davon sogar Byte für Byte. Vorhandene `.blend`-Dateien überschreibt
-`init` nur mit `--force` - das würde Änderungen in Blender verwerfen.
+Die Modelle entstanden zuerst in Generator-Skripten (`tools/models/villagers.mjs`,
+`buildings.mjs`, `trees.mjs` ...), wurden dann `.blend`-Dateien mit einem
+Export nach OBJ und sind seit dem 25.09.2026 `.glb`. Dafür hat
+`objToGlb` (`tools/models/glb.mjs`) jedes OBJ aus dem letzten Export der
+`.blend`-Dateien gewandelt: alle 59 Modelle lesen sich Dreieck für Dreieck,
+Name für Name und Farbe für Farbe gleich; 8 davon sind zur Probe einmal
+durch Blender (Import und Export mit den Vorgaben) gegangen, ebenfalls ohne
+Unterschied. Die Skripte und `.blend`-Dateien stehen in der Git-Geschichte.
 
 ## Felder
 
 Ein Feld sind Tausende Pflanzen - als eine Blender-Datei wären das 20 000
-Objekte. In Blender liegen deshalb die **Teile** (`models/fields/`), das
+Objekte. In `src/models/` liegen deshalb die **Teile** (`field_*.glb`), das
 Spiel stellt sie beim Start auf (`tools/models/farmsGen.mjs`): wo jede
 Pflanze steht, wie hoch, geneigt und gedreht - mit denselben Zufallszahlen
 wie früher, die Felder sehen aus wie vorher.

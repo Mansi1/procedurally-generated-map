@@ -7,15 +7,13 @@
     "dev": "vite",
     "build": "tsc && vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview",
-    "gen:models": "node tools/blender/models.mjs",
-    "check:models": "node tools/blender/check-models.mjs",
+    "check:models": "node tools/models/check-models.mjs",
     "test": "node --test tests/",
     "test:update-ids": "node tests/update-ids.mjs",
     "gen:ui": "node tools/ui/icons.mjs && node tools/ui/wood-bar.mjs",
     "smoke": "node tools/ui/smoke.mjs",
     "export:bognerei": "node tools/export/bognerei.mjs && node tools/export/bognerei.mjs frau",
     "export:props": "node tools/export/props.mjs",
-    "gen:anim": "node tools/blender/export-all.mjs",
     "check:anim": "node tools/blender/parity.mjs && node tools/blender/parity-animals.mjs"
   },
   "devDependencies": {

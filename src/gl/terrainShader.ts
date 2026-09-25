@@ -54,8 +54,6 @@ const int L_TEMP = 5;
 const int L_WARP = 6;
 const int L_RIDGE = 7;
 const int L_DETAIL = 8;
-const int L_RESOURCE = 9;
-const int L_CLUSTER = 10;
 
 
 const float F2 = 0.3660254037844386;
@@ -284,17 +282,6 @@ ${TERRAIN_COMMON}
 ${PROJECT_GLSL}
 ${CACHE_GLSL}
 
-uniform float uResourceScale;
-// Ressourcen-Regeln aus RESOURCE_RULES (map.ts). Als Uniforms statt fest im
-// Code, damit die Schwellen nur an einer Stelle stehen.
-uniform int   uResourceRuleCount;
-uniform int   uResourceRuleBiome[8];
-uniform int   uResourceRuleType[8];
-uniform float uResourceRuleThreshold[8];
-uniform float uResourceRuleCluster[8];
-uniform float uResourceRuleYield[8];
-uniform float uResourceClusterScale;
-uniform vec2  uResourceClusterOffset;
 /**
  * Bezugsgröße für Feindetail und Farbtextur, in Geräte-Pixeln. Abgetastet wird
  * je Pixel, aber Mikro-Oktaven und Farbrauschen richten sich bewusst nach einer
@@ -310,7 +297,6 @@ uniform vec3 uBiomeLo[8];
 uniform vec3 uBiomeHi[8];
 uniform vec3 uWaterRamp[4];
 uniform vec3 uSurf;
-uniform vec3 uResourceColor[5];
 
 
 // Biome (Reihenfolge = TILE_TYPE_GRADIENT)
@@ -353,24 +339,6 @@ vec2 heightBand(int biome) {
   if (biome == B_MOUNTAIN) return vec2(uHillLevel, 1.0);
   if (biome == B_SNOW) return vec2(uPeakLevel, 1.0);
   return vec2(uShoreLevel, uHillLevel);
-}
-
-// Ressourcen - Gegenstück zu resourceFromNoise() in map.ts. Erste passende
-// Regel gewinnt, genau wie dort.
-// x = Typ als Index in uResourceColor (0 = keine), y = Menge 0..100
-vec2 resourceAt(vec2 tile, int biome) {
-  float r = fbm(L_RESOURCE, tile * uResourceScale, 2, 0.5);
-  for (int i = 0; i < 8; i++) {
-    if (i >= uResourceRuleCount) break;
-    if (uResourceRuleBiome[i] != biome || r <= uResourceRuleThreshold[i]) continue;
-    // Häufchen: kleine Vorkommen statt ganzer Gegenden, je Regel woanders.
-    if (uResourceRuleCluster[i] >= -1.0 &&
-        snoise(L_CLUSTER, tile * uResourceClusterScale + float(i) * uResourceClusterOffset) <= uResourceRuleCluster[i]) continue;
-    {
-      return vec2(float(uResourceRuleType[i]), floor((r + 1.0) * uResourceRuleYield[i]));
-    }
-  }
-  return vec2(0.0, 0.0);
 }
 
 // Zufall je Zelle, 0..1 - für verstreute Blumen und Blätter.
@@ -1021,12 +989,6 @@ void main() {
     color *= clamp(mix(1.0, lambert, 0.85), 0.45, 1.3);
   }
 
-  vec2 res = resourceAt(tile, biome);
-  if (res.x > 0.0) {
-    float alpha = min(res.y / 100.0, 1.0) * 0.3;
-    color = mix(color, uResourceColor[int(res.x)], alpha);
-  }
-
   if (uDebug != 0) {
     float value = height;
     if (uDebug == 2) value = shade;
@@ -1070,7 +1032,6 @@ uniform vec2  uHoverTile;      // markiertes Tile, uHoverActive < 0.5 blendet au
 uniform float uHoverActive;
 uniform vec4  uViewRect;       // Ausschnitt der Hauptansicht (x, y, Breite, Hoehe), Pixel ab links oben
 uniform float uViewRectActive;
-uniform float uCenterDot;      // Mittelpunktmarke der Minimap
 
 // Umgepflügte Äcker (siehe World.fieldSoil): je Tile ein Texel ab uFieldOrigin,
 // rgb = wie weit die drei Furchen des Tiles entlang y gepflügt sind, a = Feld.
@@ -1157,10 +1118,6 @@ void main() {
       if (edge < 1.0) color = mix(color, vec3(1.0), 0.9);
       else if (edge < 3.0) color = mix(color, vec3(0.0), 0.35);
     }
-  }
-
-  if (uCenterDot > 0.5 && all(lessThan(abs(pixel - uResolution * 0.5), vec2(2.0)))) {
-    color = vec3(1.0, 0.867, 0.2);
   }
 
   fragColor = vec4(color, 1.0);

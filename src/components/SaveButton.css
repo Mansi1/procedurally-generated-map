@@ -1,16 +1,13 @@
-/* Diskette neben dem Zahnrad - rund wie das Zahnrad (.rb-menu), etwas näher daran. */
-#stock .rb-save {
-  margin-left: 8px;
-}
-#stock .rb-save .check {
+/* Diskette oben links am Rahmen der Minimap; nach dem Speichern kurz ein Haken. */
+.rb-save .check {
   display: none;
 }
-#stock .rb-save.saved {
+.rb-save.saved {
   color: #b6f0a0;
 }
-#stock .rb-save.saved .disk {
+.rb-save.saved .disk {
   display: none;
 }
-#stock .rb-save.saved .check {
+.rb-save.saved .check {
   display: inline;
 }

@@ -4,16 +4,13 @@
 // Usage: node tools/ui/icons.mjs [outDir] (default src/icons)
 import { readFileSync } from 'node:fs';
 import { launch } from './browser.mjs';
+import { readModel } from '../models/glb.mjs';
 
-const models = new URL('../../src/models/', import.meta.url).pathname;
 const out = process.argv[2] ?? new URL('../../src/icons', import.meta.url).pathname;
-const load = (obj, mtl = obj) => ({
-  obj: readFileSync(`${models}${obj}.obj`, 'utf8'),
-  mtl: readFileSync(`${models}${mtl}.mtl`, 'utf8'),
-});
+const load = (name) => readModel(name);
 const data = {
   wood: load('tree_oak'), berries: load('berry_bush_1'), gold: load('gold_1'), stone: load('stone_1'),
-  male: load('villager_male', 'villager'), female: load('villager_female', 'villager'),
+  male: load('villager_male'), female: load('villager_female'),
 };
 const page = readFileSync(new URL('./icons.html', import.meta.url), 'utf8')
   .replace('<script src="icondata.js"></script>', `<script>const D=${JSON.stringify(data)};</script>`);

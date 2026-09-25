@@ -1,9 +1,9 @@
 # Was noch offen ist
 
-Stand 25.09.2026, Branch `animation-migration`. Alles, was im Spiel eine Form
-hat oder sich bewegt, kommt aus Blender (docs/BLENDER.md, docs/ANIMATION.md):
-59 Modelle in `assets/blender/models/`, 4 Clip-Bibliotheken in
-`assets/blender/clips/`, die Felder aus Pflanzen-Teilen. Die Bewegungsformeln
+Stand 25.09.2026. Alles, was im Spiel eine Form hat oder sich bewegt, kommt
+aus Blender (docs/BLENDER.md, docs/ANIMATION.md): 59 Modelle und 4 Clip-Bibliotheken als
+`.glb` in `src/models/`, die Felder aus Pflanzen-Teilen. Kein Python, kein
+Blender beim Bauen. Die Bewegungsformeln
 im Shader sind gelöscht. `npm test` wacht darüber, dass keine ID verloren
 geht.
 
@@ -11,20 +11,21 @@ Was danach noch zu tun bleibt, grob nach Wichtigkeit.
 
 ## Zuerst
 
-- **Branch in `main` übernehmen.** `animation-migration` ist gepusht, aber
-  noch nicht in `main`. Er enthält auch die Bognerei, die Waffenkammer und die
-  Galerie-Änderungen, die vorher lokal auf `main` lagen.
 - **Mögliche Konflikte beim Übernehmen:** Der L-System-Branch
   (`lsystem-blattebenen`, eigener Worktree unter `.agents/worktree`) ändert
   ebenfalls `tools/README.md`, dessen Anfang hier neu geschrieben wurde.
-- **Vercel:** Die `.blend`-Dateien liegen in Git LFS (63 Dateien, rund 25 MB).
-  Das Spiel braucht sie nicht zum Bauen, nur `src/models/`. Prüfen, ob der
-  LFS-Abruf beim Deploy unnötig Zeit oder Kontingent kostet; notfalls die
-  `.blend`-Dateien für den Build ausnehmen.
+- **Clips in Blender bearbeiten - Export-Einstellungen finden.** Die
+  Clip-Bibliotheken (`src/models/*_clips.glb`) sind seit dem 25.09.2026 die
+  Quelle. Zur Probe durch Blender (Import, sofort Export mit den Vorgaben)
+  wichen die Hände danach bis 7 cm von der Formel ab (`chop`, vorher
+  0,5 cm), die Tiere bis 0,9 cm (vorher 0,01 cm) - Blender rechnet die
+  Bilder neu ab. Einstellungen suchen (Bildrate 30, Sampling, keine
+  Optimierung der Keyframes), bei denen `npm run check:anim` gleich bleibt,
+  und in docs/ANIMATION.md festhalten. Bis dahin Clips nicht über Blender
+  speichern.
 - **Tests automatisch laufen lassen.** `npm test` und `npm run smoke` laufen
   nur von Hand. Eine CI (z. B. GitHub Actions) würde bei jedem Push prüfen.
-  Die Blender-Tests überspringen sich dort, wenn Blender fehlt. Ohne Blender
-  in der CI prüft nur der lokale Lauf, dass `.blend` und OBJ gleich sind.
+  Blender braucht keiner der Tests.
 
 ## Prüfen
 

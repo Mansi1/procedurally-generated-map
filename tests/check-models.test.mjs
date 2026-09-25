@@ -1,12 +1,13 @@
-// Die Prüfung der Namen mit Bedeutung (tools/blender/check-models.mjs) schlägt
+// Die Prüfung der Namen mit Bedeutung (tools/models/check-models.mjs) schlägt
 // an, wenn eine ID fehlt: je Regel ein kaputtes Modell.
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { checkModels } from '../tools/blender/check-models.mjs';
+import { checkModels } from '../tools/models/check-models.mjs';
+import { objToGlb, readModel } from '../tools/models/glb.mjs';
 import { modelsDir } from './ids.mjs';
 
 test('die echten Modelle bestehen die Prüfung', () => {
@@ -16,7 +17,8 @@ test('die echten Modelle bestehen die Prüfung', () => {
 /** Kopie eines Modells, deren OBJ-Text `edit` ändert - nur dieses Modell wird geprüft. */
 function broken(model, edit) {
   const dir = mkdtempSync(join(tmpdir(), 'check-'));
-  writeFileSync(join(dir, `${model}.obj`), edit(readFileSync(join(modelsDir, `${model}.obj`), 'utf8')));
+  const { obj, mtl } = readModel(model);
+  writeFileSync(join(dir, `${model}.glb`), objToGlb(edit(obj), mtl));
   return checkModels(dir).join('\n');
 }
 const rename = (from, to) => (text) => text.replace(new RegExp(`^o ${from.replace(/\./g, '\\.')}(\\.|$)`, 'gm'), `o ${to}$1`);
@@ -38,7 +40,7 @@ const CASES = [
   ['Werkzeug im Körper', 'villager_female', (t) => t.replace(/^o Head$/m, 'o Arm.R.Lower.Tool'), 'darf nicht enthalten Arm.R.Lower.Tool'],
   ['Beil ohne Namen fürs Spiel', 'prop_axe', (t) => t.replace(/^o Arm\.R\.Lower\.Tool.*$/gm, 'o Axt'), 'fehlt Arm.R.Lower.Tool'],
   ['Fläche ohne Material', 'house', (t) => t.replace(/^usemtl .*$/gm, ''), 'Flächen ohne Material'],
-  ['Name von Blender durchnummeriert', 'house', (t) => t.replace(/^o Window\.Bar$/m, 'o Window.Bar.001'), 'Window.Bar.001'],
+  ['Name von Blender durchnummeriert', 'house', (t) => t.replace(/^o Window\.Bar$/gm, 'o Window.Bar.001'), 'Window.Bar.001'],
 ];
 
 for (const [what, model, edit, expect] of CASES) {

@@ -1,6 +1,6 @@
 // Field models - 3x3 tiles (15 m square) like the AoE2 farm: the staked-out
 // outline and the crop in rows. The parts are Blender models (docs/BLENDER.md,
-// assets/blender/models/fields/): stake, cord, wheat leaf, wheat stalks with
+// src/models/field_*.glb): stake, cord, wheat leaf, wheat stalks with
 // ears in three tones, maize plants with one or two cobs. Here only the
 // placing is decided - where each stands, how tall, how it leans and turns -
 // and the game builds the field from it at start-up (src/gl/entityRenderer.ts)
@@ -12,7 +12,7 @@
 // No Node APIs here - tools/models/farms.mjs writes the OBJ files for a look.
 import { model } from './primitives.mjs';
 
-/** The parts a field is made of (src/models/field_<name>.obj). */
+/** The parts a field is made of (src/models/field_<name>.glb). */
 export const FIELD_PARTS = [
   'stake', 'cord', 'wheat_leaf', 'wheat_stalk_light', 'wheat_stalk', 'wheat_stalk_dark', 'corn_1', 'corn_2',
 ];
@@ -251,7 +251,7 @@ const MAKE = { wheat, corn };
 
 /**
  * OBJ and MTL text of one field, from its parts (`parts[name] = { obj, mtl }`,
- * the files src/models/field_<name>.obj/.mtl). `detail` < 1 gives the simpler
+ * src/models/field_<name>.glb, read as OBJ/MTL text). `detail` < 1 gives the simpler
  * versions for zooming out: fewer stalks of wheat, fewer maize plants (0.3
  * and 0.1).
  */

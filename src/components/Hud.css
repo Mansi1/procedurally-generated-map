@@ -1,9 +1,22 @@
 /* Hud.css - Spielfeld, Panels, Tastenhilfe, Legende, Pause-Schild, Hinweis,
-   Auswahlrechteck, Minimap, Kompass und Ton-Knopf. */
+   Auswahlrechteck, Minimap mit Rahmen, Kompass und Knöpfen. */
 #game {
   display: block;
+  /* Beim Drehen dreht es sich um die Bildmitte (game/TurnAnimation.ts). */
+  transform-origin: 50% 50%;
   image-rendering: pixelated;
   cursor: crosshair;
+}
+#turn-snapshot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  image-rendering: pixelated;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+#turn-snapshot[hidden] {
+  display: none;
 }
 .panel {
   position: absolute;
@@ -193,48 +206,158 @@
   background: rgba(110, 231, 160, 0.12);
   pointer-events: none;
 }
+/* Minimap wie in AoE4, ohne Kasten (Hud.tsx): eine runde Karte in einem
+   Holzreif mit Nägeln, frei über dem Spielfeld.
+   Maße: Rahmen 332 px breit, Karte 244 px, Ring 127 px Radius, die
+   Buchstaben der Windrose auf 155 px - main.ts und Hud.tsx rechnen mit denselben Zahlen. */
+#minimap-frame {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 332px;
+  height: 332px;
+  /* Kein Kasten: neben dem Reif gehen Klicks aufs Spielfeld durch. Karte und
+     Knöpfe schalten sie für sich wieder ein. */
+  pointer-events: none;
+}
+/* Ring, Drehteller und Kompass liegen alle ab derselben Ecke - ihre Mitte
+   ist dieselbe (166, 166), um die sich beim Drehen alles dreht. */
+.minimap-ring,
+.minimap-spin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 332px;
+  height: 332px;
+  pointer-events: none;
+}
+/* Frei über dem Spielfeld: ein kräftiger Schatten hebt den Reif ab. */
+.minimap-ring {
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.75));
+}
+.minimap-ring .disc {
+  fill: url(#minimap-disc);
+}
+/* Reif aus dunklem Kantholz, oben und unten eine helle Kante wie ausgestemmt. */
+.minimap-ring .ring-wood {
+  fill: none;
+  stroke: #4a2c15;
+  stroke-width: 9;
+}
+.minimap-ring .ring-light {
+  fill: none;
+  stroke: rgba(255, 220, 170, 0.35);
+  stroke-width: 1;
+}
+.minimap-ring .nail {
+  fill: url(#minimap-nail);
+  stroke: #120a04;
+  stroke-width: 0.8;
+}
 #minimap {
   position: absolute;
-  bottom: 12px;
-  right: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  left: 44px;
+  top: 44px;
+  pointer-events: auto;
   background: #05070a;
   image-rendering: pixelated;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  clip-path: circle(50%);
   cursor: pointer;
 }
-/* Kompass über der Minimap: Klick auf eine Himmelsrichtung dreht die
-   Ansicht so, dass sie nach oben zeigt. */
+/* Innenschatten am Rand der Karte, wie unter dem Reif eingelassen. */
+.minimap-shade {
+  position: absolute;
+  left: 44px;
+  top: 44px;
+  width: 244px;
+  height: 244px;
+  border-radius: 50%;
+  box-shadow: inset 0 3px 10px rgba(0, 0, 0, 0.75), inset 0 0 3px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+/* Himmelsrichtungen auf dem Ring (game/Compass.ts setzt left/top auf die Mitte
+   des Buchstabens). Klick dreht die Richtung nach oben. */
 #compass {
   position: absolute;
-  bottom: 326px;
-  right: 12px;
-  width: 78px;
-  height: 78px;
-  border-radius: 50%;
-  background: var(--panel);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 1px solid var(--border);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  left: 0;
+  top: 0;
+  width: 332px;
+  height: 332px;
+  pointer-events: none;
 }
-/* Ton an/aus, links neben dem Kompass */
-#sound {
-  position: absolute;
-  bottom: 349px;
-  right: 100px;
+/* Alle Knöpfe am Rahmen: rund, aus Holz wie das Zahnrad oben - eingelassen,
+   mit dunklem Rand und cremefarbenem Zeichen. */
+#minimap-frame button {
   width: 32px;
   height: 32px;
-  padding: 6px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--wood-edge);
   border-radius: 50%;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
+  background: radial-gradient(circle at 40% 35%, var(--wood-board), #3e2614);
+  color: #e8d2a6;
+  box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 220, 170, 0.35), 0 2px 4px rgba(0, 0, 0, 0.5);
   cursor: pointer;
+  pointer-events: auto;
 }
-#sound:hover {
-  background: rgba(110, 231, 160, 0.18);
+#minimap-frame button:hover {
+  color: #fff3d6;
+  filter: brightness(1.15);
+}
+/* Windrose wie auf einer gezeichneten Karte: Spitzen halb dunkel, halb hell. */
+#compass .rose {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+#compass .rose polygon {
+  stroke: #1e1209;
+  stroke-width: 1.2;
+  stroke-linejoin: miter;
+}
+#compass .rose-dark {
+  fill: #1e1209;
+}
+#compass .rose-light {
+  fill: #f1dfb6;
+}
+/* Buchstaben ohne Knopf: Antiqua in Creme, dunkel umrandet - nur beim
+   Überfahren leuchten sie auf. */
+#minimap-frame #compass button {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: #f1dfb6;
+  font: bold 16px Georgia, 'Times New Roman', serif;
+  text-shadow: 1px 1px 0 #1e1209, -1px -1px 0 #1e1209, 1px -1px 0 #1e1209, -1px 1px 0 #1e1209, 0 2px 3px rgba(0, 0, 0, 0.7);
+}
+#minimap-frame #compass button:hover {
+  color: #fff6dc;
+  filter: drop-shadow(0 0 4px rgba(255, 220, 140, 0.8));
+}
+/* Norden etwas größer und golden. */
+#minimap-frame #compass button[data-dir='N'] {
+  color: #f0c95a;
+  font-size: 19px;
+}
+/* Knöpfe außen am Reif (Hud.tsx, RingSlot): left/top ist ihre Mitte. */
+.ring-slot {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.ring-slot button {
+  position: absolute;
+  left: -16px;
+  top: -16px;
 }
 #sound .off {
   display: none;
@@ -244,35 +367,4 @@
 }
 #sound.muted .off {
   display: inline;
-}
-#compass button {
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text);
-  font: 600 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-  cursor: pointer;
-  transition: left 0.25s, top 0.25s;
-}
-#compass button:hover {
-  background: rgba(110, 231, 160, 0.18);
-}
-#compass button[data-dir='N'] {
-  color: #ff7a6b;
-}
-#compass .needle {
-  position: absolute;
-  left: 35px;
-  top: 17px;
-  width: 8px;
-  height: 44px;
-  pointer-events: none;
-  transition: transform 0.3s;
-  transform-origin: 4px 22px;
-  background: linear-gradient(#ff7a6b 0 50%, rgba(207, 233, 214, 0.55) 50% 100%);
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 }

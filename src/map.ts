@@ -4,7 +4,9 @@ import { EntityRenderer, type EntityInstance } from './gl/entityRenderer';
 import { TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
+  setViewElevation,
   snapCamera,
+  viewElevation,
   visibleWorldRect,
   type IsoView,
 } from './gl/iso';
@@ -84,10 +86,8 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, Color> = {
  * deshalb vor Stein: beide liegen im Gebirge, Gold nur in der oberen Spitze
  * der Verteilung, der Rest wird Stein.
  *
- * Diese Tabelle ist die einzige Quelle für die Schwellen. Der Shader bekommt
- * sie als Uniforms (TERRAIN_PALETTE.resourceRules), die CPU-Fassung liest sie
- * in resourceFromNoise(). Vorher standen die Zahlen doppelt da - in TypeScript
- * und in GLSL - und mussten von Hand synchron gehalten werden.
+ * Diese Tabelle ist die einzige Quelle für die Schwellen; resourceFromNoise()
+ * liest sie.
  */
 export interface ResourceRule {
   biome: TileType;
@@ -108,21 +108,10 @@ export const RESOURCE_RULES: readonly ResourceRule[] = [
 /**
  * Maßstab des Häufchen-Rauschens: ein Vorkommen misst einige Tiles. Jede
  * Regel liest es an einer eigenen Stelle (RESOURCE_CLUSTER_OFFSET * Index),
- * damit Stein und Gold nicht in denselben Häufchen liegen. Der Shader rechnet
- * genauso (resourceAt in terrainShader.ts).
+ * damit Stein und Gold nicht in denselben Häufchen liegen.
  */
 const RESOURCE_CLUSTER_SCALE = 0.075;
 const RESOURCE_CLUSTER_OFFSET = [40, 68] as const;
-
-/** Position eines Bioms in TILE_TYPE_GRADIENT - entspricht den B_*-Konstanten im Shader. */
-const BIOME_INDEX = Object.fromEntries(
-  (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t, i) => [t, i]),
-) as Record<TileType, number>;
-
-/** Position einer Ressource in RESOURCE_TYPE_COLORS - entspricht uResourceColor[] im Shader. */
-const RESOURCE_INDEX = Object.fromEntries(
-  (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map((t, i) => [t, i]),
-) as Record<ResourceType, number>;
 
 /**
  * Wertet RESOURCE_RULES aus - erste passende Regel gewinnt. `cluster(i)` ist
@@ -241,14 +230,6 @@ export function getTileRGB(tile: MapTile & { resource?: ResourceType; resourceAm
   g *= light;
   bl *= light;
 
-  if (tile.resource && tile.resource !== "none" && (tile.resourceAmount ?? 0) > 0) {
-    const [rr, rg, rb] = RESOURCE_TYPE_COLORS[tile.resource].toRGB();
-    const alpha = Math.min((tile.resourceAmount ?? 0) / 100, 1) * 0.3;
-    r = lerp(r, rr, alpha);
-    g = lerp(g, rg, alpha);
-    bl = lerp(bl, rb, alpha);
-  }
-
   return [byte(r), byte(g), byte(bl)];
 }
 
@@ -262,19 +243,6 @@ export const TERRAIN_PALETTE = {
   biomeHi: (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t) => TILE_TYPE_GRADIENT[t][1]),
   waterRamp: WATER_RAMP,
   surf: SURF,
-  resourceColors: (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map(
-      (t) => RESOURCE_TYPE_COLORS[t]),
-  resourceScale: RESOURCE_SCALE,
-  resourceClusterScale: RESOURCE_CLUSTER_SCALE,
-  resourceClusterOffset: RESOURCE_CLUSTER_OFFSET,
-  // Als Indizes, damit der Shader sie ohne Namenszuordnung vergleichen kann.
-  resourceRules: RESOURCE_RULES.map((rule) => ({
-    biome: BIOME_INDEX[rule.biome],
-    type: RESOURCE_INDEX[rule.type],
-    threshold: rule.threshold,
-    cluster: rule.cluster,
-    yield: rule.yield,
-  })),
 };
 
 /**
@@ -387,13 +355,14 @@ export class MapRenderer {
     this.entities.flatCount = count;
   }
 
+  /** false, wenn in diesem Bild nichts gezeichnet wurde - dann steht noch das letzte. */
   render(
       centerX: number,
       centerY: number,
       mouseTileX?: number,
       mouseTileY?: number,
       overlay: EntityInstance[] = [],
-  ) {
+  ): boolean {
     const canvas = this.terrain.context.canvas;
     // Auf einer Zoomstufe (Zweierpotenz) genau so fein wie das Bild; dazwischen
     // die bisherige Stufe, höchstens aber die nächstkleinere - deren Cache
@@ -421,23 +390,25 @@ export class MapRenderer {
         : null;
 
     // Nichts gezeichnet: das letzte Bild bleibt stehen - ohne Figuren darüber.
-    if (!this.terrain.render(camera)) return;
+    if (!this.terrain.render(camera)) return false;
     // Mindestens acht Geräte-Pixel: kleiner wird ein Gebäude auf der
     // herausgezoomten Karte zum Einzelpunkt und ist nicht mehr zu erkennen.
     this.entities.groundStep = this.terrain.gridCell;
     this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true);
+    return true;
   }
 }
 
 /**
- * Übersichtskarte - dieselbe Rautenansicht wie die Hauptkarte, aber flach, so
- * wie die Minimap in AoE2. Der Ausschnitt der Hauptansicht ist darauf ein
- * achsenparalleles Rechteck.
+ * Übersichtskarte wie in AoE4: ein Quadrat der Welt rund um die Stelle, die
+ * man gerade sieht, von oben, oben liegt die Blickrichtung. Das Canvas ist
+ * quadratisch, Hud.css schneidet daraus die runde Scheibe im Holzring; der Ausschnitt der Hauptansicht ist darauf ein Rechteck.
  */
 export class MiniMap {
   private terrain: TerrainRenderer;
   private entities: EntityRenderer;
-  private cssSize = 300;
+  /** Kantenlänge des Canvas in CSS-Pixeln - der Kreis reicht von Rand zu Rand (Hud.css). */
+  private cssSize = 244;
 
   /**
    * Wie viel breiter als die Hauptansicht die Minimap zeigt - bei jeder
@@ -448,6 +419,8 @@ export class MiniMap {
   /** Grenzen (u-Einheiten): ganz nah noch die Nachbarschaft, ganz weit nicht der halbe Kontinent. */
   private static readonly MIN_COVERAGE = 160;
   private static readonly MAX_COVERAGE = 6000;
+  /** Senkrecht von oben: ein Quadrat der Welt ist dann auch im Bild quadratisch. */
+  private static readonly TOP_DOWN = Math.PI / 2;
 
   constructor(
       private canvas: HTMLCanvasElement,
@@ -456,7 +429,6 @@ export class MiniMap {
   ) {
     this.terrain = new TerrainRenderer(canvas, seed, TERRAIN_PALETTE);
     this.entities = new EntityRenderer(this.terrain.context);
-    this.terrain.centerDot = true;
     // Ohne Relief gibt es nichts zu unterteilen.
     this.terrain.cellPixels = 64;
     // Die Minimap verschiebt sich nur mit der Hauptansicht und viel langsamer.
@@ -469,6 +441,21 @@ export class MiniMap {
     this.canvas.height = Math.round(this.cssSize * pixelRatio);
     this.canvas.style.width = `${this.cssSize}px`;
     this.canvas.style.height = `${this.cssSize}px`;
+  }
+
+  /**
+   * Führt `fn` mit dem Blick senkrecht von oben aus - der Blickwinkel gilt für
+   * alle Umrechnungen und Shader, die Hauptansicht bekommt danach ihren zurück.
+   * `stretch`: wie viel höher ein Stück Boden hier ist als in der Hauptansicht.
+   */
+  private topDown<T>(fn: (stretch: number) => T): T {
+    const main = viewElevation();
+    setViewElevation(MiniMap.TOP_DOWN);
+    try {
+      return fn(Math.sin(viewElevation()) / Math.sin(main));
+    } finally {
+      setViewElevation(main);
+    }
   }
 
   /** u-Einheiten, die die Minimap waagerecht abdeckt. */
@@ -491,41 +478,50 @@ export class MiniMap {
   }
 
   render(view: IsoView, overlay: EntityInstance[] = []) {
-    const mini = this.miniView(view);
-    const scale = this.canvas.width / this.cssSize;
-    const camera = snapCamera({
-      centerX: view.centerX,
-      centerY: view.centerY,
-      pixelsPerTile: mini.tileSize * scale,
-      reliefScale: 0,
-    }, this.canvas.width, this.canvas.height);
+    this.topDown((stretch) => {
+      const mini = this.miniView(view);
+      const scale = this.canvas.width / this.cssSize;
+      const camera = snapCamera({
+        centerX: view.centerX,
+        centerY: view.centerY,
+        pixelsPerTile: mini.tileSize * scale,
+        reliefScale: 0,
+      }, this.canvas.width, this.canvas.height);
 
-    const w = (view.width / view.tileSize) * mini.tileSize * scale;
-    const h = (view.height / view.tileSize) * mini.tileSize * scale;
-    this.terrain.viewRect = {
-      x: (this.canvas.width - w) / 2,
-      y: (this.canvas.height - h) / 2,
-      width: w,
-      height: h,
-    };
-    if (!this.terrain.render(camera)) return;
-    // Auf der Minimap zählt nur, dass überhaupt etwas dasteht - vier Pixel
-    // reichen dafür, die Form ist auf dieser Größe ohnehin nicht zu erkennen.
-    this.entities.render(overlay, camera, 4 / camera.pixelsPerTile);
+      const w = (view.width / view.tileSize) * mini.tileSize * scale;
+      const h = (view.height / view.tileSize) * mini.tileSize * scale * stretch;
+      this.terrain.viewRect = {
+        x: (this.canvas.width - w) / 2,
+        y: (this.canvas.height - h) / 2,
+        width: w,
+        height: h,
+      };
+      // Nichts gezeichnet: das letzte Bild bleibt stehen - ohne Figuren darüber.
+      if (!this.terrain.render(camera)) return;
+      // Auf der Minimap zählt nur, dass überhaupt etwas dasteht - vier Pixel
+      // reichen dafür, die Form ist auf dieser Größe ohnehin nicht zu erkennen.
+      this.entities.render(overlay, camera, 4 / camera.pixelsPerTile);
+    });
   }
 
-  /** Welt-Ausschnitt, den die Minimap zeigt - für das Einsammeln der Instanzen. */
   /** CSS-Pixel der Minimap je Welt-Tile bei dieser Hauptansicht. */
   pixelsPerTile(view: IsoView): number {
     return this.miniView(view).tileSize;
   }
 
+  /** Welt-Ausschnitt, den die Minimap zeigt - für das Einsammeln der Instanzen. */
   viewRectOf(view: IsoView) {
-    return visibleWorldRect({ ...this.miniView(view) });
+    return this.topDown(() => visibleWorldRect(this.miniView(view)));
+  }
+
+  /** Liegt die Stelle (CSS-Pixel im Canvas) auf der Scheibe? Die Ecken daneben sind Rahmen. */
+  inside(x: number, y: number): boolean {
+    const half = this.cssSize / 2;
+    return Math.hypot(x - half, y - half) <= half;
   }
 
   /** Rechnet einen Klick (in CSS-Pixeln) auf die Minimap in Welt-Tiles um. */
   toWorld(clickX: number, clickY: number, view: IsoView): { x: number; y: number } {
-    return screenToGround(this.miniView(view), clickX, clickY);
+    return this.topDown(() => screenToGround(this.miniView(view), clickX, clickY));
   }
 }

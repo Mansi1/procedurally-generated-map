@@ -29,17 +29,7 @@ export interface TerrainPalette {
   biomeHi: Color[];
   waterRamp: [number, number, number][];
   surf: [number, number, number];
-  resourceColors: Color[];
-  resourceScale: number;
-  /** Maßstab und Versatz je Regel für das Häufchen-Rauschen (siehe RESOURCE_RULES). */
-  resourceClusterScale: number;
-  resourceClusterOffset: readonly [number, number];
-  /** Aus RESOURCE_RULES, bereits auf Indizes abgebildet. Erste passende gewinnt. */
-  resourceRules: { biome: number; type: number; threshold: number; cluster: number; yield: number }[];
 }
-
-/** Platz für Ressourcen-Regeln im Shader - muss zu den Array-Längen dort passen. */
-const MAX_RESOURCE_RULES = 8;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -309,28 +299,6 @@ export class TerrainRenderer {
     gl.uniform3fv(this.fillLocation('uBiomeHi[0]'), flat(palette.biomeHi.map((c) => c.toRGB())));
     gl.uniform3fv(this.fillLocation('uWaterRamp[0]'), flat(palette.waterRamp));
     gl.uniform3fv(this.fillLocation('uSurf'), flat([palette.surf]));
-    gl.uniform3fv(this.fillLocation('uResourceColor[0]'),
-        flat(palette.resourceColors.map((c) => c.toRGB())));
-    gl.uniform1f(this.fillLocation('uResourceScale'), palette.resourceScale);
-    gl.uniform1f(this.fillLocation('uResourceClusterScale'), palette.resourceClusterScale);
-    gl.uniform2fv(this.fillLocation('uResourceClusterOffset'), palette.resourceClusterOffset);
-
-    const rules = palette.resourceRules;
-    if (rules.length > MAX_RESOURCE_RULES) {
-      throw new Error(
-          `Der Shader fasst ${MAX_RESOURCE_RULES} Ressourcen-Regeln, übergeben wurden ${rules.length}`);
-    }
-    gl.uniform1i(this.fillLocation('uResourceRuleCount'), rules.length);
-    gl.uniform1iv(this.fillLocation('uResourceRuleBiome[0]'),
-        new Int32Array(rules.map((r) => r.biome)));
-    gl.uniform1iv(this.fillLocation('uResourceRuleType[0]'),
-        new Int32Array(rules.map((r) => r.type)));
-    gl.uniform1fv(this.fillLocation('uResourceRuleThreshold[0]'),
-        new Float32Array(rules.map((r) => r.threshold)));
-    gl.uniform1fv(this.fillLocation('uResourceRuleCluster[0]'),
-        new Float32Array(rules.map((r) => r.cluster)));
-    gl.uniform1fv(this.fillLocation('uResourceRuleYield[0]'),
-        new Float32Array(rules.map((r) => r.yield)));
   }
 
   /**
@@ -370,8 +338,6 @@ export class TerrainRenderer {
   hoverTile: { x: number; y: number } | null = null;
   /** Ausschnitt der Hauptansicht in Geräte-Pixeln dieses Canvas - nur für die Minimap. */
   viewRect: { x: number; y: number; width: number; height: number } | null = null;
-  /** Mittelpunktmarke zeichnen - nur für die Minimap. */
-  centerDot = false;
   /** Kantenlänge einer Gitterzelle in Geräte-Pixeln. Flach reicht ein grobes Gitter. */
   cellPixels = 4;
   /**
@@ -851,7 +817,6 @@ export class TerrainRenderer {
     }
     const rect = this.viewRect;
     gl.uniform1f(this.location('uViewRectActive'), rect ? 1 : 0);
-    gl.uniform1f(this.location('uCenterDot'), this.centerDot ? 1 : 0);
     if (rect) {
       gl.uniform4f(this.location('uViewRect'), rect.x, rect.y, rect.width, rect.height);
     }

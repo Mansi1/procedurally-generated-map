@@ -1,6 +1,7 @@
 
 import { MapGenerator } from './noise';
 import {
+  type IsoView,
   visibleWorldRect,
 } from './gl/iso';
 import {
@@ -30,7 +31,8 @@ import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
 import { hoverDescription, type HoverTarget } from './game/hoverInfo';
-import { Compass, isDirection, rotateToFace } from './game/Compass';
+import { Compass, directionAt, isDirection, northAngle, rotateToFace } from './game/Compass';
+import { TurnAnimation } from './game/TurnAnimation';
 import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
@@ -232,11 +234,32 @@ world.onEvent = worldSounds(sound, camera, (x, y) => ground.heightAt(x, y));
 
 // --- Kompass ---------------------------------------------------------------
 
-/** Kompass über der Minimap (game/Compass.ts). */
-const compass = new Compass(document.getElementById('compass')!, (dir) => faceDirection(dir));
+/** Windrose um die Minimap (game/Compass.ts) - die Buchstaben außen vor den Spitzen (Hud.tsx). */
+const compass = new Compass(document.getElementById('compass')!, 155, (dir) => faceDirection(dir));
+// Die Pfeile unter der Minimap drehen um eine Vierteldrehung: was rechts bzw. links liegt, kommt nach oben.
+document.getElementById('turn-left')!.addEventListener('click', () => faceDirection(directionAt(1)));
+document.getElementById('turn-right')!.addEventListener('click', () => faceDirection(directionAt(-1)));
+
+/** Übergang beim Drehen (game/TurnAnimation.ts). */
+const turnAnimation = new TurnAnimation(
+  canvas,
+  document.getElementById('turn-snapshot') as HTMLCanvasElement,
+  document.querySelector<HTMLElement>('#minimap-frame .minimap-spin')!,
+  document.getElementById('compass')!,
+);
+/**
+ * Gewünschte Blickrichtung - gedreht wird erst in loop(), direkt nach dem
+ * Zeichnen: dann steht das alte Bild noch im Puffer und lässt sich für den
+ * Übergang festhalten.
+ */
+let pendingFacing: string | null = null;
+
+function faceDirection(dir: string) {
+  pendingFacing = dir;
+}
 
 /** Dreht die Ansicht so, dass die Richtung `dir` nach oben zeigt. */
-function faceDirection(dir: string) {
+function applyFacing(dir: string) {
   // Gedreht wird um die Stelle, die man in der Bildmitte sieht - mit ihrer
   // Geländehöhe. Um den Punkt auf Meereshöhe gedreht, wanderte ein Dorf auf
   // einem Hügel beim Drehen aus dem Bild.
@@ -381,15 +404,30 @@ const keyboard = new Keyboard({
 
 
 
+/**
+ * Die Ansicht, um die sich die Minimap legt: mittig auf der Stelle, die man in
+ * der Bildmitte wirklich sieht - mit ihrer Geländehöhe. camera.x/y ist der
+ * Punkt auf Meereshöhe; auf einem Gebirge liegt der weit hinter dem, was im
+ * Bild ist, und die flache Minimap zeigte dann die falsche Gegend.
+ */
+function minimapView(): IsoView {
+  const seen = picker.point(camera.centerX, camera.centerY);
+  return { ...camera.view(), centerX: seen.x, centerY: seen.y };
+}
+
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view());
-  camera.moveTo(target.x, target.y);
+  // Nur die Scheibe ist Karte - die Ecken des Canvas gehören zum Rahmen.
+  if (!minimap.inside(e.clientX - rect.left, e.clientY - rect.top)) return;
+  const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView());
+  // Die angeklickte Stelle mit ihrer Höhe in die Bildmitte - nicht den Punkt auf Meereshöhe.
+  camera.centerOn(target.x, target.y, ground.heightAt(target.x, target.y));
+  refreshPointer();
 });
 
 minimapCanvas.addEventListener('mousemove', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  devPanel.showMinimapPointer(minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view()));
+  devPanel.showMinimapPointer(minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView()));
 });
 minimapCanvas.addEventListener('mouseleave', () => devPanel.showMinimapPointer());
 
@@ -492,11 +530,22 @@ function loop(now: number) {
   if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
   collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
-  renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
+  const drawn = renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
+  // Das Bild für den Dreh-Übergang nur, wenn gerade gezeichnet wurde - sonst
+  // ist der WebGL-Puffer leer und der Übergang begänne schwarz.
+  if (pendingFacing && drawn) {
+    turnAnimation.capture();
+    const before = northAngle();
+    applyFacing(pendingFacing);
+    pendingFacing = null;
+    // Auf den kürzeren Weg: -180..180, eine halbe Drehung im Uhrzeigersinn.
+    const turned = ((northAngle() - before + 540) % 360) - 180;
+    turnAnimation.play(turned === -180 ? 180 : -turned);
+  }
 
-  const current = camera.view();
-  minimapDots(world, minimap, current, minimapOverlay);
-  minimap.render(current, minimapOverlay);
+  const seen = minimapView();
+  minimapDots(world, minimap, seen, minimapOverlay);
+  minimap.render(seen, minimapOverlay);
 
   devPanel.frame(now, camera);
 

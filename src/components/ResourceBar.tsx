@@ -1,8 +1,8 @@
 // ResourceBar.tsx
 // Rohstoffleiste oben links wie in AoE2: ein Steinband, darauf je Rohstoff
 // ein Symbol mit der Zahl der Sammler unten links und daneben der Vorrat,
-// dann die Bevölkerung, ein runder Knopf für untätige Dorfbewohner, die
-// Diskette zum Speichern und das Zahnrad fürs Menü.
+// dann die Bevölkerung und ein runder Knopf für untätige Dorfbewohner.
+// Speichern und Menü sitzen am Rahmen der Minimap (Hud.tsx).
 // Die Symbole zeichnet modelIcons.ts aus den Modellen des Spiels.
 // Eine defuss-Komponente: einmal gerendert, danach setzt update() über Refs
 // nur Texte, Titel und Klassen - neu gerendert luden die Bilder neu, und die
@@ -11,8 +11,6 @@
 import { createRef, render, type Props, type Ref } from 'defuss';
 import './ResourceBar.css';
 import type { ResourceKind, Resources } from '../world/catalog';
-import { MenuButton } from './MenuButton';
-import { SaveButton } from './SaveButton';
 
 import { renderIcons, renderVillagerIcons, type IconName } from './modelIcons';
 import woodBar from '../icons/wood-bar.png';
@@ -70,12 +68,8 @@ export class ResourceBar {
   private idleCount = createRef<HTMLSpanElement>();
   private playerColor: [number, number, number];
 
-  /**
-   * @param playerColor färbt die Dorfbewohner in den Symbolen
-   * @param onSave Klick auf die Diskette
-   * @param onMenu Klick aufs Zahnrad
-   */
-  constructor(root: HTMLElement, order: ResourceKind[], playerColor: [number, number, number], onSave: () => void, onMenu: () => void) {
+  /** @param playerColor färbt die Dorfbewohner in den Symbolen */
+  constructor(root: HTMLElement, order: ResourceKind[], playerColor: [number, number, number]) {
     root.style.backgroundImage = `url(${woodBar})`;
     for (const key of [...order, 'population']) this.cells.set(key, cellRefs());
     this.playerColor = playerColor;
@@ -90,8 +84,6 @@ export class ResourceBar {
           <Icon src={icons.idle} iconRef={this.idleIcon} />
           <span class="rb-count" ref={this.idleCount} />
         </button>
-        <SaveButton onClick={onSave} />
-        <MenuButton onClick={onMenu} />
       </>,
       root,
     );

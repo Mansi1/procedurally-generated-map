@@ -1,5 +1,5 @@
 // SaveButton.tsx
-// Diskette neben dem Zahnrad der Rohstoffleiste - speichert sofort; ein
+// Diskette oben links am Rahmen der Minimap - speichert sofort; ein
 // Haken bestätigt es kurz.
 
 import { createRef } from 'defuss';
