@@ -4,15 +4,21 @@ import type { LeafName, Tone } from './sources.ts';
 
 export type { LeafName, Tone } from './sources.ts';
 
-export interface LeafData {
-  readonly tone: Tone;
-  /** Umriss in Blattlängen, Stiel bei (0, 0), Spitze bei y = 1, gegen den Uhrzeigersinn. */
+/** Umriss und Ränder eines Bildes, in Höhen des Bildes; Stiel bei (0, 0), oben bei y = 1. */
+export interface LeafShape {
+  /** Gegen den Uhrzeigersinn. */
   readonly outline: readonly (readonly [number, number])[];
-  /** Linker und rechter Rand der Textur, in Blattlängen vom Stiel aus. */
+  /** Linker und rechter Rand der Textur, vom Stiel aus. */
   readonly x0: number;
   readonly x1: number;
+}
+
+export interface LeafData extends LeafShape {
+  readonly tone: Tone;
   /** Durchschnittsfarbe des Fotos, 0..1. */
   readonly average: readonly [number, number, number];
+  /** Blattebene: ein Zweig mit mehreren dieser Blätter (img/<name>-card.png); fehlt bei Nadelzweigen. */
+  readonly card?: LeafShape;
 }
 
 export const LEAVES = json as unknown as Readonly<Record<LeafName, LeafData>>;

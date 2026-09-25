@@ -19,7 +19,7 @@
 // Die Astdicke folgt dem Pipe-Modell (da Vinci): der Querschnitt eines Astes
 // trägt alle Spitzen darüber - r = tip * spitzen^(1/pipe).
 import { model, type Model } from '../models/primitives.mjs';
-import { leafMaterial, placeLeaf, type LeafMaterialInfo, type LeafMode } from './foliage.ts';
+import { hasCard, leafMaterial, placeLeaf, type LeafMaterialInfo, type LeafMode } from './foliage.ts';
 import type { LeafName } from './leaves/data.ts';
 import type { Material } from './materials.ts';
 
@@ -321,18 +321,27 @@ function pipeRadii(segments: readonly Segment[], spec: TreeSpec): [number, numbe
 /** Eckenzahl eines Astes: dicke rund, dünne dreieckig. */
 const sides = (r: number) => (r > 0.08 ? 7 : r > 0.03 ? 5 : 3);
 
+/** Wie das Laub gebaut wird. */
+export interface GrowOptions {
+  /** Blätter als Form nach dem Umriss (Standard) oder als Foto-Textur. */
+  readonly leaves?: LeafMode;
+  /** Blattebenen (ein Zweig mit mehreren Blättern je Fläche) statt einzelner Blätter - Standard ja. */
+  readonly cards?: boolean;
+}
+
 /** Zeichnet in ein Modell; sammelt die benutzten Blatt-Materialien. */
 interface Drawing {
   readonly m: Model;
   readonly mode: LeafMode;
+  readonly cards: boolean;
   readonly rnd: () => number;
   readonly leafMaterials: Map<string, LeafMaterialInfo>;
 }
 
 /** Das Gerüst als Modell: Äste als Balken, dazu Laub und Organe. */
-export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number, mode: LeafMode = 'shape') {
+export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number, { leaves = 'shape', cards = true }: GrowOptions = {}) {
   const m = model();
-  const drawing: Drawing = { m, mode, rnd, leafMaterials: new Map() };
+  const drawing: Drawing = { m, mode: leaves, cards, rnd, leafMaterials: new Map() };
   skeleton.segments.forEach((s, i) => {
     const [r0, r1] = skeleton.radii[i];
     m.beam(r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0 * 2, { w1: r1 * 2, n: sides(r0) });
@@ -374,26 +383,36 @@ function randomUnit(rnd: () => number): Vec3 {
   }
 }
 
+/** Blätter auf einer Blattebene im Mittel (4 bis 6) - so viele Einzelblätter ersetzt eine Ebene. */
+const LEAVES_PER_CARD = 3;
+
 /**
  * Echte Blätter statt der einfachen Form: ein Büschel (clump) aus leafCount
- * Blättern, die vom Punkt aus nach außen und etwas nach oben zeigen, oder ein
- * Zweigstück (needle) entlang der Astrichtung - flach wie ein Nadelzweig.
+ * Blättern bzw. entsprechend weniger Blattebenen, die vom Punkt aus nach außen
+ * und etwas nach oben zeigen, oder ein Zweigstück (needle) entlang der
+ * Astrichtung - flach wie ein Nadelzweig.
  */
 function drawLeaves(drawing: Drawing, organ: Organ, leaf: LeafName, material: Material, { p, heading, left }: Leaf, size: number) {
   const { m, mode, rnd } = drawing;
-  const { name, info } = leafMaterial(leaf, material);
+  const card = drawing.cards && organ.shape === 'clump' && hasCard(leaf);
+  const { name, info } = leafMaterial(leaf, material, card);
   drawing.leafMaterials.set(name, info);
   if (organ.shape === 'needle') {
     const dir = normalize(add(heading, randomUnit(rnd), 0.15));
     const side = normalize(add(left, dir, -dot(left, dir)));
-    placeLeaf(m, mode, leaf, name, add(p, dir, -size), dir, side, size * (3 + rnd() * 0.8));
+    placeLeaf(m, mode, leaf, false, name, add(p, dir, -size), dir, side, size * (3 + rnd() * 0.8));
     return;
   }
-  for (let i = 0; i < (organ.leafCount ?? 6); i++) {
+  const leaves = organ.leafCount ?? 6;
+  const count = card ? Math.max(1, Math.round(leaves / LEAVES_PER_CARD)) : leaves;
+  // Eine Ebene reicht weiter als ein Blatt: ihr Fuß sitzt näher am Ast, sie ist länger.
+  const reach = card ? 2 : 1;
+  for (let i = 0; i < count; i++) {
     const out = randomUnit(rnd);
     const dir = normalize(add(add(out, heading, 0.5), [0, 1, 0], 0.35));
     const side = normalize(cross(dir, randomUnit(rnd)));
-    placeLeaf(m, mode, leaf, name, add(p, out, size * 0.3), dir, side, size * (0.75 + rnd() * 0.4));
+    const base = add(p, out, size * (card ? -0.2 : 0.3));
+    placeLeaf(m, mode, leaf, card, name, base, dir, side, size * reach * (0.75 + rnd() * 0.4));
   }
 }
 
@@ -460,12 +479,12 @@ function blade(m: Model, mtl: Material, p: Vec3, heading: Vec3, left: Vec3, blad
 }
 
 /** Vom Rezept zum Modell. Wirft bei unlesbaren Regeln. */
-export function grow(spec: TreeSpec, mode: LeafMode = 'shape'): Tree {
+export function grow(spec: TreeSpec, options: GrowOptions = {}): Tree {
   const rnd = rng(spec.seed);
   const { tokens, iterations, capped } = rewrite(tokenize(spec.axiom), parseRules(spec.rules), spec.iterations, rnd);
   const skeleton = interpret(tokens, spec, rnd);
   return {
-    ...build(skeleton, spec, rnd, mode),
+    ...build(skeleton, spec, rnd, options),
     symbols: tokens.length,
     iterations,
     capped,

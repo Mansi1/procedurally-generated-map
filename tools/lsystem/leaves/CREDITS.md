@@ -1,7 +1,8 @@
 # Blattbilder - Quellen und Lizenzen
 
 Alle Bilder stammen von Wikimedia Commons. tools/lsystem/leaves/fetch.ts hat sie
-freigestellt, gedreht, verkleinert und in Graustufen umgerechnet (img/*-grey.png).
+freigestellt, gedreht, verkleinert, in Graustufen umgerechnet (img/*-grey.png) und zu
+Blattebenen zusammengesetzt (img/*-card.png).
 Die bearbeiteten Fassungen stehen unter derselben Lizenz wie das Original.
 
 | Name | Datei | Urheber | Lizenz |

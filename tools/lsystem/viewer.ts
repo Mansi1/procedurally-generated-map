@@ -28,6 +28,7 @@ const seedInput = element('seed', HTMLInputElement);
 const stats = element('stats', HTMLElement);
 const error = element('error', HTMLElement);
 const leafModeSelect = element('leafMode', HTMLSelectElement);
+const cardsSelect = element('cards', HTMLSelectElement);
 const sliders = SLIDERS.map((key) => ({ key, input: element(key, HTMLInputElement), value: element(`${key}-value`, HTMLElement) }));
 const texts = TEXTS.map((key) => ({ key, input: textField(key) }));
 
@@ -39,6 +40,7 @@ let tree: Tree | null = null;
 let generation = 0;
 
 const leafMode = (): LeafMode => (leafModeSelect.value === 'texture' ? 'texture' : 'shape');
+const cards = () => cardsSelect.value !== '0';
 
 /** Rezept aus dem gewählten Beispiel und den Eingaben. */
 function currentSpec(): TreeSpec {
@@ -63,7 +65,7 @@ async function update() {
   for (const { key, value } of sliders) value.textContent = String(spec[key]);
   let grown: Tree;
   try {
-    grown = grow(spec, mode);
+    grown = grow(spec, { leaves: mode, cards: cards() });
   } catch (e) {
     error.textContent = e instanceof Error ? e.message : String(e);
     return;
@@ -129,21 +131,24 @@ for (const group of GROUPS) {
 }
 presetSelect.addEventListener('change', () => {
   if (!isPresetName(presetSelect.value)) return;
-  history.replaceState(null, '', `?preset=${presetSelect.value}&leaves=${leafMode()}`);
+  history.replaceState(null, '', `?preset=${presetSelect.value}&leaves=${leafMode()}&cards=${cards() ? 1 : 0}`);
   load(presetSelect.value);
 });
 for (const { input } of [...sliders, ...texts]) input.addEventListener('input', update);
 seedInput.addEventListener('input', update);
 leafModeSelect.addEventListener('change', update);
+cardsSelect.addEventListener('change', update);
 element('reseed', HTMLButtonElement).addEventListener('click', () => {
   seedInput.value = String(1 + Math.floor(Math.random() * 99_999));
   update();
 });
 element('download', HTMLButtonElement).addEventListener('click', download);
 
-// ?preset=<name> - so verlinkt die Galerie (gallery.html) hierher.
-const requested = new URLSearchParams(location.search).get('preset') ?? '';
+// ?preset=<name>&leaves=shape|texture&cards=0|1 - so verlinkt die Galerie (gallery.html) hierher.
+const params = new URLSearchParams(location.search);
+const requested = params.get('preset') ?? '';
 const initial: PresetName = isPresetName(requested) ? requested : 'laubbaum';
-if (new URLSearchParams(location.search).get('leaves') === 'texture') leafModeSelect.value = 'texture';
+if (params.get('leaves') === 'texture') leafModeSelect.value = 'texture';
+if (params.get('cards') === '0') cardsSelect.value = '0';
 presetSelect.value = initial;
 load(initial);

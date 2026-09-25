@@ -36,16 +36,21 @@ in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
   Mausrad zoomt, als OBJ + MTL herunterladen.
 - Galerie aller Beispiele: <http://localhost:5173/tools/lsystem/gallery.html>
   (`?leaves=texture` für die Fotos)
-- Export aller Beispiele: `npx vite-node tools/lsystem/export.ts [--texture] [Zielordner]`
+- Export aller Beispiele: `npx vite-node tools/lsystem/export.ts [--texture] [--einzeln] [Zielordner]`
   (Standard `tools/lsystem/out`, nicht eingecheckt). Ohne `--texture` sind die Blätter
   einfarbige Flächen nach dem Umriss des Fotos, mit `--texture` Vierecke mit dem Foto
   (`map_Kd`/`map_d`, die Bilder werden nach `<Zielordner>/leaves/` kopiert).
+- Blattebenen: Das Laub besteht aus Ebenen mit einem Zweig und 4 bis 6 Blättern
+  (`img/<name>-card.png`) - weniger Flächen, dichter. `--einzeln` bzw. „Einzelblätter“
+  in der Spielwiese setzt jedes Blatt als eigene Fläche. Nadelbäume nutzen ihr
+  Zweigfoto direkt, es ist schon eine Ebene.
 - `lsystem.ts` - Regeln lesen, ersetzen, Schildkröte in 3D (mit Tropismus), Astdicke
   nach dem Pipe-Modell, Laub und Organe (Blatt, Ähre, Kolben, Rosetten, Früchte)
 - `foliage.ts` - echte Blätter: Umriss triangulieren oder Foto-Viereck, Farbe bzw. Einfärbung
 - `leaves/` - Blattfotos von Wikimedia Commons: `sources.ts` (Datei, Lizenz, Drehung),
-  `fetch.ts` lädt und stellt frei (`npx vite-node tools/lsystem/leaves/fetch.ts [name ...]`,
-  braucht Chrome wie `gen:ui`), Ergebnis in `img/`, `leaves.json` und `CREDITS.md`.
+  `fetch.ts` lädt, stellt frei und setzt die Blattebenen zusammen (`process.ts`;
+  `npx vite-node tools/lsystem/leaves/fetch.ts [name ...]`, braucht Chrome wie `gen:ui`,
+  Downloads bleiben in `.cache/`), Ergebnis in `img/`, `leaves.json` und `CREDITS.md`.
   Die Bilder stehen unter CC BY-SA/CC BY/CC0 - Urheber und Lizenz in `leaves/CREDITS.md`
   nennen, wenn sie weitergegeben werden.
 - `materials.ts`, `mtl.ts` - Farben und MTL-Ausgabe
