@@ -24,6 +24,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { Pointer } from './game/Pointer';
 import { DevPanel } from './game/DevPanel';
 import { Keyboard } from './game/keyboard';
 import { MouseInput } from './game/MouseInput';
@@ -63,6 +64,8 @@ const actionsEl = document.getElementById('actions')!;
 const boxEl = document.getElementById('select-box')!;
 /** Entwickler-Infos oben links (game/DevPanel.ts). */
 const devPanel = new DevPanel();
+/** Wo der Mauszeiger auf dem Spielfeld steht (game/Pointer.ts). */
+const pointer = new Pointer();
 
 /** Zoom beim Start: CSS-Pixel je Tile. */
 const DEFAULT_ZOOM = 32;
@@ -181,11 +184,12 @@ function updateCursor() {
     cursor = 'copy';
   } else if (trainer?.isUnitProducer()) {
     cursor = RALLY_CURSOR;
-  } else if (selection.villagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
+  } else if (selection.villagers.size > 0 && pointer.tile) {
     // Zeigt der Zeiger auf ein Objekt (Baumkrone, Fels), gilt dessen Feld.
-    const own = world.resourceInfo(mouseTileX, mouseTileY);
-    const t = world.at(mouseTileX, mouseTileY) || (own && own.type !== 'wood') ? undefined : hoverObject;
-    const [tx, ty] = t ? [t.x, t.y] : [mouseTileX, mouseTileY];
+    const { x, y } = pointer.tile;
+    const own = world.resourceInfo(x, y);
+    const t = world.at(x, y) || (own && own.type !== 'wood') ? null : pointer.object;
+    const [tx, ty] = t ? [t.x, t.y] : [x, y];
     const found = world.remainingAt(tx, ty);
     if (found.type && found.amount > 0 && !world.at(tx, ty)) {
       cursor = GATHER_CURSOR[found.type];
@@ -361,11 +365,8 @@ function faceDirection(dir: string) {
   settings.facing = dir;
   saveSettings(settings);
   // Unter dem Zeiger liegt jetzt eine andere Stelle.
-  mouseTileX = undefined;
-  mouseTileY = undefined;
-  if (mousePixelX !== undefined && mousePixelY !== undefined) {
-    updateHoveredTile(mousePixelX, mousePixelY);
-  }
+  pointer.tile = null;
+  refreshPointer();
   placement.invalidate();
 }
 
@@ -450,9 +451,7 @@ const actions = new PlayerActions({ world, camera, selection, placement, picker,
   hint,
   refreshSelection: updateSelectionUI,
   refreshResources: updateResourceUI,
-  refreshPointer: () => {
-    if (mousePixelX !== undefined && mousePixelY !== undefined) updateHoveredTile(mousePixelX, mousePixelY);
-  },
+  refreshPointer,
   setPlacing: select,
 });
 
@@ -476,19 +475,15 @@ new MouseInput(canvas, boxEl, {
   panEnd: updateCursor,
   zoom: (step, p) => setZoom(camera.zoomIndex + step, p.x, p.y),
   move: (p, buttons) => {
-    const [beforeX, beforeY] = [mouseTileX, mouseTileY];
-    updateHoveredTile(p.x, p.y);
+    const tileChanged = updateHoveredTile(p.x, p.y);
     // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
-    if (placement.sowing && placement.placingType === 'farm' && (buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
-        && (mouseTileX !== beforeX || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
-      actions.placeAt(mouseTileX, mouseTileY, true);
+    const tile = pointer.tile;
+    if (tileChanged && tile && placement.sowing && placement.placingType === 'farm' && (buttons & 1) && world.sowable(tile.x, tile.y)) {
+      actions.placeAt(tile.x, tile.y, true);
     }
   },
   leave: () => {
-    mouseTileX = undefined;
-    mouseTileY = undefined;
-    mousePixelX = undefined;
-    mousePixelY = undefined;
+    pointer.clear();
     devPanel.showTile();
     updateHoverInfo();
   },
@@ -496,11 +491,6 @@ new MouseInput(canvas, boxEl, {
 
 window.addEventListener('resize', resize);
 
-let mouseTileX: number | undefined;
-let mouseTileY: number | undefined;
-/** Letzte Mausposition auf dem Canvas in CSS-Pixeln, solange der Zeiger drauf ist. */
-let mousePixelX: number | undefined;
-let mousePixelY: number | undefined;
 
 
 /**
@@ -508,8 +498,8 @@ let mousePixelY: number | undefined;
  * Anker ist der Mauszeiger, solange er über der Karte ist, sonst die Bildmitte.
  */
 function setZoom(index: number, anchorX?: number, anchorY?: number) {
-  const ax = anchorX ?? mousePixelX ?? camera.centerX;
-  const ay = anchorY ?? mousePixelY ?? camera.centerY;
+  const ax = anchorX ?? pointer.pixel?.x ?? camera.centerX;
+  const ay = anchorY ?? pointer.pixel?.y ?? camera.centerY;
   // Welt-Punkt unter dem Anker vor dem Zoom ...
   const anchor = picker.point(ax, ay);
   if (!camera.setZoomIndex(index)) return;
@@ -517,9 +507,7 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   // ... und danach wieder genau unter den Anker legen.
   camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
 
-  if (mousePixelX !== undefined && mousePixelY !== undefined) {
-    updateHoveredTile(mousePixelX, mousePixelY);
-  }
+  refreshPointer();
   devPanel.showZoom(camera.tileSize);
 }
 
@@ -574,27 +562,26 @@ minimapCanvas.addEventListener('mousemove', (e) => {
 });
 minimapCanvas.addEventListener('mouseleave', () => devPanel.showMinimapPointer());
 
-/** Markierung und Anzeige auf das Tile unter der angegebenen Canvas-Position setzen. */
-/** Vorkommen, auf dessen Objekt der Zeiger gerade zeigt - für den Sammel-Mauszeiger. */
-let hoverObject: { x: number; y: number } | undefined;
-
-function updateHoveredTile(mouseX: number, mouseY: number) {
-  mousePixelX = mouseX;
-  mousePixelY = mouseY;
+/**
+ * Zeiger auf die Canvas-Stelle (mouseX, mouseY) setzen: Objekt und Tile
+ * darunter, Mauszeiger und Entwickler-Infos. true, wenn das Tile wechselte.
+ */
+function updateHoveredTile(mouseX: number, mouseY: number): boolean {
+  pointer.pixel = { x: mouseX, y: mouseY };
   // Nur mit ausgewählten Dorfbewohnern zählt, worauf der Zeiger zeigt.
   const object = selection.villagers.size > 0 ? picker.resourceObject(mouseX, mouseY) : undefined;
-  if (object?.x !== hoverObject?.x || object?.y !== hoverObject?.y) {
-    hoverObject = object;
-    updateCursor();
-  }
+  if (pointer.setObject(object)) updateCursor();
   const tile = picker.tile(mouseX, mouseY);
-  if (tile.x === mouseTileX && tile.y === mouseTileY) return;
-  mouseTileX = tile.x;
-  mouseTileY = tile.y;
+  if (!pointer.setTile(tile)) return false;
   updateCursor();
-
-  devPanel.showTile({ ...terrain.getTile(mouseTileX, mouseTileY), x: mouseTileX, y: mouseTileY });
+  devPanel.showTile({ ...terrain.getTile(tile.x, tile.y), x: tile.x, y: tile.y });
   updateHoverInfo();
+  return true;
+}
+
+/** Die Kamera hat sich bewegt: unter dem stehenden Zeiger liegt jetzt anderes. */
+function refreshPointer() {
+  if (pointer.pixel) updateHoveredTile(pointer.pixel.x, pointer.pixel.y);
 }
 
 /**
@@ -603,13 +590,12 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
  * während der Zeiger stillsteht.
  */
 function updateHoverInfo() {
-  const hovered = mouseTileX !== undefined && mouseTileY !== undefined
-    && mousePixelX !== undefined && mousePixelY !== undefined;
+  const { pixel, tile } = pointer;
   let target: HoverTarget = {};
-  if (hovered) {
-    const villager = picker.villager(mousePixelX!, mousePixelY!);
-    const at = picker.point(mousePixelX!, mousePixelY!);
-    target = villager ? { villager } : { animal: world.animalNear(at.x, at.y, 0.6), tile: { x: mouseTileX!, y: mouseTileY! } };
+  if (pixel && tile) {
+    const villager = picker.villager(pixel.x, pixel.y);
+    const at = picker.point(pixel.x, pixel.y);
+    target = villager ? { villager } : { animal: world.animalNear(at.x, at.y, 0.6), tile };
   }
   const { label, text } = hoverDescription(world, resources, target);
   devPanel.showObject(label, text);
@@ -653,9 +639,10 @@ function collectOverlay(blend: number) {
   }
   worldInstances(world, visible, overlay, blend, selection);
   selectionOverlay(world, selection, blend, overlay);
-  if (placement.placingType !== null && mouseTileX !== undefined && mouseTileY !== undefined) {
-    const blocked = placement.check(mouseTileX, mouseTileY, placement.placingType) !== null;
-    placementOverlay(world, placement.placingType, mouseTileX, mouseTileY, blocked, overlay);
+  const tile = pointer.tile;
+  if (placement.placingType !== null && tile) {
+    const blocked = placement.check(tile.x, tile.y, placement.placingType) !== null;
+    placementOverlay(world, placement.placingType, tile.x, tile.y, blocked, overlay);
   }
 }
 
@@ -692,9 +679,7 @@ function loop(now: number) {
   if (dx !== 0 || dy !== 0 || reliefChanged) {
     camera.panPixels(dx, dy);
     // Unter dem stehenden Zeiger zieht jetzt anderes Gelände durch.
-    if (mousePixelX !== undefined && mousePixelY !== undefined) {
-      updateHoveredTile(mousePixelX, mousePixelY);
-    }
+    refreshPointer();
   }
 
   // Feste Schritte. Der Rest bleibt für den nächsten Frame liegen, damit über
@@ -713,7 +698,7 @@ function loop(now: number) {
   }
   collectOverlay(tickAccumulator / TICK);
   renderer.setPlayerColor(player.color.toRGB());
-  renderer.render(camera.x, camera.y, mouseTileX, mouseTileY, overlay);
+  renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
 
   const current = camera.view();
   minimapDots(world, minimap, current, minimapOverlay);
