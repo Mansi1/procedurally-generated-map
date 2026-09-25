@@ -10,7 +10,8 @@
 // rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot, type EntityInstance,
+  ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot,
+  type EntityInstance,
 } from './gl/entityRenderer';
 import {
   groundToWorld, setViewElevation, setViewRotation, snapCamera, viewElevation, viewRotation, worldToGround, worldToScreen, type IsoView,
@@ -283,6 +284,10 @@ const TREES: [string, number][] = [
 const SHOWCASE: Showcase[] = [
   people(false),
   people(true),
+  // Jeder Clip aus Blender (src/models/humanoid_clips.glb) - neue erscheinen
+  // hier von selbst. Die Zeit ist die Clip-Zeit in Sekunden.
+  ...[false, true].map((female) => showcase('Clips aus Blender', female ? 'Frau (Clips)' : 'Mann (Clips)',
+    CLIPS.map((clip, i) => figure(clip.name, female, CLIP_POSE + i, 1, Math.PI * 0.25)), 240, 0.9)),
   ...(Object.keys(ANIMALS) as AnimalKind[]).map((kind) => showcase('Tiere', ANIMALS[kind].label, [
     animal(kind, 'äst', ANIMAL_POSE.graze),
     animal(kind, 'geht', ANIMAL_POSE.walk),

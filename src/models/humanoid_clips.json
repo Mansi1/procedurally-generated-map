@@ -1,0 +1,15 @@
+{
+  "rig": "humanoid",
+  "height": 1.763,
+  "fps": 30.0,
+  "clips": [
+    {
+      "name": "carve",
+      "frames": 786,
+      "duration": 26.166666666666668,
+      "props": [
+        "knife"
+      ]
+    }
+  ]
+}

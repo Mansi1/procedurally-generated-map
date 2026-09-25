@@ -7,6 +7,40 @@ Spielzustand abhängt, bleibt im Shader. Beispiele: Beeren verschwinden, ein
 Baum wird abgesägt, das Werkstück auf der Bank wächst. Solche Dinge bekommen
 aber feste, in Blender pflegbare Namensregeln.
 
+## Stand
+
+Phase 0 und Phase 1 sind fertig: Das Schnitzen kommt als Clip aus Blender.
+
+- **Gleichstand:** Der Clip entspricht der alten Formel exakt. Die rechte
+  Hand weicht über alle 786 Bilder um 0,00 cm ab.
+- **Leistung:** 500 schnitzende Figuren brauchen 38 ms je Bild. Mit den
+  Formel-Posen sind es 54–60 ms (Messung ohne Spiel-Logik, Software-GL im
+  Test-Browser). Der Clip-Weg ist also schneller: einige Texturzugriffe statt
+  viel Trigonometrie je Eckpunkt.
+- **Hin und zurück:** Eine Änderung in Blender ist nach `npm run gen:anim`
+  im Spiel zu sehen. Geprüft ist das mit einem nach hinten gedrehten Kopf.
+
+Alle anderen Posen und die Tiere laufen noch über die Formeln.
+
+## So wird jetzt gearbeitet
+
+1. `assets/blender/humanoid.blend` in Blender öffnen. Es enthält das
+   Skelett `humanoid` und dazu die Bognerei mit Werkbank als Vorlage.
+2. Den Clip bearbeiten. Das ist die Action mit demselben Namen wie im Spiel,
+   heute `carve`. Neue Clips sind neue Actions am Skelett `humanoid`.
+   Als Custom Property der Action trägt `props` die Werkzeuge in der Hand,
+   z. B. `knife`, `axe`, `scythe` (durch Komma getrennt).
+3. `npm run gen:anim` exportiert alle `.blend`-Dateien in `assets/blender/`
+   nach `src/models/<name>_clips.glb` + `.json`. Blender wird über die
+   Umgebungsvariable `BLENDER` gefunden, sonst am üblichen Ort auf macOS.
+4. In der Galerie zeigen „Clips aus Blender“ → „Mann (Clips)“ und
+   „Frau (Clips)“ jeden Clip der Bibliothek. Im Spiel spielt ihn die Pose,
+   die er ersetzt (`POSE_CLIPS` in `src/gl/entityRenderer.ts`).
+
+Die `.blend`-Dateien liegen in Git LFS (`.gitattributes`). Neu angelegt wird
+`humanoid.blend` nur einmal, mit `tools/blender/bootstrap_humanoid.py` aus dem
+Export `tools/export/bognerei.mjs`.
+
 ## Heute
 
 Alles, was sich bewegt, rechnet der Vertex-Shader in
@@ -164,7 +198,7 @@ Anzeigen, keine Animationen.
 
 ## Phasen
 
-### Phase 0: Regeln festlegen (klein)
+### Phase 0: Regeln festlegen (klein) - erledigt
 
 - **Format:** glTF 2.0 (`.glb`), Meter, Y oben, Blick nach +Z. So exportiert
   Blender von selbst.
@@ -185,7 +219,32 @@ Anzeigen, keine Animationen.
   (`blender -b datei.blend --python tools/blender/export.py`) und schreibt
   `src/models/<name>.glb`. Aufruf: `npm run gen:anim`.
 
-### Phase 1: Abspielen im Spiel, Pilot „Schnitzen“ (groß)
+### Phase 1: Abspielen im Spiel, Pilot „Schnitzen“ (groß) - erledigt
+
+Umgesetzt wie unten beschrieben, mit diesen Abweichungen:
+
+- **Lader:** Er heißt `src/gl/clips.ts` und liest die Clip-Bibliothek. Er
+  backt auch gleich die Knochen-Textur, eine eigene `animationAtlas.ts` gibt
+  es nicht. Genommen wird je Knochen und Bild nur die Drehung gegenüber der
+  Ruhelage im Weltsinn, dazu die Verschiebung der Wurzel in Körperhöhen.
+  Wie Blender Knochen intern ausrichtet, spielt deshalb keine Rolle, und ein
+  Clip passt auf jeden Körper mit denselben Knochennamen: Mann 1,76 m, Frau
+  1,72 m.
+- **Körper:** Die Körper sind noch die OBJ aus `tools/models/villagers.mjs`.
+  Gewichte kommen dort nicht aus einer Datei. Der Shader leitet je Eckpunkt
+  den Knochen aus der Teilnummer ab (`boneOf()`). Das Zugmesser verteilt er
+  wie bisher auf beide Unterarme. Weiche Gewichte aus Blender folgen in
+  Phase 2.
+- **Was glTF nicht trägt:** Clip-Länge und Werkzeuge stehen im Manifest
+  `<name>_clips.json`, das `tools/blender/export_clips.py` aus den Custom
+  Properties schreibt.
+- **Zeit:** Die Pose-Zeit wird zur Clip-Zeit. Beim Schnitzen gilt
+  (Phase − 7,854) / 6. So beginnt jeder Zug wie bei der Formel, und der Ton aus
+  `VillagerWork.swing()` bleibt im Takt. Takt-Marken aus Blender (`strike`)
+  kommen in Phase 2.
+- **Rückfall:** Die Formel für das Schnitzen bleibt vorerst im Shader.
+  Fehlt die Bibliothek oder lässt sie sich nicht lesen, läuft die Figur
+  darüber.
 
 1. **`src/gl/gltf.ts`:** liest `.glb`, also Meshes, Materialfarben, Skin
    (Knochen, `inverseBindMatrices`, `JOINTS_0` / `WEIGHTS_0`) und
