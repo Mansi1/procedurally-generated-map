@@ -1,9 +1,7 @@
 
 import { MapGenerator } from './noise';
 import {
-  pickWorld,
   visibleWorldRect,
-  worldToScreen,
 } from './gl/iso';
 import {
   MapRenderer,
@@ -12,7 +10,7 @@ import {
   Terrain,
 } from './map';
 import type { EntityInstance } from './gl/entityRenderer';
-import { TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
+import { setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
   BUILDING_ORDER,
@@ -26,10 +24,11 @@ import {
   type BuildingType,
   type CropType,
 } from './world/catalog';
-import { World, type Villager } from './world/world';
+import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
 import { hoverDescription, type HoverTarget } from './game/hoverInfo';
 import { Compass, isDirection, rotateToFace } from './game/Compass';
 import { Ground } from './game/Ground';
@@ -148,12 +147,6 @@ const sound = new Sound();
 const music = new Music();
 music.mute = !sound.enabled;
 
-/**
- * Ab dieser Zoomstufe (CSS-Pixel je Tile) stehen Bäume, Felsen und Sträucher
- * als Objekte in der Landschaft. Weiter draußen wären sie ein, zwei Pixel
- * groß - dort zeigt die Einfärbung des Geländes die Vorkommen.
- */
-const RESOURCE_OBJECTS_MIN_ZOOM = 4;
 
 /** Aktuell zum Bauen ausgewählter Typ, oder null im Ansichtsmodus. */
 let selected: BuildingType | null = null;
@@ -367,7 +360,7 @@ function faceDirection(dir: string) {
   // Gedreht wird um die Stelle, die man in der Bildmitte sieht - mit ihrer
   // Geländehöhe. Um den Punkt auf Meereshöhe gedreht, wanderte ein Dorf auf
   // einem Hügel beim Drehen aus dem Bild.
-  const pivot = pick(camera.centerX, camera.centerY);
+  const pivot = picker.point(camera.centerX, camera.centerY);
   rotateToFace(dir);
   camera.centerOn(pivot.x, pivot.y, pivot.z);
   compass.update();
@@ -397,92 +390,13 @@ function clearSelection() {
   updateSelectionUI();
 }
 
-/** Bildschirmposition (CSS-Pixel) der Figurmitte - die Stelle, auf die man klickt. */
-function villagerScreen(v: Villager) {
-  const p = v.positionAt(tickAccumulator / TICK);
-  return worldToScreen(camera.view(), p.x, p.y, ground.heightAt(p.x, p.y) + VILLAGER.size * 0.8);
-}
-
-/** Dorfbewohner unter dem Zeiger - der nächste innerhalb eines Klick-Radius. */
-function villagerAt(px: number, py: number): Villager | undefined {
-  // Mindestens ein paar Pixel, damit man die Figur auch herausgezoomt trifft.
-  const radius = Math.max(10, VILLAGER.size * camera.tileSize * 1.2);
-  let best: Villager | undefined;
-  let bestDistance = radius;
-  for (const v of world.villagers) {
-    if (v.inside > 0) continue;
-    const s = villagerScreen(v);
-    const d = Math.hypot(s.x - px, s.y - py);
-    if (d < bestDistance) {
-      bestDistance = d;
-      best = v;
-    }
-  }
-  return best;
-}
-
-/**
- * Vorkommen, dessen Objekt (Baum, Fels, Strauch) unter dem Zeiger steht -
- * auch an der Krone, nicht nur am Fuß. Jedes Objekt gilt als aufrechter
- * Streifen vom Fuß bis zur Spitze; der vorderste Treffer gewinnt.
- */
-function resourceObjectAt(px: number, py: number): { x: number; y: number } | undefined {
-  if (camera.tileSize < RESOURCE_OBJECTS_MIN_ZOOM) return undefined;
-  const v = camera.view();
-  // Etwas Rand: hohe Bäume unterhalb des Bildes ragen mit der Krone herein.
-  const rect = visibleWorldRect(v);
-  const margin = 4;
-  const area = { x: rect.x - margin, y: rect.y - margin, width: rect.width + 2 * margin, height: rect.height + 2 * margin };
-  return resources.pick(area, (inst, x, y) => {
-    const dims = modelSize(inst.shape);
-    if (!dims) return undefined;
-    // Leer abgebaut und nicht mehr zu sehen (Bäume, Felsen) - nicht treffen.
-    if (!world.resourceInfo(x, y)) return undefined;
-    const cx = inst.x + 0.5;
-    const cy = inst.y + 0.5;
-    const z = ground.heightAt(cx, cy);
-    // Ein gefällter Baum liegt flach.
-    const fallen = inst.motion && inst.motion[1] > 0.5;
-    const height = fallen ? 0.3 * inst.size : dims.height * inst.size;
-    const base = worldToScreen(v, cx, cy, z);
-    const top = worldToScreen(v, cx, cy, z + height);
-    // Halbe Breite in Pixeln: ein Stück quer zur Blickrichtung am Boden.
-    const w = dims.width * inst.size * 0.4;
-    const side = worldToScreen(v, cx + w, cy - w, z);
-    const half = Math.max(6, Math.hypot(side.x - base.x, side.y - base.y));
-    // Abstand des Zeigers zum Streifen von base nach top. Bäume laufen nach
-    // oben spitz zu - ihr Treffer auch, sonst verdeckte eine hohe Spitze den
-    // Strauch dahinter.
-    const sx = top.x - base.x;
-    const sy = top.y - base.y;
-    const len2 = sx * sx + sy * sy || 1;
-    const t = Math.max(0, Math.min(1, ((px - base.x) * sx + (py - base.y) * sy) / len2));
-    const d = Math.hypot(px - (base.x + sx * t), py - (base.y + sy * t));
-    const taper = TREES.includes(inst.shape) && !fallen ? 1 - 0.75 * t : 1;
-    return d <= Math.max(4, half * taper) ? base.y : undefined;
-  });
-}
-
-/**
- * Tile, auf das ein Klick zielt: ein Vorkommen am Objekt getroffen, sonst der
- * Boden. Liegt direkt auf dem angeklickten Feld ein Strauch, Stein oder Gold,
- * gewinnt der - auch wenn eine Baumspitze davor ins Bild ragt.
- */
-function targetTileAt(px: number, py: number): { x: number; y: number } {
-  const tile = tileAt(px, py);
-  if (world.at(tile.x, tile.y)) return tile;
-  const own = world.resourceInfo(tile.x, tile.y);
-  if (own && own.type !== 'wood') return tile;
-  return resourceObjectAt(px, py) ?? tile;
-}
-
 /**
  * Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst Vorkommen, sonst
  * nichts. Mit Umschalt (`add`) kommt es zur Auswahl dazu oder fällt heraus;
  * ein Doppelklick (`same`) auf ein Gebäude wählt alle gleichartigen in der Nähe.
  */
 function clickSelect(px: number, py: number, add: boolean, same = false) {
-  const villager = villagerAt(px, py);
+  const villager = picker.villager(px, py);
   selection.resource = null;
   if (villager) {
     selection.clearBuildings();
@@ -490,7 +404,7 @@ function clickSelect(px: number, py: number, add: boolean, same = false) {
     if (add && selection.villagers.has(villager.id)) selection.villagers.delete(villager.id);
     else selection.villagers.add(villager.id);
   } else {
-    const { x, y } = targetTileAt(px, py);
+    const { x, y } = picker.target(px, py);
     const building = world.at(x, y);
     selection.villagers.clear();
     if (building) {
@@ -524,7 +438,7 @@ function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean)
   selection.clearBuildings();
   selection.resource = null;
   for (const v of world.villagers) {
-    const s = villagerScreen(v);
+    const s = picker.villagerScreen(v);
     if (s.x >= left && s.x <= right && s.y >= top && s.y <= bottom) selection.villagers.add(v.id);
   }
   updateSelectionUI();
@@ -563,7 +477,7 @@ canvas.addEventListener('mousedown', (e) => {
   const p = canvasPoint(e);
 
   if (selected) {
-    const { x, y } = tileAt(p.x, p.y);
+    const { x, y } = picker.tile(p.x, p.y);
     sowing = selected === 'farm';
     placeHere(x, y);
     return;
@@ -641,7 +555,7 @@ function rightClick(p: { x: number; y: number }) {
     return;
   }
   // Auf das Objekt gezielt (Baumkrone, Fels) zählt dessen Feld.
-  const { x, y } = targetTileAt(p.x, p.y);
+  const { x, y } = picker.target(p.x, p.y);
 
   // Ausbildende Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt - bei
   // mehreren für alle.
@@ -657,7 +571,7 @@ function rightClick(p: { x: number; y: number }) {
 
   if (selection.villagers.size === 0) return;
   // Auf ein Tier (lebend oder erlegt): jagen bzw. zerlegen.
-  const at = pick(p.x, p.y);
+  const at = picker.point(p.x, p.y);
   const prey = world.animalNear(at.x, at.y, 0.6);
   if (prey) {
     world.hunt(selection.villagers, prey);
@@ -840,15 +754,8 @@ let lastAnimalCheck = 0;
 const ground = new Ground(mapGen, world, renderer, camera);
 world.groundAt = (x, y) => ground.groundAt(x, y);
 
-/** Welt-Punkt unter einer Canvas-Position (CSS-Pixel), mit Relief. */
-function pick(px: number, py: number) {
-  return pickWorld(camera.view(), px, py, (x, y) => ground.heightAt(x, y));
-}
-
-function tileAt(px: number, py: number) {
-  const p = pick(px, py);
-  return { x: Math.floor(p.x), y: Math.floor(p.y) };
-}
+/** Was unter dem Zeiger liegt: Welt-Punkt, Tile, Dorfbewohner, Vorkommen (game/Picker.ts). */
+const picker = new Picker(world, resources, camera, ground, () => tickAccumulator / TICK);
 
 window.addEventListener('resize', resize);
 
@@ -868,7 +775,7 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   const ax = anchorX ?? mousePixelX ?? camera.centerX;
   const ay = anchorY ?? mousePixelY ?? camera.centerY;
   // Welt-Punkt unter dem Anker vor dem Zoom ...
-  const anchor = pick(ax, ay);
+  const anchor = picker.point(ax, ay);
   if (!camera.setZoomIndex(index)) return;
   renderer.tileSize = camera.tileSize;
   // ... und danach wieder genau unter den Anker legen.
@@ -1010,12 +917,12 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   mousePixelX = mouseX;
   mousePixelY = mouseY;
   // Nur mit ausgewählten Dorfbewohnern zählt, worauf der Zeiger zeigt.
-  const object = selection.villagers.size > 0 ? resourceObjectAt(mouseX, mouseY) : undefined;
+  const object = selection.villagers.size > 0 ? picker.resourceObject(mouseX, mouseY) : undefined;
   if (object?.x !== hoverObject?.x || object?.y !== hoverObject?.y) {
     hoverObject = object;
     updateCursor();
   }
-  const tile = tileAt(mouseX, mouseY);
+  const tile = picker.tile(mouseX, mouseY);
   if (tile.x === mouseTileX && tile.y === mouseTileY) return;
   mouseTileX = tile.x;
   mouseTileY = tile.y;
@@ -1040,8 +947,8 @@ function updateHoverInfo() {
     && mousePixelX !== undefined && mousePixelY !== undefined;
   let target: HoverTarget = {};
   if (hovered) {
-    const villager = villagerAt(mousePixelX!, mousePixelY!);
-    const at = pick(mousePixelX!, mousePixelY!);
+    const villager = picker.villager(mousePixelX!, mousePixelY!);
+    const at = picker.point(mousePixelX!, mousePixelY!);
     target = villager ? { villager } : { animal: world.animalNear(at.x, at.y, 0.6), tile: { x: mouseTileX!, y: mouseTileY! } };
   }
   const { label, text } = hoverDescription(world, resources, target);
