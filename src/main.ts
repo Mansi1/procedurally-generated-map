@@ -28,6 +28,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
 import { hoverDescription, type HoverTarget } from './game/hoverInfo';
 import { Compass, isDirection, rotateToFace } from './game/Compass';
@@ -149,12 +150,13 @@ music.mute = !sound.enabled;
 
 
 /** Aktuell zum Bauen ausgewählter Typ, oder null im Ansichtsmodus. */
-let selected: BuildingType | null = null;
+/** Baumodus: welche Art gebaut wird, Felder säen, Bauplatz-Prüfung (game/Placement.ts). */
+const placement = new Placement(world);
 
 // --- Baumenü ---------------------------------------------------------------
 
 const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), {
-  build: (type) => select(selected === type ? null : type),
+  build: (type) => select(placement.placingType === type ? null : type),
   // Feld aus dem Untermenü: mit dieser Frucht abstecken.
   crop: (crop) => {
     world.nextFarmCrop = crop;
@@ -162,12 +164,12 @@ const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), {
   },
   back: () => {
     buildMenu.showFarms(false);
-    if (selected === 'farm') select(null);
+    if (placement.placingType === 'farm') select(null);
   },
 });
 
 function select(type: BuildingType | null) {
-  selected = type;
+  placement.placingType = type;
   // Wer baut, wählt nicht gleichzeitig aus - sonst tut ein Klick zwei Dinge.
   if (type) clearSelection();
   // Kein Feld mehr: zurück vom Untermenü der Felder zum Baumenü.
@@ -184,7 +186,7 @@ function select(type: BuildingType | null) {
 function updateCursor() {
   let cursor = 'crosshair';
   const trainer = selection.focused();
-  if (selected) {
+  if (placement.placingType) {
     cursor = 'copy';
   } else if (trainer?.isUnitProducer()) {
     cursor = RALLY_CURSOR;
@@ -324,7 +326,7 @@ function updateResourceUI() {
   updateSelectionUI();
   // Der Vorrat wächst von allein: was eben noch zu teuer war, ist es jetzt
   // vielleicht nicht mehr - die gemerkte Bauplatz-Prüfung muss also mit.
-  invalidatePlacementCheck();
+  placement.invalidate();
 }
 
 // --- Ton -------------------------------------------------------------------
@@ -373,7 +375,7 @@ function faceDirection(dir: string) {
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
-  invalidatePlacementCheck();
+  placement.invalidate();
 }
 
 
@@ -448,13 +450,11 @@ function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean)
 const DRAG_THRESHOLD = 5;
 let drag: { x: number; y: number; active: boolean } | null = null;
 /** Felder werden Tile für Tile markiert - mit gedrückter Taste auch im Ziehen. */
-let sowing = false;
 
 /** Im Baumodus ein Gebäude bzw. Feldstück setzen; false, wenn es nicht ging. */
 function placeHere(x: number, y: number, quiet = false): boolean {
-  if (!selected) return false;
-  const reason = world.place(x, y, selected);
-  invalidatePlacementCheck();
+  if (!placement.isActive) return false;
+  const reason = placement.place(x, y);
   if (reason) {
     if (!quiet) hint(reason);
     return false;
@@ -463,7 +463,7 @@ function placeHere(x: number, y: number, quiet = false): boolean {
   updateResourceUI();
   // Reicht der Vorrat nicht für ein weiteres, zurück in den Ansichtsmodus -
   // sonst klickt man ins Leere und bekommt nur Fehlermeldungen.
-  if (!world.affordable(selected)) select(null);
+  if (!placement.canAffordAnother()) select(null);
   return true;
 }
 
@@ -476,9 +476,9 @@ canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const p = canvasPoint(e);
 
-  if (selected) {
+  if (placement.placingType) {
     const { x, y } = picker.tile(p.x, p.y);
-    sowing = selected === 'farm';
+    placement.sowing = placement.placingType === 'farm';
     placeHere(x, y);
     return;
   }
@@ -500,7 +500,7 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) sowing = false;
+  if (e.button === 0) placement.sowing = false;
   if (e.button !== 0 || !drag) return;
   const p = canvasPoint(e);
   if (drag.active) boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
@@ -550,7 +550,7 @@ window.addEventListener('mouseup', (e) => {
 
 /** Rechtsklick: im Baumodus abbrechen, mit Dorfbewohnern ein Befehl. */
 function rightClick(p: { x: number; y: number }) {
-  if (selected) {
+  if (placement.placingType) {
     select(null);
     return;
   }
@@ -697,7 +697,7 @@ function demolishSelected() {
   if (buildings.length === 0) return;
   for (const b of buildings) world.remove(b);
   selection.clearBuildings();
-  invalidatePlacementCheck();
+  placement.invalidate();
   updateResourceUI();
 }
 
@@ -819,8 +819,8 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (buildMenu.farmsOpen) {
       buildMenu.showFarms(false);
-      if (selected === 'farm') select(null);
-    } else if (selected) select(null);
+      if (placement.placingType === 'farm') select(null);
+    } else if (placement.placingType) select(null);
     else clearSelection();
   }
   if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
@@ -853,7 +853,7 @@ window.addEventListener('keydown', (e) => {
   const byKey = BUILDING_ORDER.find((type) => BUILDINGS[type].key === e.key);
   // Das Feld öffnet das Untermenü (Weizen, Mais).
   if (byKey === 'farm') buildMenu.showFarms(true);
-  else if (byKey) select(selected === byKey ? null : byKey);
+  else if (byKey) select(placement.placingType === byKey ? null : byKey);
 });
 
 /**
@@ -966,7 +966,7 @@ canvas.addEventListener('mousemove', (e) => {
   const [before, beforeY] = [mouseTileX, mouseTileY];
   updateHoveredTile(e.clientX - rect.left, e.clientY - rect.top);
   // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
-  if (sowing && selected === 'farm' && (e.buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
+  if (placement.sowing && placement.placingType === 'farm' && (e.buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
       && (mouseTileX !== before || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
     placeHere(mouseTileX, mouseTileY, true);
   }
@@ -1013,19 +1013,6 @@ const minimapOverlay: EntityInstance[] = [];
  * das 81 Geländeabfragen. Für die Vorschau wird das Ergebnis gemerkt, solange
  * Feld und Gebäudetyp gleich bleiben; sonst liefe die Suche je Bild neu.
  */
-let lastCheck = { x: NaN, y: NaN, type: '' as string, result: null as string | null };
-
-function placementCheck(x: number, y: number, type: BuildingType): string | null {
-  if (lastCheck.x !== x || lastCheck.y !== y || lastCheck.type !== type) {
-    lastCheck = { x, y, type, result: world.canPlace(x, y, type) };
-  }
-  return lastCheck.result;
-}
-
-/** Nach jedem Eingriff verwerfen - Vorrat und belegte Felder haben sich geändert. */
-function invalidatePlacementCheck() {
-  lastCheck.x = NaN;
-}
 
 /** Alles, was über dem Gelände gezeichnet wird: Vorkommen, Welt, Auswahl und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
@@ -1037,9 +1024,9 @@ function collectOverlay(blend: number) {
   }
   worldInstances(world, visible, overlay, blend, selection);
   selectionOverlay(world, selection, blend, overlay);
-  if (selected !== null && mouseTileX !== undefined && mouseTileY !== undefined) {
-    const blocked = placementCheck(mouseTileX, mouseTileY, selected) !== null;
-    placementOverlay(world, selected, mouseTileX, mouseTileY, blocked, overlay);
+  if (placement.placingType !== null && mouseTileX !== undefined && mouseTileY !== undefined) {
+    const blocked = placement.check(mouseTileX, mouseTileY, placement.placingType) !== null;
+    placementOverlay(world, placement.placingType, mouseTileX, mouseTileY, blocked, overlay);
   }
 }
 
