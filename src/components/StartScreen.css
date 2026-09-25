@@ -60,16 +60,10 @@ body.title-screen #app > :not(#game) {
   letter-spacing: 0.04em;
   color: var(--cream);
   text-shadow: 2px 2px 0 #000;
-  background: var(--button-wood);
-  border: 2px solid var(--wood-edge);
   border-radius: 5px;
   box-shadow:
     var(--button-shine),
     0 3px 0 rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-}
-#start .start-btn:hover:not([disabled]) {
-  filter: brightness(1.2);
 }
 #start .start-btn:active:not([disabled]) {
   transform: translateY(2px);

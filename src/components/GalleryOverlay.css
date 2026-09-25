@@ -120,27 +120,6 @@
   gap: 6px;
   pointer-events: auto;
 }
-.gal-chip,
-.gal-rotate button {
-  padding: 6px 14px;
-  font: bold 14px Georgia, 'Times New Roman', serif;
-  color: #fff;
-  text-shadow: 1px 1px 0 #000;
-  background: var(--button-wood);
-  border: 2px solid var(--wood-edge);
-  border-radius: 4px;
-  box-shadow: var(--button-shine);
-  cursor: pointer;
-}
-.gal-chip:hover,
-.gal-rotate button:hover {
-  filter: brightness(1.2);
-}
-.gal-chip.active {
-  color: var(--wood-ink);
-  text-shadow: none;
-  background: var(--button-gold);
-}
 .gal-rotate button {
   padding: 4px 12px;
   font-size: 18px;
@@ -158,7 +137,6 @@
 /* Zusatz (Abriss): rot und etwas abgesetzt von den Varianten. */
 .gal-chip.gal-extra {
   margin-left: 14px;
-  background: var(--button-danger);
 }
 .gal-chip.gal-extra.active {
   color: #fff;

@@ -233,7 +233,7 @@ src/
 
 - [x] 4.1 CSS-Variablen für den Holz-Stil in `style.css` (`--wood-edge`, `--cream`,
   `--gold`, `--button-wood` …), Farbwerte in `components/*.css` ersetzt
-- [ ] 4.2 Ein Knopf-Grundstil (`.btn`, `.btn-gold`, `.btn-danger`) statt vier fast gleicher
+- [x] 4.2 Ein Knopf-Grundstil `.wood-btn` (mit `.gold`, `.active`, `.danger`) in `style.css` statt vier fast gleicher
 
 ### Phase 5: Aufräumen (B10, B11)
 

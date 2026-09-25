@@ -82,8 +82,8 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
         <div class="gal-heading" ref={heading} />
         <div class="gal-chips" ref={chips} />
         <div class="gal-rotate">
-          <button type="button" title="Links herum drehen" onClick={() => hooks.rotate(-1)}>⟲</button>
-          <button type="button" title="Rechts herum drehen" onClick={() => hooks.rotate(1)}>⟳</button>
+          <button type="button" class="wood-btn" title="Links herum drehen" onClick={() => hooks.rotate(-1)}>⟲</button>
+          <button type="button" class="wood-btn" title="Rechts herum drehen" onClick={() => hooks.rotate(1)}>⟳</button>
         </div>
       </div>
       <div class="gal-help">Ziehen verschiebt · Mausrad zoomt · ↑/↓ Modell · ←/→ Animation</div>
@@ -105,11 +105,11 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
     render(
       <>
         {it.animations.map((name, i) => (
-          <button type="button" class={i === animation ? 'gal-chip active' : 'gal-chip'} onClick={() => hooks.animate(i)}>{name}</button>
+          <button type="button" class={i === animation ? 'wood-btn gal-chip active' : 'wood-btn gal-chip'} onClick={() => hooks.animate(i)}>{name}</button>
         ))}
         {/* Zusatz, abgesetzt: gilt für die gewählte Variante. */}
         {(it.extras ?? []).map((name) => (
-          <button type="button" class={extra ? 'gal-chip gal-extra active' : 'gal-chip gal-extra'} onClick={() => hooks.extra()}
+          <button type="button" class={extra ? 'wood-btn danger gal-chip gal-extra active' : 'wood-btn danger gal-chip gal-extra'} onClick={() => hooks.extra()}
             title={`${name} der gewählten Variante ein/aus`}>{extra ? `■ ${name}` : `▶ ${name}`}</button>
         ))}
       </>,

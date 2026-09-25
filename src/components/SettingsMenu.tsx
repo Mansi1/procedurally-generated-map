@@ -97,7 +97,7 @@ export class SettingsMenu {
         <img class="menu-logo" src="/logo.svg" alt="Soliva" />
         <div class="menu-title" ref={this.title}>Menü</div>
         <div class="menu-top" ref={this.mainMenuRow}>
-          <button type="button" class="menu-btn" onClick={() => this.mainMenu()}>← Hauptmenü</button>
+          <button type="button" class="wood-btn menu-btn" onClick={() => this.mainMenu()}>← Hauptmenü</button>
         </div>
         <section>
           <h3>Spieler</h3>
@@ -115,13 +115,13 @@ export class SettingsMenu {
           <h3>Spiel</h3>
           <div class="menu-row" ref={this.pauseRow}>
             <span>Pause <small>F3</small></span>
-            <button type="button" class="menu-btn" ref={this.pauseButton} onClick={act(() => this.hooks.togglePause())} />
+            <button type="button" class="wood-btn menu-btn" ref={this.pauseButton} onClick={act(() => this.hooks.togglePause())} />
           </div>
           <div class="menu-row">
             <span>Geschwindigkeit</span>
             <span class="menu-choice">
               {SPEEDS.map(([value, label], i) => (
-                <button type="button" ref={this.speedButtons[i]} onClick={() => this.change({ speed: value })}>{label}</button>
+                <button type="button" class="wood-btn" ref={this.speedButtons[i]} onClick={() => this.change({ speed: value })}>{label}</button>
               ))}
             </span>
           </div>
@@ -130,7 +130,7 @@ export class SettingsMenu {
           <h3>Ton</h3>
           <div class="menu-row">
             <span>Ton <small>M</small></span>
-            <button type="button" class="menu-btn" ref={this.soundButton} onClick={act(() => this.hooks.toggleSound())} />
+            <button type="button" class="wood-btn menu-btn" ref={this.soundButton} onClick={act(() => this.hooks.toggleSound())} />
           </div>
           <div class="menu-row">
             <span>Lautstärke</span>
@@ -142,7 +142,7 @@ export class SettingsMenu {
           </div>
           <div class="menu-row">
             <span class="menu-track" ref={this.track} />
-            <button type="button" class="menu-btn" onClick={act(() => this.hooks.nextTrack())}>Nächstes Stück</button>
+            <button type="button" class="wood-btn menu-btn" onClick={act(() => this.hooks.nextTrack())}>Nächstes Stück</button>
           </div>
         </section>
         <section>
@@ -172,15 +172,15 @@ export class SettingsMenu {
         <section>
           <div class="menu-row">
             <span>Alle Einstellungen</span>
-            <button type="button" class="menu-btn" onClick={() => this.reset()}>Zurücksetzen</button>
+            <button type="button" class="wood-btn menu-btn" onClick={() => this.reset()}>Zurücksetzen</button>
           </div>
         </section>
         <div class="menu-footer" ref={this.gameButtons}>
-          <button type="button" class="menu-btn" ref={this.saveButton} onClick={() => this.save()}>Speichern</button>
-          <button type="button" class="menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
+          <button type="button" class="wood-btn menu-btn" ref={this.saveButton} onClick={() => this.save()}>Speichern</button>
+          <button type="button" class="wood-btn menu-btn" onClick={() => this.close()}>Weiter spielen <small>Esc</small></button>
         </div>
         <div class="menu-footer menu-footer-end" ref={this.backButton} hidden>
-          <button type="button" class="menu-btn" onClick={() => this.close()}>Zurück <small>Esc</small></button>
+          <button type="button" class="wood-btn menu-btn" onClick={() => this.close()}>Zurück <small>Esc</small></button>
         </div>
       </div>
     );

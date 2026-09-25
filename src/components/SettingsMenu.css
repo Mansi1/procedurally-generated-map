@@ -128,18 +128,6 @@
 #menu .menu-btn,
 #menu .menu-choice button {
   padding: 5px 12px;
-  font: bold 14px Georgia, 'Times New Roman', serif;
-  color: #fff;
-  text-shadow: 1px 1px 0 #000;
-  background: var(--button-wood);
-  border: 2px solid var(--wood-edge);
-  border-radius: 4px;
-  box-shadow: var(--button-shine);
-  cursor: pointer;
-}
-#menu .menu-btn:hover,
-#menu .menu-choice button:hover {
-  filter: brightness(1.2);
 }
 #menu .menu-choice {
   display: inline-flex;
@@ -156,11 +144,6 @@
 }
 #menu .menu-choice button:last-child {
   border-radius: 0 4px 4px 0;
-}
-#menu .menu-choice button.active {
-  background: var(--button-gold);
-  color: var(--wood-ink);
-  text-shadow: none;
 }
 /* Spielerfarben: runde Farbfelder, das gewählte mit goldenem Rand */
 #menu .menu-colors {
@@ -201,9 +184,6 @@
 /* Ausgeblendete Zeilen und Knöpfe (aus dem Hauptmenü) - gegen display: flex. */
 #menu .menu-board [hidden] {
   display: none;
-}
-#menu .menu-btn.danger {
-  background: var(--button-danger);
 }
 /* Tastenkürzel unter Steuerung: Tasten links, Wirkung rechts. */
 #menu .menu-keys {

@@ -45,8 +45,8 @@ export function confirmDialog(question: string, options: ConfirmOptions = {}): P
       <div class="confirm-board" role="alertdialog" aria-label={question} style={`background-image:url(${woodBar})`}>
         <p class="confirm-question">{question}</p>
         <div class="confirm-buttons">
-          <button type="button" class="confirm-btn" onClick={() => done(false)}>Abbrechen</button>
-          <button type="button" class={options.danger ? 'confirm-btn confirm-ok danger' : 'confirm-btn confirm-ok'}
+          <button type="button" class="wood-btn confirm-btn" onClick={() => done(false)}>Abbrechen</button>
+          <button type="button" class={options.danger ? 'wood-btn confirm-btn confirm-ok danger' : 'wood-btn confirm-btn confirm-ok gold'}
             onClick={() => done(true)}>{options.ok ?? 'Ja'}</button>
         </div>
       </div>,

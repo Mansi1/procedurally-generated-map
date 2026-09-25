@@ -33,3 +33,33 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
 }
+/* Holzknopf - Menü, Hauptmenü, Rückfragen, Galerie. Die Komponente setzt nur,
+   was abweicht (Größe, Schrift). Gold: gewählt oder Bestätigen; danger: Abriss,
+   Löschen. */
+.wood-btn {
+  padding: 6px 14px;
+  font: bold 14px Georgia, 'Times New Roman', serif;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+  background: var(--button-wood);
+  border: 2px solid var(--wood-edge);
+  border-radius: 4px;
+  box-shadow: var(--button-shine);
+  cursor: pointer;
+}
+.wood-btn:hover:not([disabled]),
+.wood-btn:focus-visible {
+  filter: brightness(1.2);
+  outline: none;
+}
+.wood-btn.gold,
+.wood-btn.active {
+  background: var(--button-gold);
+  color: var(--wood-ink);
+  text-shadow: none;
+}
+.wood-btn.danger {
+  background: var(--button-danger);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000;
+}

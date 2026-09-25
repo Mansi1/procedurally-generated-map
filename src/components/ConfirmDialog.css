@@ -40,27 +40,5 @@
 }
 .confirm-btn {
   padding: 7px 16px;
-  font: bold 15px Georgia, 'Times New Roman', serif;
-  color: #fff;
-  text-shadow: 1px 1px 0 #000;
-  background: var(--button-wood);
-  border: 2px solid var(--wood-edge);
-  border-radius: 4px;
-  box-shadow: var(--button-shine);
-  cursor: pointer;
-}
-.confirm-btn:hover,
-.confirm-btn:focus-visible {
-  filter: brightness(1.2);
-  outline: none;
-}
-.confirm-ok {
-  background: var(--button-gold);
-  color: var(--wood-ink);
-  text-shadow: none;
-}
-.confirm-ok.danger {
-  background: var(--button-danger);
-  color: #fff;
-  text-shadow: 1px 1px 0 #000;
+  font-size: 15px;
 }

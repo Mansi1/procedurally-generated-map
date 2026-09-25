@@ -37,7 +37,7 @@ function StartButton({ label, hint, onClick, disabled, submit }: {
   label: string; hint?: string; onClick?: () => void; disabled?: boolean; submit?: boolean;
 }) {
   return (
-    <button type={submit ? 'submit' : 'button'} class="start-btn" disabled={disabled} onClick={onClick}>
+    <button type={submit ? 'submit' : 'button'} class="wood-btn start-btn" disabled={disabled} onClick={onClick}>
       {label}
       {hint ? <small>{hint}</small> : null}
     </button>
