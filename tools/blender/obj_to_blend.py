@@ -111,6 +111,9 @@ def convert(obj_path, blend_path):
         ob['obj_name'] = o['name']
         ob['obj_order'] = order
         scene.collection.objects.link(ob)
+        # Wie Blender es genannt hat (doppelte Namen nummeriert es um) - ein
+        # anderer Name später heißt: in Blender umbenannt (blend_to_obj.py).
+        ob['obj_blender_name'] = ob.name
 
     scene['obj_header'] = '\n'.join(header)
     scene['obj_mtllib'] = mtllib or ''

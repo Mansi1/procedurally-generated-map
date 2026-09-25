@@ -2,7 +2,8 @@
 # (docs/BLENDER.md) - Gegenstück zu obj_to_blend.py.
 #
 # - Jedes sichtbare Mesh-Objekt wird ein `o` im OBJ, mit seinem Namen im
-#   Spiel: Custom Property `obj_name`, sonst der Blender-Name ohne ".001".
+#   Spiel: Custom Property `obj_name` - wird das Objekt in Blender umbenannt,
+#   kopiert oder neu angelegt, der Blender-Name (siehe game_name).
 #   Reihenfolge nach `obj_order`, neue Objekte danach nach Namen.
 # - Lage, Drehung und Größe des Objekts in Blender werden eingerechnet.
 # - Die Farbe eines Materials ist Kd in der MTL-Datei. Teilen sich mehrere
@@ -29,7 +30,21 @@ def fmt(v):
 
 
 def game_name(ob):
-    return ob.get('obj_name') or re.sub(r'\.\d{3}$', '', ob.name)
+    """Name des Objekts im Spiel.
+
+    obj_name gilt, solange das Objekt in Blender noch so heißt wie nach dem
+    Anlegen (obj_blender_name - Blender nummeriert doppelte Namen um,
+    "Window.Frame.001", "Berry.94"). Wurde es umbenannt oder ist es neu bzw.
+    kopiert, gilt der Blender-Name - ohne ".001", wenn es den Namen davor in
+    der Szene noch einmal gibt (eine Kopie von "Window.Frame" heißt wieder so).
+    """
+    stored = ob.get('obj_name')
+    if stored and ob.name == ob.get('obj_blender_name', stored):
+        return stored
+    m = re.fullmatch(r'(.*)\.\d{3}', ob.name)
+    if m and any(o is not ob and (o.name == m.group(1) or o.get('obj_name') == m.group(1)) for o in ob.users_scene[0].objects):
+        return m.group(1)
+    return ob.name
 
 
 def exported(ob):

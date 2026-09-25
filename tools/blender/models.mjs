@@ -2,6 +2,7 @@
 // assets/blender/models/ wird ein OBJ + MTL in src/models/.
 //
 //   npm run gen:models            alle .blend exportieren (tools/blender/blend_to_obj.py)
+//                                 und die Namen mit Bedeutung prüfen (check-models.mjs)
 //   node tools/blender/models.mjs init [name ...]
 //                                 einmalig: aus den OBJ in src/models je eine .blend
 //                                 anlegen (obj_to_blend.py) und prüfen, dass der
@@ -14,6 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+import { checkModels } from './check-models.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const blender = process.env.BLENDER ?? '/Applications/Blender.app/Contents/MacOS/Blender';
@@ -90,4 +92,11 @@ if (mode === 'init') {
   const files = blendFiles();
   const n = exportAll(modelsDir, files);
   console.log(`${n ?? 0} Modelle aus Blender nach src/models exportiert`);
+  // Namen mit Bedeutung prüfen (Entry, Sails, Stock.<n> ... - docs/BLENDER.md).
+  const problems = checkModels(modelsDir);
+  if (problems.length) {
+    console.log(`Namen in den Modellen - ${problems.length} Probleme:\n  ${problems.join('\n  ')}`);
+    process.exit(1);
+  }
+  console.log('Namen in den Modellen: alles da');
 }

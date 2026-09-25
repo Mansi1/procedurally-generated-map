@@ -57,10 +57,13 @@ Spiel also kleiner.
 Das Spiel kennt keine Blender-Datei, nur das exportierte OBJ. Darin zählen:
 
 - **Der Name jedes Objekts.** Er sagt dem Spiel, was das Teil ist. Weil
-  Blender doppelte Namen durchnummeriert (`Window.Frame.001`), steht der Name
-  fürs Spiel in der Custom Property **`obj_name`** des Objekts (Object
-  Properties → Custom Properties). Fehlt sie (neues Objekt), gilt der
-  Blender-Name ohne `.001`.
+  Blender doppelte Namen durchnummeriert (`Window.Frame.001`, `Berry.94`),
+  steht der Name fürs Spiel in der Custom Property **`obj_name`** des Objekts
+  (Object Properties → Custom Properties). Sie gilt, solange das Objekt in
+  Blender so heißt wie nach dem Anlegen (`obj_blender_name`). Umbenennen in
+  Blender wirkt also: dann gilt der neue Name. Eine Kopie (Shift+D) von
+  `Window.Frame` heißt in Blender `Window.Frame.003` und im Spiel wieder
+  `Window.Frame`; ein neues Objekt heißt im Spiel wie in Blender.
 - **Der Name des Materials.** Er bestimmt das Aussehen: Farbe aus der MTL,
   Muster aus dem Shader (Holz, Stroh, Leinen, Marmor ...). `Paint` und
   `Tunic` werden zur Spielerfarbe. Materialnamen beim Bearbeiten behalten;
@@ -83,6 +86,13 @@ Namen mit Bedeutung (nicht umbenennen, beim Kopieren mitnehmen):
 | `Stock.<n>` | Bögen in der Waffenkammer, je Vorrat sichtbar |
 | `Craft.<n>` | Stufen des Bogens auf der Werkbank |
 | `Cut.Roof`, `Cut.Wall` | Dach und Wände der Waffenkammer, beim Hineinsehen weg bzw. niedrig |
+
+**Geprüft bei jedem Export:** `npm run gen:models` bricht mit einer Meldung
+ab, wenn einem Modell ein Name mit Bedeutung fehlt - z. B. ein Gebäude ohne
+`Entry`, eine Mühle ohne `Sails`, Lücken in `Stock.0` bis `Stock.99`, ein
+Werkzeug im Körper eines Dorfbewohners - oder wenn eine Fläche kein Material
+hat. Die Regeln stehen in `tools/blender/check-models.mjs`, einzeln:
+`npm run check:models`.
 
 Hilfsobjekte, die nicht ins Spiel sollen: in eine Collection legen, deren
 Name mit `Vorlage` beginnt, oder im Render ausblenden (Kamera-Symbol).
