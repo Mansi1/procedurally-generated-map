@@ -9,6 +9,10 @@
 // intern ausrichtet, spielt so keine Rolle), dazu die Verschiebung der Wurzel
 // in Körperhöhen. Gebacken wird mit den Gelenken der jeweiligen Figur - so
 // passt ein Clip auf Mann und Frau.
+//
+// Skelette sind Daten (Rig): Knochen, Eltern und wo ihre Drehpunkte im Modell
+// liegen. Heute gibt es HUMANOID (Dorfbewohner); Tiere, Mühle und Fahne
+// bekommen ihr eigenes Rig und ihre eigene Clip-Bibliothek.
 
 /** Knochen der Menschen-Figuren: Name und Eltern. Die Reihenfolge ist die Spalte in der Textur. */
 export const HUMANOID_BONES: readonly (readonly [string, string | null])[] = [
@@ -22,6 +26,20 @@ export const HUMANOID_BONES: readonly (readonly [string, string | null])[] = [
   ['shoulder.R', 'upperBody'], ['upperArm.R', 'shoulder.R'], ['forearm.R', 'upperArm.R'],
 ];
 export const BONE = Object.fromEntries(HUMANOID_BONES.map(([name], i) => [name, i])) as Record<string, number>;
+
+/** Höchstens so viele Knochen je Skelett - so breit ist ein Bild in der Clip-Textur. */
+export const MAX_BONES = 16;
+
+/**
+ * Ein Skelett: Knochen (Name, Eltern) in der Reihenfolge ihrer Spalte in der
+ * Textur und die Drehpunkte in Modell-Koordinaten (x vorn, y links, z oben)
+ * aus den Maßen eines Modells. Die Knochennamen sind der Vertrag mit Blender.
+ */
+export interface Rig<J = never> {
+  name: string;
+  bones: readonly (readonly [string, string | null])[];
+  pivots(joints: J): Vec3[];
+}
 
 /** Was ein Clip in der Hand braucht - Bits wie im Shader (uClipProps). */
 export const PROP_BITS: Record<string, number> = { axe: 1, scythe: 2, knife: 4 };
@@ -164,14 +182,14 @@ function sample(times: Float32Array, values: Float32Array, size: number, t: numb
  * Liest die Clip-Bibliothek. `glbDataUrl` ist das glb als data:-URL (Vite
  * `?inline`), `manifest` die .json daneben.
  */
-export function loadClips(glbDataUrl: string, manifest: Manifest): Clip[] {
+export function loadClips(glbDataUrl: string, manifest: Manifest, rig: Rig<any> = HUMANOID): Clip[] {
   const base64 = glbDataUrl.slice(glbDataUrl.indexOf(',') + 1);
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   const { json, bin } = parseGlb(bytes);
   const byName = new Map(json.nodes.map((n, i) => [n.name ?? '', i]));
   const parentOf = new Map<number, number>();
   json.nodes.forEach((n, i) => n.children?.forEach((c) => parentOf.set(c, i)));
-  const boneNodes = HUMANOID_BONES.map(([name]) => byName.get(name));
+  const boneNodes = rig.bones.map(([name]) => byName.get(name));
   const rootNode = boneNodes[0];
   if (rootNode === undefined) throw new Error('Clip-Bibliothek ohne Knochen "root"');
 
@@ -220,7 +238,7 @@ export function loadClips(glbDataUrl: string, manifest: Manifest): Clip[] {
     };
     const rest = boneNodes.map((n) => (n === undefined ? null : global(n, null)));
 
-    const bones = HUMANOID_BONES.length;
+    const bones = rig.bones.length;
     const rotations = new Float32Array(meta.frames * bones * 4);
     const root = new Float32Array(meta.frames * 3);
     for (let f = 0; f < meta.frames; f++) {
@@ -258,8 +276,8 @@ export interface Joints {
   arm: number;
 }
 
-/** Drehpunkte der Knochen in Modell-Koordinaten (x vorn, y links, z oben) - wie im Shader. */
-function pivots(j: Joints): Vec3[] {
+/** Drehpunkte der Knochen der Dorfbewohner (x vorn, y links, z oben) - wie im Shader. */
+function humanoidPivots(j: Joints): Vec3[] {
   const neck = j.shoulder + 0.03;
   const at: Record<string, Vec3> = {
     root: [0, 0, 0], lowerBody: [0, 0, 0],
@@ -270,6 +288,9 @@ function pivots(j: Joints): Vec3[] {
   };
   return HUMANOID_BONES.map(([name]) => at[name]);
 }
+
+/** Das Skelett der Dorfbewohner (assets/blender/humanoid.blend). */
+export const HUMANOID: Rig<Joints> = { name: 'humanoid', bones: HUMANOID_BONES, pivots: humanoidPivots };
 
 /** Texel je Knochen: drei Zeilen einer 3x4-Matrix. */
 export const TEXELS_PER_BONE = 3;
@@ -301,20 +322,24 @@ function qScale([x, y, z, w]: Quat, share: number): Quat {
  * Körper abhängt: die Drehpunkte (Gelenke), beim Knien die Höhe (die Knie
  * auf dem Boden - aus dem eigenen Knie), beim Gehen die Schrittweite.
  */
-export function bakeClip(clip: Clip, joints: Joints, options: BakeOptions = {}): Float32Array {
-  const bones = HUMANOID_BONES.length;
-  const p = pivots(joints);
+export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, rig: Rig<J> = HUMANOID as unknown as Rig<J>): Float32Array {
+  const bones = rig.bones.length;
+  const p = rig.pivots(joints);
   const out = new Float32Array(clip.frames * bones * TEXELS_PER_BONE * 4);
-  const parentIndex = HUMANOID_BONES.map(([, parent]) => (parent === null ? -1 : BONE[parent]));
-  const stride = clip.pose === 1 ? options.stride ?? 1 : 1;
+  const index = Object.fromEntries(rig.bones.map(([name], i) => [name, i])) as Record<string, number>;
+  const parentIndex = rig.bones.map(([, parent]) => (parent === null ? -1 : index[parent]));
+  // Schrittweite nur beim Gehen der Dorfbewohner (sie haben Oberschenkel).
+  const stride = clip.pose === 1 && rig.name === HUMANOID.name ? options.stride ?? 1 : 1;
+  // Kniende Dorfbewohner: die Wurzel so tief, dass das eigene Knie den Boden berührt.
+  const kneelZ = clip.kneel && rig.name === HUMANOID.name ? -((joints as unknown as Joints).knee - 0.04) : null;
   for (let f = 0; f < clip.frames; f++) {
     const stored = (b: number) => Array.from(clip.rotations.subarray((f * bones + b) * 4, (f * bones + b) * 4 + 4)) as Quat;
-    const rot: Quat[] = HUMANOID_BONES.map((_, b) => stored(b));
+    const rot: Quat[] = rig.bones.map((_, b) => stored(b));
     if (stride !== 1) {
       // Oberschenkel: ihre eigene Drehung (gegenüber dem Unterkörper)
       // verkürzen; der Unterschenkel behält seine gegenüber dem Oberschenkel.
       for (const [thigh, shin] of [['thigh.L', 'shin.L'], ['thigh.R', 'shin.R']]) {
-        const t = BONE[thigh], s = BONE[shin], parent = parentIndex[t];
+        const t = index[thigh], s = index[shin], parent = parentIndex[t];
         const own = qMul(qInv(stored(parent)), stored(t));
         rot[t] = qMul(rot[parent], qScale(own, stride));
         rot[s] = qMul(rot[t], qMul(qInv(stored(t)), stored(s)));
@@ -328,7 +353,7 @@ export function bakeClip(clip: Clip, joints: Joints, options: BakeOptions = {}):
       if (parent < 0) {
         // Kniend: so tief, dass das Knie dieses Körpers den Boden berührt
         // (wie die Formel: bob = -(uKnee - 0.04)).
-        const z = clip.kneel ? -(joints.knee - 0.04) : clip.root[f * 3 + 2];
+        const z = kneelZ ?? clip.root[f * 3 + 2];
         where.push([clip.root[f * 3], clip.root[f * 3 + 1], z]);
         continue;
       }

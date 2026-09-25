@@ -15,7 +15,7 @@ import MOW from '../models/mow_pose.json';
 import CARVE from '../models/carve_pose.json';
 import humanoidClipsGlb from '../models/humanoid_clips.glb?inline';
 import humanoidClipsManifest from '../models/humanoid_clips.json';
-import { BONE, HUMANOID_BONES, KNEEL_BIT, TEXELS_PER_BONE, bakeClip, loadClips, type Clip } from './clips';
+import { BONE, HUMANOID, KNEEL_BIT, MAX_BONES, TEXELS_PER_BONE, bakeClip, loadClips, type Clip, type Rig } from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
@@ -286,14 +286,25 @@ const CLIP_TEXTURE_UNIT = 5;
  * sich die Bibliothek nicht lesen, laufen die Figuren über die Formeln im
  * Shader weiter.
  */
-export const CLIPS: Clip[] = (() => {
+export const CLIPS: Clip[] = readClips('humanoid', () => loadClips(humanoidClipsGlb, humanoidClipsManifest, HUMANOID));
+
+function readClips(name: string, load: () => Clip[]): Clip[] {
   try {
-    return loadClips(humanoidClipsGlb, humanoidClipsManifest);
+    return load();
   } catch (error) {
-    console.warn('Clips aus Blender nicht geladen - Figuren laufen über die Formeln', error);
+    console.warn(`Clips "${name}" aus Blender nicht geladen - es laufen die Formeln`, error);
     return [];
   }
-})();
+}
+
+/**
+ * Clip-Bibliotheken und welche Modelle sie nutzen - je Bibliothek ein Skelett.
+ * Tiere, Mühle und Fahne kommen hier mit ihrem Rig dazu (docs/ANIMATION.md).
+ */
+const CLIP_LIBRARIES: { rig: Rig<any>; clips: Clip[]; shapes: readonly number[] }[] = [
+  { rig: HUMANOID, clips: CLIPS, shapes: [SHAPE.villager, SHAPE.villagerFemale] },
+];
+
 /** Höchstens so viele Clips je Figur (Uniform-Arrays im Shader). */
 const MAX_CLIPS = 8;
 /**
@@ -309,8 +320,21 @@ const CLIP_COLUMN_ROWS = 1024;
  * Phase (motion[1]) ist dann die Clip-Zeit in Sekunden - für die Galerie.
  */
 export const CLIP_POSE = 10;
-/** uClipRow für Modelle ohne Clips. */
-const NO_CLIP_ROWS = new Int32Array(MAX_CLIPS).fill(-1);
+/** Clip-Uniforms eines Modells (je Modell gesetzt - jedes kann eine andere Bibliothek haben). */
+interface ClipUniforms {
+  rows: Int32Array;
+  frames: Int32Array;
+  fps: Float32Array;
+  props: Int32Array;
+  poseClip: Int32Array;
+  poseRate: Float32Array;
+  poseShift: Float32Array;
+}
+/** Für Modelle ohne Clips. */
+const NO_CLIPS: ClipUniforms = {
+  rows: new Int32Array(MAX_CLIPS).fill(-1), frames: new Int32Array(MAX_CLIPS).fill(2), fps: new Float32Array(MAX_CLIPS).fill(30),
+  props: new Int32Array(MAX_CLIPS), poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
+};
 /** Kantenlänge der Blatt-Textur in Pixeln (textures/birch_leaf.png). */
 const LEAF_TEX_SIZE = 256;
 /** Rolle der Blattkarten (Birke): der Shader malt Zweig und Blätter darauf. */
@@ -658,7 +682,7 @@ int boneOf(int part, float z) {
 // Bilder liegen in Spalten zu ${CLIP_COLUMN_ROWS} (CLIP_COLUMN_ROWS).
 vec4 clipTexel(int row, int bone, int i) {
   int column = row / ${CLIP_COLUMN_ROWS};
-  int x = column * ${HUMANOID_BONES.length * TEXELS_PER_BONE} + bone * ${TEXELS_PER_BONE} + i;
+  int x = column * ${MAX_BONES * TEXELS_PER_BONE} + bone * ${TEXELS_PER_BONE} + i;
   return texelFetch(uClipTex, ivec2(x, row - column * ${CLIP_COLUMN_ROWS}), 0);
 }
 
@@ -2466,8 +2490,8 @@ export class EntityRenderer {
   private leafTexture: WebGLTexture;
   /** Knochen-Matrizen der Clips, für jede Figur gebacken (uClipTex, siehe clips.ts). */
   private clipTexture: WebGLTexture;
-  /** Erste Zeile jedes Clips in clipTexture je Figur (Form) - -1: nicht gebacken. */
-  private clipRows = new Map<number, Int32Array>();
+  /** Clip-Uniforms je Modell (Form): erste Zeile jedes Clips in clipTexture, Länge, Pose ... */
+  private clipUniforms = new Map<number, ClipUniforms>();
   private uniforms = new Map<string, WebGLUniformLocation | null>();
   /** Wird nur vergrößert, nie neu belegt - eine Allokation je Frame wäre Müll. */
   private data = new Float32Array(STRIDE * 256);
@@ -2533,36 +2557,55 @@ export class EntityRenderer {
    */
   private bakeClips(): WebGLTexture {
     const gl = this.gl;
-    const width = HUMANOID_BONES.length * TEXELS_PER_BONE;
-    const clips = CLIPS.slice(0, MAX_CLIPS);
-    const blocks: Float32Array[] = [];
+    // Ein Bild ist MAX_BONES Knochen breit, gleich für jedes Skelett.
+    const width = MAX_BONES * TEXELS_PER_BONE;
+    const blocks: { data: Float32Array; bones: number }[] = [];
     let rows = 0;
-    for (const m of this.models) {
-      if (!FIGURES.includes(m.shape)) continue;
-      const starts = new Int32Array(MAX_CLIPS).fill(-1);
-      clips.forEach((clip, i) => {
-        starts[i] = rows;
-        blocks.push(bakeClip(clip, m.model, { stride: m.stride }));
-        rows += clip.frames;
-      });
-      this.clipRows.set(m.shape, starts);
+    for (const library of CLIP_LIBRARIES) {
+      const clips = library.clips.slice(0, MAX_CLIPS);
+      if (clips.length === 0 || library.rig.bones.length > MAX_BONES) continue;
+      for (const m of this.models) {
+        if (!library.shapes.includes(m.shape)) continue;
+        const u: ClipUniforms = {
+          rows: new Int32Array(MAX_CLIPS).fill(-1),
+          frames: Int32Array.from(NO_CLIPS.frames), fps: Float32Array.from(NO_CLIPS.fps), props: new Int32Array(MAX_CLIPS),
+          poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
+        };
+        clips.forEach((clip, i) => {
+          u.rows[i] = rows;
+          u.frames[i] = clip.frames;
+          u.fps[i] = clip.fps;
+          u.props[i] = clip.props | (clip.kneel ? KNEEL_BIT : 0);
+          // Welche Pose ein Clip ersetzt, steht im Clip selbst (Custom Property
+          // "pose" der Action in Blender). Die Phase (motion[1]) wird zur
+          // Clip-Zeit: (Phase - phaseShift) * phaseRate.
+          if (clip.pose !== null && clip.pose >= 0 && clip.pose < 8) {
+            u.poseClip[clip.pose] = i;
+            u.poseRate[clip.pose] = clip.phaseRate;
+            u.poseShift[clip.pose] = clip.phaseShift;
+          }
+          blocks.push({ data: bakeClip(clip, m.model, { stride: m.stride }, library.rig), bones: library.rig.bones.length });
+          rows += clip.frames;
+        });
+        this.clipUniforms.set(m.shape, u);
+      }
     }
     // Bilder in Spalten zu CLIP_COLUMN_ROWS nebeneinander (siehe clipTexel im Shader).
     const columns = Math.max(1, Math.ceil(rows / CLIP_COLUMN_ROWS));
     const height = Math.max(1, Math.min(rows, CLIP_COLUMN_ROWS));
     if (columns * width > gl.getParameter(gl.MAX_TEXTURE_SIZE)) {
-      console.warn(`Clips: ${rows} Bilder passen nicht in eine Textur - Figuren laufen über die Formeln`);
-      this.clipRows.clear();
+      console.warn(`Clips: ${rows} Bilder passen nicht in eine Textur - es laufen die Formeln`);
+      this.clipUniforms.clear();
       rows = 0;
     }
     const data = new Float32Array(columns * width * height * 4);
     let frame = 0;
     for (const block of rows > 0 ? blocks : []) {
-      const perFrame = width * 4;
-      for (let f = 0; f < block.length / perFrame; f++, frame++) {
+      const perFrame = block.bones * TEXELS_PER_BONE * 4;
+      for (let f = 0; f < block.data.length / perFrame; f++, frame++) {
         const column = Math.floor(frame / CLIP_COLUMN_ROWS);
         const row = frame % CLIP_COLUMN_ROWS;
-        data.set(block.subarray(f * perFrame, (f + 1) * perFrame), (row * columns * width + column * width) * 4);
+        data.set(block.data.subarray(f * perFrame, (f + 1) * perFrame), (row * columns * width + column * width) * 4);
       }
     }
     const texture = gl.createTexture()!;
@@ -2572,27 +2615,7 @@ export class EntityRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.activeTexture(gl.TEXTURE0);
-
     gl.uniform1i(this.location('uClipTex'), CLIP_TEXTURE_UNIT);
-    const pad = <T extends number>(values: T[], fill: T) => [...values, ...Array(MAX_CLIPS - values.length).fill(fill)];
-    gl.uniform1iv(this.location('uClipFrames'), pad(clips.map((c) => c.frames), 2));
-    gl.uniform1fv(this.location('uClipFps'), pad(clips.map((c) => c.fps), 30));
-    gl.uniform1iv(this.location('uClipProps'), pad(clips.map((c) => c.props | (c.kneel ? KNEEL_BIT : 0)), 0));
-    // Welche Pose ein Clip ersetzt, steht im Clip selbst (Custom Property
-    // "pose" der Action in Blender). Die Phase (motion[1]) wird zur Clip-Zeit:
-    // (Phase - phaseShift) * phaseRate.
-    const poseClip = new Int32Array(8).fill(-1);
-    const poseRate = new Float32Array(8);
-    const poseShift = new Float32Array(8);
-    clips.forEach((clip, i) => {
-      if (clip.pose === null || clip.pose < 0 || clip.pose >= 8 || rows === 0) return;
-      poseClip[clip.pose] = i;
-      poseRate[clip.pose] = clip.phaseRate;
-      poseShift[clip.pose] = clip.phaseShift;
-    });
-    gl.uniform1iv(this.location('uPoseClip'), poseClip);
-    gl.uniform1fv(this.location('uPoseRate'), poseRate);
-    gl.uniform1fv(this.location('uPoseShift'), poseShift);
     return texture;
   }
 
@@ -2778,7 +2801,14 @@ export class EntityRenderer {
       gl.uniform2fv(this.location('uNeck'), m.model.neck);
       gl.uniform1f(this.location('uGraze'), m.model.graze);
       gl.uniform1f(this.location('uSide'), m.model.side);
-      gl.uniform1iv(this.location('uClipRow'), this.clipRows.get(m.shape) ?? NO_CLIP_ROWS);
+      const clips = this.clipUniforms.get(m.shape) ?? NO_CLIPS;
+      gl.uniform1iv(this.location('uClipRow'), clips.rows);
+      gl.uniform1iv(this.location('uClipFrames'), clips.frames);
+      gl.uniform1fv(this.location('uClipFps'), clips.fps);
+      gl.uniform1iv(this.location('uClipProps'), clips.props);
+      gl.uniform1iv(this.location('uPoseClip'), clips.poseClip);
+      gl.uniform1fv(this.location('uPoseRate'), clips.poseRate);
+      gl.uniform1fv(this.location('uPoseShift'), clips.poseShift);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
       this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);
     };
