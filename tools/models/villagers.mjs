@@ -1,5 +1,8 @@
 // Generates src/models/villager_male.obj and villager_female.obj - villagers in
 // the style of Age of Empires II. File coords: x = left, y = up, z = front.
+// The tools (axe, scythe, drawknife) are separate props (prop_*.obj), in the
+// frame of the right hand: the game attaches them to the hand of whichever
+// body carries them (docs/ANIMATION.md, "Werkzeuge als Anhänge").
 // Usage: node tools/models/villagers.mjs [outDir] (default src/models)
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -203,7 +206,7 @@ const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], 
  * dort zeigt das Blatt nach links. Weil die Sense am rechten Unterarm hängt,
  * wird sie danach in dessen Ruhelage zurückgerechnet.
  */
-function scythe(m) {
+function scythe(m, into = m) {
   const j = joints(m.objects);
   const center = (name) => {
     const v = m.objects.filter((o) => o.name.startsWith(name)).flatMap((o) => o.verts);
@@ -234,7 +237,7 @@ function scythe(m) {
     const a = (i * Math.PI) / 3;
     return add3(c, add3(mul3(side1, Math.cos(a) * w), mul3(side2, Math.sin(a) * w)));
   });
-  m.prism('Arm.R.Lower.Scythe.Snath', 'Wood', round(top, 0.022).map(rest), round(foot, 0.024).map(rest));
+  into.prism('Arm.R.Lower.Scythe.Snath', 'Wood', round(top, 0.022).map(rest), round(foot, 0.024).map(rest));
   // Blatt: am Fuß waagerecht nach vorn, zur Spitze hin schmaler und leicht
   // nach links gebogen - in Weltlage gebaut, damit es flach über dem Boden liegt.
   const base = world(foot);
@@ -245,8 +248,37 @@ function scythe(m) {
     const at = (u) => add3(base, [0.35 * u * u, 0, u]);
     // Der Querschnitt steht senkrecht zur Blattrichtung: quer liegt x.
     const quad = (u, w) => [[-w / 2, -0.008, 0], [w / 2, -0.008, 0], [w / 2, 0.008, 0], [-w / 2, 0.008, 0]].map((d) => add3(at(u), d));
-    m.prism('Arm.R.Lower.Scythe.Blade', 'Steel', quad(u0, w0).map((p) => rest(fromWorld(p))), quad(u1, w1).map((p) => rest(fromWorld(p))));
+    into.prism('Arm.R.Lower.Scythe.Blade', 'Steel', quad(u0, w0).map((p) => rest(fromWorld(p))), quad(u1, w1).map((p) => rest(fromWorld(p))));
   }
+}
+
+/**
+ * Die Werkzeuge eines Körpers, jedes als eigenes Modell, im Rahmen der
+ * rechten Hand (Mitte der Hand = Ursprung): so hängt das Spiel sie an die
+ * Hand jedes Körpers. Gebaut wie vorher am Körper - Beil und Zugmesser
+ * passen auf jeden Körper (das Zugmesser wird im Spiel auf dessen
+ * Handabstand gestreckt), die Sense läuft durch beide Hände der
+ * Mäh-Haltung und gehört darum zu genau diesem Körper.
+ */
+function tools(body, [x0, x1], top) {
+  const hand = body.objects.filter((o) => o.name.startsWith('Arm.R.Lower.Hand')).flatMap((o) => o.verts);
+  const origin = hand.reduce((s, q) => add3(s, mul3(q, 1 / hand.length)), [0, 0, 0]);
+  const build = (make) => {
+    const t = model();
+    make(t);
+    // In den Rahmen der Hand verschieben.
+    t.out.forEach((l, i) => {
+      if (!l.startsWith('v ')) return;
+      const p = l.split(' ').slice(1).map(Number);
+      t.out[i] = `v ${sub3(p, origin).map((v) => +v.toFixed(3)).join(' ')}`;
+    });
+    return t.out.join('\n');
+  };
+  return {
+    axe: build((t) => hatchet(t, [x0, x1], top - 0.08)),
+    scythe: build((t) => scythe(body, t)),
+    knife: build((t) => drawknife(t, [x0, x1], top)),
+  };
 }
 
 /** Sack on the back - grows out of the back with the load, tinted by resource. */
@@ -315,11 +347,8 @@ function male() {
   pair('Arm.#.Lower.Wrap.Band', 'LeatherLight', [0.252, 0.328], [sh - 0.52, sh - 0.505], [-0.054, 0.054], { r: 0.25 });
   hand(m, [0.26, 0.322], sh - 0.56);
 
-  hatchet(m, [0.26, 0.322], sh - 0.64);
-  scythe(m);
-  drawknife(m, [0.26, 0.322], sh - 0.56);
   load(m, -0.13);
-  return m.out.join('\n');
+  return { m, tools: tools(m, [0.26, 0.322], sh - 0.56) };
 }
 
 function female() {
@@ -374,11 +403,8 @@ function female() {
   pair('Arm.#.Lower.Bracelet', 'Band', [0.21, 0.27], [sh - 0.53, sh - 0.51], [-0.043, 0.043], { r: 0.3 });
   hand(m, [0.212, 0.268], sh - 0.54);
 
-  hatchet(m, [0.212, 0.268], sh - 0.62);
-  scythe(m);
-  drawknife(m, [0.212, 0.268], sh - 0.54);
   load(m, -0.125);
-  return m.out.join('\n');
+  return { m, tools: tools(m, [0.212, 0.268], sh - 0.54) };
 }
 
 const header = (what) => `# villager_${what}.obj - ${what === 'female' ? 'Dorfbewohnerin' : 'Dorfbewohner'} fuer procedurally-generated-map
@@ -386,8 +412,8 @@ const header = (what) => `# villager_${what}.obj - ${what === 'female' ? 'Dorfbe
 # nach +Z - so wie Blender eine Figur exportiert (Standard-Achsen beim OBJ-Export).
 # Die Objektnamen steuern die Animation: Leg.L/Leg.R schwingen an der Huefte,
 # Leg.*.Lower (Unterschenkel) knickt zusaetzlich am Knie; Arm.L/Arm.R schwingen
-# an der Schulter, Arm.*.Lower (Unterarm, Hand, Beil) am Ellbogen; Knife (das
-# Zugmesser) haengt an beiden Haenden. Head (samt
+# an der Schulter, Arm.*.Lower (Unterarm, Hand) am Ellbogen. Werkzeuge sind
+# eigene Modelle (prop_*.obj), an der Hand angehaengt. Head (samt
 # Haaren) dreht sich, Load waechst mit der Ladung. Material Tunic
 # (${what === 'female' ? 'Kleid' : 'Hose'}) bekommt die Spielerfarbe, Load die Farbe der Ressource.
 mtllib villager.mtl
@@ -421,8 +447,23 @@ const MATERIALS = {
   LoadShade: '0.360 0.260 0.150',
 };
 
+const propHeader = (file, what, forBody) => `# ${file}.obj - ${what} fuer procedurally-generated-map, ein Werkzeug zum Anhaengen
+# Meter, Y oben, Blick nach +Z; Ursprung = Mitte der rechten Hand in Ruhelage
+# (Arm haengt). Gebaut ${forBody}. Das Spiel haengt es an die rechte Hand des
+# Koerpers, der es traegt (docs/ANIMATION.md, "Werkzeuge als Anhaenge").
+mtllib villager.mtl
+`;
+
 const dir = process.argv[2] ?? new URL('../../src/models', import.meta.url).pathname;
-writeFileSync(`${dir}/villager_male.obj`, header('male') + male() + '\n');
-writeFileSync(`${dir}/villager_female.obj`, header('female') + female() + '\n');
+const man = male();
+const woman = female();
+writeFileSync(`${dir}/villager_male.obj`, header('male') + man.m.out.join('\n') + '\n');
+writeFileSync(`${dir}/villager_female.obj`, header('female') + woman.m.out.join('\n') + '\n');
+// Beil und Zugmesser: vom Mann, für alle Körper (das Zugmesser streckt das
+// Spiel auf den Handabstand). Die Sense je Körper - sie liegt in beiden Händen.
+writeFileSync(`${dir}/prop_axe.obj`, propHeader('prop_axe', 'Beil', 'an der Hand des Mannes, passt auf jeden Koerper') + man.tools.axe + '\n');
+writeFileSync(`${dir}/prop_knife.obj`, propHeader('prop_knife', 'Zugmesser (Griffe an beiden Haenden)', 'fuer den Handabstand des Mannes; das Spiel streckt es auf den des Traegers') + man.tools.knife + '\n');
+writeFileSync(`${dir}/prop_scythe_male.obj`, propHeader('prop_scythe_male', 'Sense', 'fuer den Mann: der Stiel liegt in seiner Maeh-Haltung in beiden Haenden') + man.tools.scythe + '\n');
+writeFileSync(`${dir}/prop_scythe_female.obj`, propHeader('prop_scythe_female', 'Sense', 'fuer die Frau: der Stiel liegt in ihrer Maeh-Haltung in beiden Haenden') + woman.tools.scythe + '\n');
 writeFileSync(`${dir}/villager.mtl`, '# villager.mtl - gemeinsam fuer villager_male.obj und villager_female.obj\n' +
   Object.entries(MATERIALS).map(([n, kd]) => `\nnewmtl ${n}\nKd ${kd}\nKa 0 0 0\nKs 0 0 0\nd 1\nillum 1\n`).join(''));

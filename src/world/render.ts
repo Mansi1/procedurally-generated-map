@@ -5,7 +5,8 @@
 // gelesen.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelSize, modelStockSlots, type EntityInstance,
+  ANIMAL_POSE, BUILDING_HEADING, POSE, SHAPE, buildingHeading, figureProps, frozenMillMotion, millMotion, modelSize, modelStockSlots,
+  type EntityInstance,
 } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS } from '../map';
 import { reliefZ } from '../noise';
@@ -129,7 +130,7 @@ export function worldInstances(
     // Die Last auf dem Rücken wächst mit der Ladung und trägt die Farbe
     // der Ressource - man sieht, wer was trägt und wie viel.
     const load = v.carryType ? Math.min(1, v.carrying / VILLAGER.capacity) : 0;
-    out.push({
+    const figure: EntityInstance = {
       // Instanzen werden um die Tile-Mitte gezeichnet, die Figur steht auf (x, y).
       x: x - 0.5,
       y: y - 0.5,
@@ -142,7 +143,9 @@ export function worldInstances(
       ground: world.groundAt?.(x, y),
       health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,
       accent: v.carryType ? RESOURCE_TYPE_COLORS[LOAD_LOOK[v.carryType]].toRGB() : undefined,
-    });
+    };
+    // Dazu, was er in der Hand hat (Beil, Sense, Zugmesser - je nach Clip).
+    out.push(figure, ...figureProps(figure));
   }
   for (const a of world.wildlife.animals) {
     const { x, y } = a.positionAt(blend);

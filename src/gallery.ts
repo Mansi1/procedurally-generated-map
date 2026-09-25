@@ -11,7 +11,7 @@
 
 import {
   ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, animationTime,
-  buildingHeading, frozenMillMotion, millMotion, modelWorkSpot,
+  buildingHeading, figureProps, frozenMillMotion, millMotion, modelWorkSpot,
   type EntityInstance,
 } from './gl/entityRenderer';
 import {
@@ -45,11 +45,14 @@ const ZOOMED = 3;
 function figure(label: string, female: boolean, pose: number, rate: number, heading: number, load = 0): Exhibit {
   return {
     label,
-    draw: (t, x, y, out) => out.push({
-      x: x - 0.5, y: y - 0.5, size: VILLAGER.size * ZOOMED, color: PLAYER,
-      shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
-      motion: [heading, pose === POSE.stand ? t : t * rate, pose, load], accent: WOOD,
-    }),
+    draw: (t, x, y, out) => {
+      const f: EntityInstance = {
+        x: x - 0.5, y: y - 0.5, size: VILLAGER.size * ZOOMED, color: PLAYER,
+        shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
+        motion: [heading, pose === POSE.stand ? t : t * rate, pose, load], accent: WOOD,
+      };
+      out.push(f, ...figureProps(f));
+    },
   };
 }
 
@@ -103,11 +106,12 @@ function withWorker(label: string, shape: number, size: number, female: boolean,
       out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: 1, motion: [BUILDING_HEADING, loop(t, 12), 0, 0] });
       const spot = modelWorkSpot(shape, x - 0.5, y - 0.5, size, BUILDING_HEADING);
       if (!spot) return;
-      out.push({
+      const f: EntityInstance = {
         x: spot.x - 0.5, y: spot.y - 0.5, size: VILLAGER.size, color: PLAYER,
         shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
         motion: [Math.atan2(spot.aimY - spot.y, spot.aimX - spot.x), t * 6, pose, 0], accent: WOOD,
-      });
+      };
+      out.push(f, ...figureProps(f));
     },
   };
 }
