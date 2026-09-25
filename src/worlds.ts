@@ -10,6 +10,8 @@ import { readSave, saveKey, seedOfKey } from './world/save';
 
 /** Die Welt, wenn noch keine gewählt wurde. */
 export const DEFAULT_SEED = 'Soliva';
+/** Wer eine neue Welt mit diesem Namen beginnt, bekommt die Demo (public/savegame/demo.json). */
+export const DEMO_SEED = 'Demo';
 
 const SEED_KEY = 'pgm.seed';
 const START_KEY = 'pgm.start';
@@ -71,6 +73,23 @@ export function deleteSave(seed: string) {
     localStorage.removeItem(saveKey(seed));
   } catch {
     // Ohne Speicher gibt es auch nichts zu löschen.
+  }
+}
+
+/** Ist das der Name der Demo-Welt? Groß- und Kleinschreibung egal. */
+export function isDemo(seed: string): boolean {
+  return seed.toLowerCase() === DEMO_SEED.toLowerCase();
+}
+
+/** Den Demo-Spielstand als Spielstand der Welt "Demo" ablegen; false, wenn es nicht ging. */
+export async function installDemo(): Promise<boolean> {
+  try {
+    const response = await fetch('/savegame/demo.json');
+    if (!response.ok) return false;
+    localStorage.setItem(saveKey(DEMO_SEED), JSON.stringify(await response.json()));
+    return true;
+  } catch {
+    return false;
   }
 }
 

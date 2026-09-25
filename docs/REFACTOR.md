@@ -237,9 +237,9 @@ src/
 
 ### Phase 5: Aufräumen (B10, B11)
 
-- [ ] 5.1 `tools/demo/soliva.ts` entfernen oder auf `public/savegame/demo.json` umstellen
-- [ ] 5.2 `src/demo.ts`: erst starten, wenn die Demo geladen ist, und die
-  gewählte Welt nicht überschreiben
+- [x] 5.1 `tools/demo/soliva.ts` entfernt - `public/savegame/demo.json` ist ein echter Spielstand, kein erzeugter
+- [x] 5.2 `src/demo.ts` entfernt: die Demo lädt erst, wenn man als neue Welt "Demo"
+  eingibt (`installDemo()` in `worlds.ts`), und überschreibt nie die gewählte Welt
 - [ ] 5.3 Browser-Tests als `tools/ui/smoke.mjs` ins Repo: Hauptmenü, neues
   Spiel, bauen, ausbilden, Feld mit Untermenü, speichern und neu laden, Galerie
 

@@ -9,7 +9,7 @@ import { createRef, render } from 'defuss';
 import './StartScreen.css';
 import woodBar from '../icons/wood-bar.png';
 import { confirmDialog } from './ConfirmDialog';
-import { DEFAULT_SEED, hasProgress, listSaves, randomSeed, type SaveInfo } from '../worlds';
+import { DEFAULT_SEED, DEMO_SEED, hasProgress, installDemo, isDemo, listSaves, randomSeed, switchWorld, type SaveInfo } from '../worlds';
 
 /** Was das Hauptmenü braucht - main.ts liefert es. */
 export interface StartHooks {
@@ -173,9 +173,16 @@ export class StartScreen {
   }
 
   private async newGame() {
-    const seed = this.seedInput.current.value.trim() || DEFAULT_SEED;
+    const typed = this.seedInput.current.value.trim() || DEFAULT_SEED;
+    const seed = isDemo(typed) ? DEMO_SEED : typed;
     if (hasProgress(seed) && !await confirmDialog(`Die Welt "${seed}" hat schon einen Spielstand. Neu beginnen? Er geht verloren.`,
       { ok: 'Neu beginnen', danger: true })) return;
+    // Demo: den Spielstand aus der Datei holen und die Seite damit neu laden -
+    // auch wenn "Demo" gerade läuft, sonst bliebe die alte Welt im Speicher.
+    if (seed === DEMO_SEED && await installDemo()) {
+      switchWorld(DEMO_SEED, 'continue');
+      return;
+    }
     this.play(() => this.hooks.newGame(seed));
   }
 
