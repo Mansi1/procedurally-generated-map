@@ -11,10 +11,10 @@
   white-space: nowrap;
   /* Holztextur (src/icons/wood-bar.png) setzt resourceBar.ts - so
      findet Vite das Bild beim Bauen. */
-  background-color: #8a5a32;
+  background-color: var(--wood-board);
   background-size: auto 100%;
   background-repeat: repeat-x;
-  border-right: 3px solid #3a2412;
+  border-right: 3px solid var(--wood-board-edge);
   border-bottom-right-radius: 5px;
   box-shadow:
     inset 0 2px 0 rgba(255, 225, 180, 0.3),
@@ -54,7 +54,7 @@
   /* Eingelassenes Kästchen: dunkles Holz, innen Schatten, außen eine
      helle Kante wie ausgestemmt. */
   background: linear-gradient(180deg, #3e2614, #22150b);
-  border: 2px solid #1a0f07;
+  border: 2px solid var(--wood-edge);
   box-shadow:
     inset 0 0 7px rgba(0, 0, 0, 0.8),
     0 1px 0 rgba(255, 220, 170, 0.35),

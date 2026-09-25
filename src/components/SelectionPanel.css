@@ -73,7 +73,7 @@
   margin-bottom: 6px;
   font-size: 16px;
   font-weight: bold;
-  color: #2a1606;
+  color: var(--wood-ink);
 }
 #selection .sel-body {
   display: flex;
@@ -89,7 +89,7 @@
   display: grid;
   place-items: center;
   background: radial-gradient(circle at 50% 40%, #3b4a5c, #141b24);
-  border: 2px solid #2a1606;
+  border: 2px solid var(--wood-ink);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 #selection .sel-frame img {
@@ -101,7 +101,7 @@
   height: 6px;
   margin-top: 4px;
   background: #5a1a12;
-  border: 1px solid #2a1606;
+  border: 1px solid var(--wood-ink);
 }
 #selection .hp i {
   display: block;
@@ -117,7 +117,7 @@
   min-width: 0;
 }
 #selection b {
-  color: #2a1606;
+  color: var(--wood-ink);
 }
 #selection .muted {
   color: #6b4a26;
@@ -133,5 +133,5 @@
 #selection .bar i {
   display: block;
   height: 100%;
-  background: linear-gradient(180deg, #e3b758, #a8741f);
+  background: var(--button-gold);
 }

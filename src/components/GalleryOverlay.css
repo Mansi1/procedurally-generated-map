@@ -27,7 +27,7 @@
   transform: translate(-100%, -50%);
   white-space: nowrap;
   font-weight: 600;
-  color: #e8c878;
+  color: var(--gold);
 }
 
 /* --- Liste links ---------------------------------------------------------- */
@@ -44,7 +44,7 @@
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   font-family: Georgia, 'Times New Roman', serif;
-  color: #f3e3c2;
+  color: var(--cream-soft);
 }
 .gal-brand {
   display: flex;
@@ -54,19 +54,19 @@
   font-size: 14px;
 }
 .gal-brand b {
-  color: #e8c878;
+  color: var(--gold);
 }
 .gal-brand a {
   margin-left: auto;
   font-size: 11px;
-  color: #cdb58a;
+  color: var(--cream-muted);
 }
 .gal-group {
   margin: 12px 0 4px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #e8c878;
+  color: var(--gold);
 }
 .gal-item {
   display: block;
@@ -74,7 +74,7 @@
   padding: 4px 8px;
   text-align: left;
   font: 14px Georgia, 'Times New Roman', serif;
-  color: #f3e3c2;
+  color: var(--cream-soft);
   background: none;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -84,9 +84,9 @@
   background: rgba(232, 200, 120, 0.12);
 }
 .gal-item.active {
-  color: #2a1606;
-  background: linear-gradient(180deg, #e3b758, #a8741f);
-  border-color: #1a0f07;
+  color: var(--wood-ink);
+  background: var(--button-gold);
+  border-color: var(--wood-edge);
 }
 .gal-all {
   font-style: italic;
@@ -109,7 +109,7 @@
 }
 .gal-heading {
   font: bold 20px Georgia, 'Times New Roman', serif;
-  color: #fbe7b5;
+  color: var(--cream);
   text-shadow: 2px 2px 0 #000;
 }
 .gal-chips,
@@ -126,10 +126,10 @@
   font: bold 14px Georgia, 'Times New Roman', serif;
   color: #fff;
   text-shadow: 1px 1px 0 #000;
-  background: linear-gradient(180deg, #7a4d29, #4a2c15);
-  border: 2px solid #1a0f07;
+  background: var(--button-wood);
+  border: 2px solid var(--wood-edge);
   border-radius: 4px;
-  box-shadow: inset 0 1px 0 rgba(255, 220, 170, 0.35);
+  box-shadow: var(--button-shine);
   cursor: pointer;
 }
 .gal-chip:hover,
@@ -137,9 +137,9 @@
   filter: brightness(1.2);
 }
 .gal-chip.active {
-  color: #2a1606;
+  color: var(--wood-ink);
   text-shadow: none;
-  background: linear-gradient(180deg, #e3b758, #a8741f);
+  background: var(--button-gold);
 }
 .gal-rotate button {
   padding: 4px 12px;
@@ -153,12 +153,12 @@
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.45);
   font-size: 11px;
-  color: #cdb58a;
+  color: var(--cream-muted);
 }
 /* Zusatz (Abriss): rot und etwas abgesetzt von den Varianten. */
 .gal-chip.gal-extra {
   margin-left: 14px;
-  background: linear-gradient(180deg, #8e2e1f, #5a170d);
+  background: var(--button-danger);
 }
 .gal-chip.gal-extra.active {
   color: #fff;

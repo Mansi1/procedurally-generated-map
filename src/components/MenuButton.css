@@ -6,8 +6,8 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  border: 2px solid #1a0f07;
-  background: radial-gradient(circle at 40% 35%, #8a5a32, #3e2614);
+  border: 2px solid var(--wood-edge);
+  background: radial-gradient(circle at 40% 35%, var(--wood-board), #3e2614);
   color: #e8d2a6;
   cursor: pointer;
   box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 220, 170, 0.35);

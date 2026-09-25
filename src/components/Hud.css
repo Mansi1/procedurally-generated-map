@@ -52,11 +52,11 @@
   padding: 0 4px;
   font: inherit;
   font-weight: bold;
-  color: #2a1606;
-  background: linear-gradient(180deg, #f4e2bc, #d9bd85);
-  border: 1px solid #1a0f07;
+  color: var(--wood-ink);
+  background: var(--key-cap);
+  border: 1px solid var(--wood-edge);
   border-radius: 3px;
-  box-shadow: 0 1px 0 #1a0f07;
+  box-shadow: 0 1px 0 var(--wood-edge);
 }
 #ui .key-mouse {
   width: 10px;
@@ -109,8 +109,8 @@
 #ui,
 #debug {
   /* Farben wie im Menü: dunkles Holz, Gold, helle Tasten. */
-  --text: #f3e3c2;
-  --accent: #e8c878;
+  --text: var(--cream-soft);
+  --accent: var(--gold);
   --border: rgba(232, 200, 120, 0.3);
   color: var(--text);
   background: rgba(30, 16, 6, 0.45);
@@ -155,10 +155,10 @@
   padding: 6px 26px;
   font: bold 22px Georgia, 'Times New Roman', serif;
   letter-spacing: 0.15em;
-  color: #fbe7b5;
+  color: var(--cream);
   text-shadow: 2px 2px 0 #000;
-  background: linear-gradient(180deg, #7a4d29, #4a2c15);
-  border: 3px solid #1a0f07;
+  background: var(--button-wood);
+  border: 3px solid var(--wood-edge);
   border-radius: 5px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
   pointer-events: none;

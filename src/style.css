@@ -9,6 +9,23 @@
   --border: rgba(120, 220, 150, 0.35);
   --text: #cfe9d6;
   --accent: #6ee7a0;
+
+  /* Holz-Stil von Menü, Hauptmenü, Rückfragen und Galerie - hier einmal, in
+     den Komponenten nur über diese Namen. */
+  --wood-edge: #1a0f07;
+  --wood-ink: #2a1606;
+  --wood-board: #8a5a32;
+  --wood-board-edge: #3a2412;
+  --wood-shade: rgba(30, 16, 6, 0.55);
+  --cream: #fbe7b5;
+  --cream-soft: #f3e3c2;
+  --cream-muted: #cdb58a;
+  --gold: #e8c878;
+  --button-wood: linear-gradient(180deg, #7a4d29, #4a2c15);
+  --button-gold: linear-gradient(180deg, #e3b758, #a8741f);
+  --button-danger: linear-gradient(180deg, #8e2e1f, #5a170d);
+  --button-shine: inset 0 1px 0 rgba(255, 220, 170, 0.35);
+  --key-cap: linear-gradient(180deg, #f4e2bc, #d9bd85);
 }
 body {
   background: #0a0d10;

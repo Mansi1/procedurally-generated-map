@@ -227,12 +227,12 @@ src/
 - [x] 3.5 Eingabe: `game/MouseInput.ts` (Absichten statt Mausereignisse), `game/keyboard.ts` (Belegung als Tabelle), `game/cameraControl.ts` (WASD, Relief)
 - [x] 3.6 Oberfläche: `game/ui.ts` (`GameUi`: Leisten, Baumenü, Auswahl-Panel, Hinweise, Mauszeiger), `game/DevPanel.ts`, `game/timing.ts` (`FixedStep`, `Interval`)
 - [ ] 3.7 (optional) Menüs, Hauptmenü, Pause und Neues Spiel in eine `GameSession` - `main.ts` wäre dann nur noch Zusammenbau und Schleife
-- [ ] 3.8 Tastenkürzel nur einmal: die Liste in `components/Shortcuts.tsx` aus der Belegung in `game/keyboard.ts` ableiten
+- [x] 3.8 Tastenkürzel nur einmal: `game/controls.ts` (`CONTROLS`) - Tasten lösen daraus aus, Menü und Tastenhilfe zeigen daraus an
 
 ### Phase 4: Oberfläche (B9)
 
-- [ ] 4.1 `components/theme.css` mit CSS-Variablen (`--wood-dark`,
-  `--gold`, `--edge` …), in `style.css` einbinden, Farbwerte ersetzen
+- [x] 4.1 CSS-Variablen für den Holz-Stil in `style.css` (`--wood-edge`, `--cream`,
+  `--gold`, `--button-wood` …), Farbwerte in `components/*.css` ersetzt
 - [ ] 4.2 Ein Knopf-Grundstil (`.btn`, `.btn-gold`, `.btn-danger`) statt vier fast gleicher
 
 ### Phase 5: Aufräumen (B10, B11)
