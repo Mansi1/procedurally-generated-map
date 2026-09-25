@@ -1,5 +1,6 @@
-// Generates src/models/deer.obj, hare.obj and cow.obj - game to hunt: a roe
-// buck, a brown hare and a spotted cow, facing +z. Metres, real size (the game scales them by height).
+// Generates src/models/deer.obj, hare.obj, cow.obj and sheep.obj - game to
+// hunt: a roe buck, a brown hare, a spotted cow and a woolly sheep, facing +z.
+// Metres, real size (the game scales them by height).
 // Object names drive the animation (see PARTS in src/gl/entityRenderer.ts):
 // "Leg.FL/FR/BL/BR" swing from their top (front/back, left/right), "Head"
 // (with the neck) dips to graze, pivoting at its lowest back point.
@@ -16,6 +17,7 @@ Object.assign(PALETTE, {
   EarTip: '0.120 0.100 0.090',
   CowWhite: '0.920 0.900 0.860', CowBlack: '0.110 0.100 0.100', Udder: '0.900 0.640 0.620',
   CowMuzzle: '0.860 0.620 0.580', Horn: '0.880 0.840 0.740',
+  Wool: '0.900 0.870 0.800', WoolShade: '0.800 0.770 0.700', SheepFace: '0.180 0.150 0.140',
 });
 
 /** Roe buck: slim body on long legs, white rump patch, short forked antlers. */
@@ -112,8 +114,39 @@ function cow() {
   return m;
 }
 
+/** Sheep: round woolly body in tufts, black face and legs, drooping ears. */
+function sheep() {
+  const m = model();
+  m.box('Body', 'Wool', [-0.22, 0.22], [0.4, 0.86], [-0.5, 0.42], { r: 0.4 });
+  // Tufts of wool on the back and flanks - a lumpy fleece, not a box.
+  for (const [x, y, z, w] of [[0, 0.86, 0.2, 0.15], [0, 0.88, -0.1, 0.16], [0, 0.86, -0.38, 0.14],
+    [0.18, 0.72, 0.18, 0.12], [-0.18, 0.72, 0.18, 0.12], [0.19, 0.7, -0.22, 0.13], [-0.19, 0.7, -0.22, 0.13]]) {
+    const mtl = y > 0.8 ? 'Wool' : 'WoolShade';
+    // Zwei Lagen, oben schmaler - wirkt wie ein runder Bausch.
+    m.box('Body.Tuft', mtl, [x - w, x + w], [y - w * 0.8, y + w * 0.2], [z - w, z + w], { n: 8 });
+    m.box('Body.Tuft', mtl, [x - w, x + w], [y + w * 0.2, y + w * 0.6], [z - w, z + w], { n: 8, x: [x - w * 0.6, x + w * 0.6], z: [z - w * 0.6, z + w * 0.6] });
+  }
+  m.box('Body.Tail', 'Wool', [-0.05, 0.05], [0.62, 0.76], [-0.58, -0.48], { r: 0.4 });
+  // Neck and head in one - it dips to graze. A cap of wool on the forehead.
+  m.beam('Head.Neck', 'Wool', [0, 0.66, 0.32], [0, 0.82, 0.5], 0.17, { w1: 0.13, n: 8 });
+  m.box('Head.Skull', 'SheepFace', [-0.075, 0.075], [0.7, 0.9], [0.46, 0.66], { r: 0.3, x: [-0.06, 0.06] });
+  m.box('Head.Muzzle', 'SheepFace', [-0.05, 0.05], [0.68, 0.78], [0.62, 0.72], { r: 0.35 });
+  m.box('Head.Wool', 'Wool', [-0.09, 0.09], [0.86, 0.96], [0.44, 0.58], { r: 0.4 });
+  for (const s of [-1, 1]) {
+    m.box('Head.Eye', 'Eye', [s * 0.07 - 0.012, s * 0.07 + 0.012], [0.83, 0.855], [0.57, 0.6]);
+    m.beam('Head.Ear', 'SheepFace', [s * 0.07, 0.86, 0.52], [s * 0.18, 0.8, 0.5], 0.06, { w1: 0.035 });
+  }
+  // Thin black legs below the fleece.
+  for (const [name, x, z] of [['FL', 0.11, 0.28], ['FR', -0.11, 0.28], ['BL', 0.11, -0.36], ['BR', -0.11, -0.36]]) {
+    m.beam(`Leg.${name}`, 'SheepFace', [x, 0.5, z], [x, 0.03, z], 0.055, { w1: 0.04 });
+    m.box(`Leg.${name}.Hoof`, 'Hoof', [x - 0.03, x + 0.03], [0, 0.04], [z - 0.03, z + 0.04]);
+  }
+  return m;
+}
+
 const PAINT = '0.251 0.627 0.282';
 write(dir, 'deer', '# deer.obj - Rehbock, Blickrichtung +z (tools/models/animals.mjs)\n', deer(), PAINT);
 write(dir, 'hare', '# hare.obj - Feldhase, Blickrichtung +z (tools/models/animals.mjs)\n', hare(), PAINT);
 write(dir, 'cow', '# cow.obj - Kuh, Blickrichtung +z (tools/models/animals.mjs)\n', cow(), PAINT);
-console.log('wrote deer, hare, cow');
+write(dir, 'sheep', '# sheep.obj - Schaf, Blickrichtung +z (tools/models/animals.mjs)\n', sheep(), PAINT);
+console.log('wrote deer, hare, cow, sheep');

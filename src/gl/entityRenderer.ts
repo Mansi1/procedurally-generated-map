@@ -92,6 +92,8 @@ import hareObj from '../models/hare.obj?raw';
 import hareMtl from '../models/hare.mtl?raw';
 import cowObj from '../models/cow.obj?raw';
 import cowMtl from '../models/cow.mtl?raw';
+import sheepObj from '../models/sheep.obj?raw';
+import sheepMtl from '../models/sheep.mtl?raw';
 import birchLeafUrl from '../textures/birch_leaf.png';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
@@ -187,7 +189,7 @@ export const SHAPE = {
   farmWheat: 50,
   farmCorn: 59,
   /**
-   * Wild zum Jagen (models/deer.obj, hare.obj, cow.obj): motion = [Blickrichtung,
+   * Wild zum Jagen (models/deer.obj, hare.obj, cow.obj, sheep.obj): motion = [Blickrichtung,
    * Phase, Pose (ANIMAL_POSE), 0] - siehe "beast" im Shader.
    */
   deer: 90,
@@ -197,6 +199,7 @@ export const SHAPE = {
   /** Trauerbirke: gegabelter Stamm, Etagen aus Bögen mit langen Zweig-Vorhängen (models/tree_birch_3.obj). */
   treeBirch3: 93,
   cow: 94,
+  sheep: 95,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -259,6 +262,9 @@ const FOLIAGE_SHAPES: number[] = [
 ];
 
 /** Diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
+/** Tiere - Beine und Kopf bewegt der Shader ("beast"). */
+const BEASTS: number[] = [SHAPE.deer, SHAPE.hare, SHAPE.cow, SHAPE.sheep];
+
 export const NATURAL: number[] = [
   ...TREES,
   SHAPE.stoneRock, SHAPE.stoneRock2, SHAPE.stoneRock3, SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3,
@@ -546,7 +552,7 @@ void main() {
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5 || shape == 18;
-    bool beast = shape == ${SHAPE.deer} || shape == ${SHAPE.hare} || shape == ${SHAPE.cow};
+    bool beast = ${BEASTS.map((n) => `shape == ${n}`).join(' || ')};
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
     bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
@@ -1038,7 +1044,7 @@ void main() {
   // höher - es schnitte Füße und Ring ab. Ihre Tiefe wird deshalb um etwa
   // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
   // wo es ist (siehe project: näher = kleinere Tiefe).
-  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || shape == ${SHAPE.deer} || shape == ${SHAPE.hare} || shape == ${SHAPE.cow}) gl_Position.z -= 0.5 / uDepthRange;
+  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || ${BEASTS.map((n) => `shape == ${n}`).join(' || ')}) gl_Position.z -= 0.5 / uDepthRange;
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
   if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
@@ -1967,6 +1973,7 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.deer, model: loadModel(deerObj, deerMtl, 'height'), scale: 1 },
   { shape: SHAPE.hare, model: loadModel(hareObj, hareMtl, 'height'), scale: 1 },
   { shape: SHAPE.cow, model: loadModel(cowObj, cowMtl, 'height'), scale: 1 },
+  { shape: SHAPE.sheep, model: loadModel(sheepObj, sheepMtl, 'height'), scale: 1 },
 ];
 
 /**
