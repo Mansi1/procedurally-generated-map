@@ -1073,8 +1073,8 @@ function bowyer() {
 
 // --- Armory: where the weapons go, like in Stronghold - built like the
 // houses (plaster in a timber frame on a stone plinth, shingle gable roof),
-// but without windows: one iron-banded door. Inside, on a plank floor, two
-// racks hold up to 24 bows ('Stock.<n>'). Hovering the armory in the game
+// but without windows: one iron-banded door. Inside, on a plank floor, four
+// stacks hold up to 100 bows ('Stock.<n>'). Hovering the armory in the game
 // hides everything named 'Cut.Roof' and cuts 'Cut.Wall' down to a low wall,
 // so you look in and see how many bows are stacked. In the yard on the right
 // a target, spears and arrows. 5 m wide (size 1). -----------------------------
@@ -1134,20 +1134,25 @@ function armory() {
     }
   }
 
-  // Inside: a rack along the back wall and one in the middle, twelve bows
-  // each, leaning against the upper rail. They appear in this order as the
-  // stock grows.
+  // Inside: four stacks of bows lying flat on low trestles, 25 high - 100
+  // bows. They fill round the stacks layer by layer ('Stock.<n>', n = layer
+  // * 4 + stack), so all four grow together as the stock grows.
+  const stacks = [[-0.68, -0.72], [0.68, -0.72], [-0.68, -0.05], [0.68, -0.05]];
+  for (const [sx, sz] of stacks) {
+    for (const x of [sx - 0.45, sx + 0.45]) {
+      box('Trestle', 'Timber', [x - 0.05, x + 0.05], [P, P + 0.14], [sz - 0.3, sz + 0.3]);
+      box('Trestle.Top', 'Wood', [x - 0.07, x + 0.07], [P + 0.14, P + 0.18], [sz - 0.32, sz + 0.32]);
+    }
+  }
   let n = 0;
-  for (const z of [-D + T + 0.12, 0.05]) {
-    for (const x of [-W + T + 0.12, W - T - 0.12]) {
-      box('Rack.Post', 'Timber', [x - 0.06, x + 0.06], [P, P + 1.45], [z - 0.06, z + 0.06]);
-      box('Rack.Foot', 'Timber', [x - 0.06, x + 0.06], [P, P + 0.08], [z - 0.3, z + 0.3]);
-    }
-    for (const y of [P + 0.2, P + 1.3]) box('Rack.Rail', 'Wood', [-W + T + 0.06, W - T - 0.06], [y, y + 0.08], [z - 0.04, z + 0.04]);
-    for (let i = 0; i < 12; i++) {
-      const x = -W + T + 0.3 + (i * (2 * (W - T) - 0.6)) / 11;
-      bow(m, [x - 0.06, P + 0.72, z + 0.1], [0, 1, 0.08], [1, 0, 0], 1.3, 0.12, `Stock.${n++}`);
-    }
+  for (let layer = 0; layer < 25; layer++) {
+    stacks.forEach(([sx, sz], i) => {
+      // Jede Lage etwas verdreht und versetzt, damit es ein Stapel ist und kein Block.
+      const a = ((layer * 7 + i * 3) % 5 - 2) * 0.04;
+      const dz = ((layer * 5 + i) % 3 - 1) * 0.04;
+      const y = P + 0.21 + layer * 0.045;
+      bow(m, [sx, y, sz + dz - 0.06], [Math.cos(a), 0, Math.sin(a)], [-Math.sin(a), 0, Math.cos(a)], 1.25, 0.12, `Stock.${n++}`);
+    });
   }
 
   // The house sits left of the middle: shift what is built so far - in
