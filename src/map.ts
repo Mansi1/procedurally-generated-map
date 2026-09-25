@@ -1,6 +1,6 @@
 import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
-import { EntityRenderer, type EntityInstance } from './gl/entityRenderer';
+import { EntityRenderer, type EntityInstance, type StaticBatch } from './gl/entityRenderer';
 import { TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
@@ -382,6 +382,15 @@ export class MapRenderer {
     this.entities.playerColor = rgb;
   }
 
+  /** Feste Puffer für Instanzen, die sich nicht ändern (world/resources.ts). */
+  createBatch(instances: readonly EntityInstance[]): StaticBatch {
+    return this.entities.createBatch(instances);
+  }
+
+  deleteBatch(batch: StaticBatch) {
+    this.entities.deleteBatch(batch);
+  }
+
   /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */
   setFields(x: number, y: number, data: Uint8Array | null) {
     this.terrain.setFields(x, y, data);
@@ -403,6 +412,7 @@ export class MapRenderer {
       mouseTileX?: number,
       mouseTileY?: number,
       overlay: EntityInstance[] = [],
+      batches: readonly StaticBatch[] = [],
   ) {
     const canvas = this.terrain.context.canvas;
     const camera = snapCamera({
@@ -421,7 +431,7 @@ export class MapRenderer {
     // Mindestens acht Geräte-Pixel: kleiner wird ein Gebäude auf der
     // herausgezoomten Karte zum Einzelpunkt und ist nicht mehr zu erkennen.
     this.entities.groundStep = this.terrain.gridCell;
-    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true);
+    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true, batches);
   }
 }
 

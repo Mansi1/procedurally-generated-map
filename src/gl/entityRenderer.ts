@@ -2384,6 +2384,46 @@ interface Mesh {
   vertices: number;
 }
 
+/** Ein Modell auf der Grafikkarte und die Instanzen, die es in diesem Bild zeichnet. */
+interface ModelSlot {
+  shape: number; model: Model; scale: number; stride?: number; body?: number;
+  mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
+}
+
+/**
+ * Instanzen, die sich nicht ändern - Bäume, Felsen und Sträucher einer
+ * Gegend, an denen niemand arbeitet: einmal gepackt und hochgeladen, danach
+ * Bild für Bild nur gezeichnet (world/resources.ts). Je Form ein Abschnitt.
+ */
+export interface StaticBatch {
+  buffer: WebGLBuffer;
+  ranges: Map<number, { first: number; count: number }>;
+}
+
+/** Eine Instanz in den Puffer ab Float `o` - STRIDE Floats. */
+function packInstance(d: Float32Array, o: number, e: EntityInstance) {
+  d[o] = e.x;
+  d[o + 1] = e.y;
+  d[o + 2] = e.color[0] / 255;
+  d[o + 3] = e.color[1] / 255;
+  d[o + 4] = e.color[2] / 255;
+  d[o + 5] = e.shape;
+  d[o + 6] = e.alpha;
+  d[o + 7] = e.size;
+  const m = e.motion;
+  // Ohne Angabe: Gebäude in ihrer Blickrichtung, Felder mit allen Furchen reif.
+  const field = !m && FIELDS.includes(e.shape);
+  d[o + 8] = m ? m[0] : field ? -1 : buildingHeading(e.shape);
+  d[o + 9] = m ? m[1] : field ? 3 : 0;
+  d[o + 10] = m ? m[2] : field ? 1 : 0;
+  d[o + 11] = m ? m[3] : field ? 511 : 0;
+  const a = e.accent ?? e.color;
+  d[o + 12] = a[0] / 255;
+  d[o + 13] = a[1] / 255;
+  d[o + 14] = a[2] / 255;
+  d[o + 15] = e.ground ?? GROUND_UNKNOWN;
+}
+
 export class EntityRenderer {
   private program: WebGLProgram;
   private building: Mesh;
@@ -2397,10 +2437,9 @@ export class EntityRenderer {
   skirts = true;
   /** Spielerfarbe (0..255) - Felder bekommen sie als Uniform (siehe uPlayerColor). */
   playerColor: [number, number, number] = [64, 160, 72];
-  private models: {
-    shape: number; model: Model; scale: number; stride?: number; body?: number;
-    mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
-  }[];
+  private models: ModelSlot[];
+  /** Dieselben Modelle nach Form - je Instanz und Bild einmal nachgeschlagen. */
+  private modelByShape = new Map<number, ModelSlot>();
   private instanceBuffer: WebGLBuffer;
   /** Foto eines Birkenblatts für die Blatt- und Astkarten (uLeafTex). */
   private leafTexture: WebGLTexture;
@@ -2438,6 +2477,7 @@ export class EntityRenderer {
       lodMeshes: (m.model.lods ?? []).map((l) => this.createMesh(l, 8)),
       list: [],
     }));
+    for (const m of this.models) this.modelByShape.set(m.shape, m);
 
     gl.useProgram(this.program);
     uploadTerrainParams(gl, (name) => this.location(name));
@@ -2575,14 +2615,48 @@ export class EntityRenderer {
     return this.uniforms.get(name)!;
   }
 
-  /** Instanzen ab `first` in den Instanz-Puffer. Die Attribut-Zeiger zeigen auf diesen Abschnitt. */
-  private draw(mesh: Mesh, first: number, count: number) {
+  /**
+   * Packt Instanzen von Modellen (Bäume, Felsen, Sträucher ...) nach Form
+   * sortiert in einen eigenen Puffer auf der Grafikkarte. Andere Formen
+   * (Gebäude-Klötze, Flächen) gehören nicht hinein und werden übergangen.
+   */
+  createBatch(instances: readonly EntityInstance[]): StaticBatch {
+    const byShape = new Map<number, EntityInstance[]>();
+    for (const e of instances) {
+      if (!this.modelByShape.has(e.shape)) continue;
+      let list = byShape.get(e.shape);
+      if (!list) byShape.set(e.shape, (list = []));
+      list.push(e);
+    }
+    const d = new Float32Array(instances.length * STRIDE);
+    const ranges = new Map<number, { first: number; count: number }>();
+    let i = 0;
+    for (const [shape, list] of byShape) {
+      ranges.set(shape, { first: i, count: list.length });
+      for (const e of list) packInstance(d, i++ * STRIDE, e);
+    }
+    const gl = this.gl;
+    const buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, i * STRIDE), gl.STATIC_DRAW);
+    return { buffer, ranges };
+  }
+
+  deleteBatch(batch: StaticBatch) {
+    this.gl.deleteBuffer(batch.buffer);
+  }
+
+  /**
+   * Instanzen ab `first` in `buffer` (sonst dem Instanz-Puffer dieses Bildes).
+   * Die Attribut-Zeiger zeigen auf diesen Abschnitt.
+   */
+  private draw(mesh: Mesh, first: number, count: number, buffer = this.instanceBuffer) {
     if (count === 0) return;
     const gl = this.gl;
     const bytes = STRIDE * 4;
     const offset = first * bytes;
     gl.bindVertexArray(mesh.vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.vertexAttribPointer(1, 2, gl.FLOAT, false, bytes, offset);
     gl.vertexAttribPointer(2, 3, gl.FLOAT, false, bytes, offset + 8);
     gl.vertexAttribPointer(3, 3, gl.FLOAT, false, bytes, offset + 20);
@@ -2598,6 +2672,7 @@ export class EntityRenderer {
    * @param minSizeTiles Mindestgröße, damit Gebäude beim Herauszoomen nicht verschwinden
    * @param pixelRatio Geräte-Pixel je CSS-Pixel - Lebensbalken haben feste CSS-Größe
    * @param healthBars Lebensbalken über allem mit `health` zeichnen
+   * @param batches feste Puffer (createBatch), dazu gezeichnet
    */
   render(
       instances: EntityInstance[],
@@ -2605,8 +2680,9 @@ export class EntityRenderer {
       minSizeTiles: number,
       pixelRatio = 1,
       healthBars = false,
+      batches: readonly StaticBatch[] = [],
   ) {
-    if (instances.length === 0) return;
+    if (instances.length === 0 && batches.length === 0) return;
     const gl = this.gl;
 
     // Overlays zuerst, dann die Gebäude von hinten nach vorn - halbtransparente
@@ -2621,7 +2697,7 @@ export class EntityRenderer {
     for (const e of instances) {
       if (e.shape === SHAPE.flat || e.shape === SHAPE.ring) flats.push(e);
       else if (e.shape === SHAPE.dust) puffs.push(e);
-      else (this.models.find((m) => m.shape === e.shape)?.list ?? solids).push(e);
+      else (this.modelByShape.get(e.shape)?.list ?? solids).push(e);
     }
     const backToFront = (a: EntityInstance, b: EntityInstance) => a.x + a.y - (b.x + b.y);
     solids.sort(backToFront);
@@ -2639,29 +2715,7 @@ export class EntityRenderer {
     const d = this.data;
     let i = 0;
     for (const list of [flats, solids, ...this.models.map((m) => m.list), puffs]) {
-      for (const e of list) {
-        const o = i++ * STRIDE;
-        d[o] = e.x;
-        d[o + 1] = e.y;
-        d[o + 2] = e.color[0] / 255;
-        d[o + 3] = e.color[1] / 255;
-        d[o + 4] = e.color[2] / 255;
-        d[o + 5] = e.shape;
-        d[o + 6] = e.alpha;
-        d[o + 7] = e.size;
-        const m = e.motion;
-        // Ohne Angabe: Gebäude in ihrer Blickrichtung, Felder mit allen Furchen reif.
-        const field = !m && FIELDS.includes(e.shape);
-        d[o + 8] = m ? m[0] : field ? -1 : buildingHeading(e.shape);
-        d[o + 9] = m ? m[1] : field ? 3 : 0;
-        d[o + 10] = m ? m[2] : field ? 1 : 0;
-        d[o + 11] = m ? m[3] : field ? 511 : 0;
-        const a = e.accent ?? e.color;
-        d[o + 12] = a[0] / 255;
-        d[o + 13] = a[1] / 255;
-        d[o + 14] = a[2] / 255;
-        d[o + 15] = e.ground ?? GROUND_UNKNOWN;
-      }
+      for (const e of list) packInstance(d, i++ * STRIDE, e);
     }
     for (const e of bars) {
       const o = i++ * STRIDE;
@@ -2734,14 +2788,21 @@ export class EntityRenderer {
       gl.uniform1fv(this.location('uPoseRate'), clips.poseRate);
       gl.uniform1fv(this.location('uPoseShift'), clips.poseShift);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
-      this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);
+      const mesh = level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh;
+      this.draw(mesh, offset, m.list.length);
+      for (const batch of batches) {
+        const range = batch.ranges.get(m.shape);
+        if (range) this.draw(mesh, range.first, range.count, batch.buffer);
+      }
     };
+    const batched = new Set<number>();
+    for (const batch of batches) for (const shape of batch.ranges.keys()) batched.add(shape);
     // Erst alles außer den Figuren, dann die Figuren - dazwischen ihr Umriss,
     // wo etwas vor ihnen steht (wie in AoE2). Die Figuren sind dann noch nicht
     // im Tiefenpuffer und verdecken sich nicht selbst.
-    const figures: [(typeof this.models)[number], number][] = [];
+    const figures: [ModelSlot, number][] = [];
     for (const m of this.models) {
-      if (m.list.length > 0) {
+      if (m.list.length > 0 || batched.has(m.shape)) {
         if (FIGURES.includes(m.shape)) figures.push([m, first]);
         else drawModel(m, first);
       }

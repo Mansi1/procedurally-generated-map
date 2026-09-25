@@ -9,7 +9,7 @@ import {
   MiniMap,
   Terrain,
 } from './map';
-import type { EntityInstance } from './gl/entityRenderer';
+import type { EntityInstance, StaticBatch } from './gl/entityRenderer';
 import { setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   player,
@@ -61,13 +61,25 @@ const DEFAULT_ZOOM = 32;
 /** Kamera: Bildmitte, Zoomstufe, Sichtfläche (game/Camera.ts). */
 const camera = new Camera(DEFAULT_ZOOM);
 
+/**
+ * Pixeldichte, mit der das Spielfeld gerendert wird. Nah in echten
+ * Bildschirmpixeln; herausgezoomt weniger - der Browser skaliert das Canvas
+ * hoch. Der Gelände-Shader rechnet je Pixel, und weit draußen ist ohnehin
+ * jedes Detail kleiner als ein Pixel. Leisten und Menüs sind HTML und
+ * bleiben scharf.
+ */
+function renderRatio(): number {
+  if (camera.tileSize >= 32) return camera.pixelRatio;
+  if (camera.tileSize >= 16) return Math.min(camera.pixelRatio, 1);
+  return Math.min(camera.pixelRatio, 0.75);
+}
+
 function applyCanvasSize() {
   camera.fitWindow();
 
-  // Gezeichnet wird in echten Bildschirmpixeln, angezeigt in CSS-Pixeln.
-  // Sonst rendert der Browser das Canvas klein und skaliert es hoch.
-  canvas.width = Math.round(camera.width * camera.pixelRatio);
-  canvas.height = Math.round(camera.height * camera.pixelRatio);
+  const ratio = renderRatio();
+  canvas.width = Math.round(camera.width * ratio);
+  canvas.height = Math.round(camera.height * ratio);
   canvas.style.width = `${camera.width}px`;
   canvas.style.height = `${camera.height}px`;
 }
@@ -76,7 +88,7 @@ function resize() {
   // Die Kamera beschreibt die Bildmitte - die bleibt beim Größenwechsel stehen.
   applyCanvasSize();
 
-  renderer.pixelRatio = camera.pixelRatio;
+  renderer.pixelRatio = renderRatio();
   minimap.setPixelRatio(camera.pixelRatio);
 }
 
@@ -262,7 +274,7 @@ function faceDirection(dir: string) {
 // Der Speicherstand liegt im localStorage, je Welt einer.
 window.addEventListener('beforeunload', () => world.save());
 
-const renderer = new MapRenderer(canvas, seed, camera.tileSize, camera.pixelRatio);
+const renderer = new MapRenderer(canvas, seed, camera.tileSize, renderRatio());
 const minimap = new MiniMap(minimapCanvas, seed, camera.pixelRatio);
 
 camera.moveTo(startX, startY);
@@ -333,6 +345,7 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   const anchor = picker.point(ax, ay);
   if (!camera.setZoomIndex(index)) return;
   renderer.tileSize = camera.tileSize;
+  if (renderer.pixelRatio !== renderRatio()) resize();
   // ... und danach wieder genau unter den Anker legen.
   camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
 
@@ -450,6 +463,8 @@ const autosave = new Interval(60_000);
 
 /** Wird je Frame neu befüllt statt neu angelegt. */
 const overlay: EntityInstance[] = [];
+/** Feste Puffer der Vorkommen, an denen niemand arbeitet (world/resources.ts). */
+const staticBatches: StaticBatch[] = [];
 const minimapOverlay: EntityInstance[] = [];
 
 /**
@@ -461,10 +476,11 @@ const minimapOverlay: EntityInstance[] = [];
 /** Alles, was über dem Gelände gezeichnet wird: Vorkommen, Welt, Auswahl und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
+  staticBatches.length = 0;
   const visible = visibleWorldRect(camera.view());
   if (camera.tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camera.x, camera.y);
-    resources.instances(visible, world, overlay, selection.resource, blend);
+    resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
   }
   const hovered = pointer.tile ? world.at(pointer.tile.x, pointer.tile.y)?.anchor : undefined;
   worldInstances(world, visible, overlay, blend, selection, hovered);
@@ -493,7 +509,7 @@ function loop(now: number) {
   if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
   collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
-  renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
+  renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay, staticBatches);
 
   const seen = minimapView();
   minimapDots(world, minimap, seen, minimapOverlay);
