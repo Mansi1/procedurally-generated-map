@@ -8,15 +8,24 @@ const mirror = ([a, b]) => [-b, -a];
 function model() {
   const out = [];
   let base = 0;
-  /** Outline of rect [x0,x1]x[z0,z1], corners cut by r (0 = box, 0.3 = nearly round octagon). */
+  /**
+   * Outline of rect [x0,x1]x[z0,z1], corners rounded by r (0 = box, 0.5 = ellipse):
+   * each corner a quarter arc of CORNER segments - round, not an octagon.
+   */
+  const CORNER = 3;
   function ring([x0, x1], [z0, z1], y, r) {
     if (r <= 0) return [[x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0]];
     const cx = r * (x1 - x0);
     const cz = r * (z1 - z0);
-    return [
-      [x0 + cx, y, z0], [x0, y, z0 + cz], [x0, y, z1 - cz], [x0 + cx, y, z1],
-      [x1 - cx, y, z1], [x1, y, z1 - cz], [x1, y, z0 + cz], [x1 - cx, y, z0],
+    // Mittelpunkte der Eckbögen und von wo nach wo sie laufen - Reihenfolge wie vorher.
+    const corners = [
+      [x0 + cx, z0 + cz, -Math.PI / 2, -Math.PI], [x0 + cx, z1 - cz, Math.PI, Math.PI / 2],
+      [x1 - cx, z1 - cz, Math.PI / 2, 0], [x1 - cx, z0 + cz, 0, -Math.PI / 2],
     ];
+    return corners.flatMap(([mx, mz, a0, a1]) => Array.from({ length: CORNER + 1 }, (_, i) => {
+      const a = a0 + ((a1 - a0) * i) / CORNER;
+      return [mx + Math.cos(a) * cx, y, mz + Math.sin(a) * cz];
+    }));
   }
   /**
    * Frustum: bottom rect [x0,x1]x[z0,z1] at y0, top rect at y1 (top defaults to
@@ -42,41 +51,69 @@ function model() {
     box(name.replace('#', 'L'), mtl, x, y, z, o);
     box(name.replace('#', 'R'), mtl, mirror(x), y, z, o.x ? { ...o, x: mirror(o.x) } : o);
   }
-  return { box, pair, out };
+  /** Ellipsoid around c with radii r - round caps on shoulders and head. */
+  function ellipsoid(name, mtl, c, r, around = 10, rings = 6) {
+    const v = [[c[0], c[1] - r[1], c[2]]];
+    for (let i = 1; i < rings; i++) {
+      const phi = -Math.PI / 2 + (i * Math.PI) / rings;
+      for (let j = 0; j < around; j++) {
+        const theta = (j * 2 * Math.PI) / around;
+        v.push([c[0] + Math.cos(theta) * Math.cos(phi) * r[0], c[1] + Math.sin(phi) * r[1], c[2] + Math.sin(theta) * Math.cos(phi) * r[2]]);
+      }
+    }
+    v.push([c[0], c[1] + r[1], c[2]]);
+    out.push(`o ${name}`);
+    for (const p of v) out.push(`v ${p.map((x) => +x.toFixed(3)).join(' ')}`);
+    out.push(`usemtl ${mtl}`, 's off');
+    const at = (i, j) => base + 2 + (i - 1) * around + (j % around);
+    const top = base + v.length;
+    for (let j = 0; j < around; j++) {
+      out.push(`f ${base + 1} ${at(1, j + 1)} ${at(1, j)}`);
+      for (let i = 1; i < rings - 1; i++) out.push(`f ${at(i, j)} ${at(i, j + 1)} ${at(i + 1, j + 1)} ${at(i + 1, j)}`);
+      out.push(`f ${at(rings - 1, j)} ${at(rings - 1, j + 1)} ${top}`);
+    }
+    base += v.length;
+  }
+  /** Ellipsoid at x > 0 and mirrored to x < 0. */
+  function ellipsoidPair(name, mtl, [x, y, z], r) {
+    ellipsoid(name.replace('#', 'L'), mtl, [x, y, z], r);
+    ellipsoid(name.replace('#', 'R'), mtl, [-x, y, z], r);
+  }
+  return { box, pair, ellipsoid, ellipsoidPair, out };
 }
 
 /** Head centred on x = z = 0 (it turns around its vertical axis), chin at h. */
-function head({ box, pair }, h, male) {
-  box('Head', 'Skin', [-0.108, 0.108], [h, h + 0.26], [-0.11, 0.108], { x: [-0.118, 0.118], z: [-0.12, 0.116], r: 0.2 });
-  box('Head.Jaw', 'Skin', [-0.085, 0.085], [h - 0.02, h + 0.05], [-0.02, 0.1], { x: [-0.104, 0.104], z: [-0.04, 0.108], r: 0.2 });
+function head({ box, pair, ellipsoid, ellipsoidPair }, h, male) {
+  // Schädel und Kiefer rund; das Gesicht (Augen, Nase, Mund) sitzt vorn auf.
+  ellipsoid('Head', 'Skin', [0, h + 0.135, 0.004], [0.116, 0.14, 0.12], 12, 8);
+  ellipsoid('Head.Jaw', 'Skin', [0, h + 0.05, 0.03], [0.096, 0.07, 0.085], 10, 6);
   box('Head.Nose', 'Skin', [-0.022, 0.022], [h + 0.095, h + 0.165], [0.105, 0.148], { x: [-0.012, 0.012], z: [0.105, 0.124] });
   pair('Head.Nostril.#', 'SkinShade', [0.006, 0.018], [h + 0.095, h + 0.102], [0.13, 0.142]);
-  pair('Head.Cheek.#', 'Skin', [0.05, 0.1], [h + 0.07, h + 0.14], [0.095, 0.116], { z: [0.095, 0.112], r: 0.3 });
+  ellipsoidPair('Head.Cheek.#', 'Skin', [0.066, h + 0.105, 0.09], [0.024, 0.022, 0.014]);
   pair('Head.EyeWhite.#', 'EyeWhite', [0.03, 0.08], [h + 0.155, h + 0.188], [0.108, 0.118]);
   pair('Head.Eye.#', 'Eyes', [0.044, 0.068], [h + 0.157, h + 0.186], [0.114, 0.121]);
   pair('Head.Lid.#', 'SkinShade', [0.028, 0.082], [h + 0.186, h + 0.196], [0.108, 0.12]);
   pair('Head.Brow.#', 'Hair', [0.024, 0.088], [h + 0.2, h + 0.216], [0.11, 0.125], { x: [0.03, 0.084] });
   box('Head.Mouth', 'Lips', [-0.034, 0.034], [h + 0.064, h + 0.08], [0.104, 0.116], { x: [-0.03, 0.03] });
-  pair('Head.Ear.#', 'Skin', [0.11, 0.134], [h + 0.1, h + 0.18], [-0.035, 0.02], { r: 0.3 });
-  pair('Head.Ear.Inner.#', 'SkinShade', [0.132, 0.136], [h + 0.115, h + 0.165], [-0.022, 0.008]);
-  box('Head.Hair.Top', 'Hair', [-0.126, 0.126], [h + 0.215, h + 0.305], [-0.13, 0.124], { x: [-0.095, 0.095], z: [-0.1, 0.1], r: 0.3 });
-  box('Head.Hair.Back', 'Hair', [-0.122, 0.122], [h + 0.06, h + 0.23], [-0.13, -0.02], { x: [-0.126, 0.126], r: 0.25 });
-  pair('Head.Hair.Side.#', 'Hair', [0.112, 0.128], [h + 0.17, h + 0.23], [-0.03, 0.08]);
+  ellipsoidPair('Head.Ear.#', 'Skin', [0.118, h + 0.14, -0.008], [0.018, 0.042, 0.03]);
+  // Haar als runde Kappe, etwas nach hinten versetzt: bedeckt Oberkopf und
+  // Hinterkopf, vorn endet sie hoch über der Stirn - das Gesicht bleibt frei.
+  ellipsoid('Head.Hair', 'Hair', [0, h + 0.178, -0.036], [0.126, 0.145, 0.13], 12, 8);
   if (male) {
     // Tousled fringe, short full beard along the jaw, moustache.
-    for (const [x, len] of [[-0.075, 0.05], [-0.025, 0.065], [0.025, 0.055], [0.075, 0.045]]) {
-      box('Head.Hair.Fringe', 'Hair', [x - 0.03, x + 0.03], [h + 0.215 - len, h + 0.235], [0.1, 0.13], { x: [x - 0.035, x + 0.035] });
+    for (const [x, y] of [[-0.065, 0.245], [-0.02, 0.24], [0.025, 0.242], [0.07, 0.248]]) {
+      ellipsoid('Head.Hair.Fringe', 'Hair', [x, h + y, 0.05], [0.036, 0.026, 0.042], 8, 5);
     }
-    box('Head.Beard', 'Hair', [-0.08, 0.08], [h - 0.045, h + 0.06], [0.03, 0.118], { x: [-0.108, 0.108], z: [0.0, 0.114], r: 0.25 });
-    pair('Head.Beard.Side.#', 'Hair', [0.098, 0.122], [h + 0.0, h + 0.16], [-0.03, 0.105], { z: [-0.03, 0.07] });
+    ellipsoid('Head.Beard', 'Hair', [0, h + 0.005, 0.04], [0.104, 0.08, 0.085], 12, 6);
+    ellipsoidPair('Head.Beard.Side.#', 'Hair', [0.098, h + 0.07, 0.03], [0.03, 0.085, 0.07]);
     box('Head.Moustache', 'Hair', [-0.05, 0.05], [h + 0.078, h + 0.098], [0.104, 0.124], { x: [-0.042, 0.042] });
     box('Head.Mouth.Gap', 'Lips', [-0.028, 0.028], [h + 0.062, h + 0.078], [0.112, 0.12]);
   } else {
     // Parted fringe, hair gathered in a bun with a tie, a lock over each ear.
-    pair('Head.Hair.Fringe.#', 'Hair', [0.005, 0.11], [h + 0.19, h + 0.235], [0.1, 0.13], { x: [0.0, 0.1] });
-    box('Head.Hair.Bun', 'Hair', [-0.07, 0.07], [h + 0.15, h + 0.29], [-0.19, -0.09], { x: [-0.055, 0.055], z: [-0.175, -0.09], r: 0.3 });
-    box('Head.Hair.Tie', 'Band', [-0.058, 0.058], [h + 0.2, h + 0.225], [-0.12, -0.08], { r: 0.2 });
-    pair('Head.Hair.Lock.#', 'Hair', [0.108, 0.13], [h + 0.02, h + 0.18], [0.025, 0.08], { x: [0.11, 0.128] });
+    ellipsoidPair('Head.Hair.Fringe.#', 'Hair', [0.052, h + 0.245, 0.05], [0.06, 0.03, 0.045]);
+    ellipsoid('Head.Hair.Bun', 'Hair', [0, h + 0.23, -0.15], [0.068, 0.07, 0.058]);
+    ellipsoid('Head.Hair.Tie', 'Band', [0, h + 0.225, -0.105], [0.058, 0.02, 0.03], 10, 4);
+    ellipsoidPair('Head.Hair.Lock.#', 'Hair', [0.112, h + 0.1, 0.045], [0.022, 0.085, 0.035]);
     pair('Head.Lash.#', 'Eyes', [0.078, 0.088], [h + 0.18, h + 0.192], [0.11, 0.12]);
   }
 }
@@ -185,6 +222,8 @@ function male() {
   // Upper arms swing at the shoulder: round deltoid and biceps, reaching
   // below the elbow. The forearm with a leather wrap bends at the elbow.
   pair('Arm.#', 'Skin', [0.252, 0.334], [elbow - 0.04, sh], [-0.06, 0.06], { x: [0.232, 0.372], z: [-0.086, 0.086], r: 0.3 });
+  // Runde Schulter oben auf dem Oberarm - schwingt mit ihm.
+  m.ellipsoidPair('Arm.#.Shoulder', 'Skin', [0.302, sh - 0.01, 0], [0.072, 0.055, 0.088]);
   pair('Arm.#.Bicep', 'Skin', [0.264, 0.326], [sh - 0.28, sh - 0.12], [0.03, 0.078], { z: [0.03, 0.068], r: 0.3 });
   pair('Arm.#.Lower', 'Skin', [0.26, 0.32], [sh - 0.56, elbow], [-0.044, 0.044], { x: [0.252, 0.332], z: [-0.058, 0.058], r: 0.3 });
   pair('Arm.#.Lower.Wrap', 'Leather', [0.254, 0.326], [sh - 0.565, sh - 0.47], [-0.05, 0.05], { x: [0.252, 0.33], z: [-0.053, 0.053], r: 0.25 });
@@ -242,6 +281,7 @@ function female() {
 
   // Arms: puffed white sleeves rolled up at the elbow; bare forearm bends there.
   pair('Arm.#', 'Wool', [0.2, 0.285], [elbow - 0.03, sh], [-0.068, 0.068], { x: [0.188, 0.302], z: [-0.08, 0.08], r: 0.3 });
+  m.ellipsoidPair('Arm.#.Shoulder', 'Wool', [0.245, sh - 0.01, 0], [0.058, 0.05, 0.082]);
   pair('Arm.#.Puff', 'Wool', [0.192, 0.3], [sh - 0.16, sh - 0.02], [-0.082, 0.082], { x: [0.19, 0.3], r: 0.35 });
   pair('Arm.#.Cuff', 'WoolShade', [0.196, 0.29], [elbow - 0.01, elbow + 0.05], [-0.074, 0.074], { r: 0.3 });
   pair('Arm.#.Lower', 'Skin', [0.213, 0.267], [sh - 0.54, elbow], [-0.04, 0.04], { x: [0.207, 0.277], z: [-0.052, 0.052], r: 0.3 });
