@@ -1,7 +1,9 @@
+import { saveKey } from './world/save';
+
 const DEMO_SEED = 'Demo'
 
 const loadDemo = async () => {
-    const SEED_KEY = `pgm.world.${DEMO_SEED}`
+    const SEED_KEY = saveKey(DEMO_SEED)
     if(!localStorage.getItem(SEED_KEY)){
         const demoState = JSON.stringify(await (await fetch('/savegame/demo.json')).json());
         localStorage.setItem(SEED_KEY, demoState);

@@ -31,8 +31,9 @@ import {
 import type { AnimalKind, BuildingType, CropType, DepositType, ResourceKind, Resources } from './catalog';
 import {
   buildingFromSave, createBuilding, furrowFood, furrowPosition, maskCovers, CENTER_TILE,
-  type Building, type BuildingSave, type Farm, type Furrow, type UnitProducer,
+  type Building, type Farm, type Furrow, type UnitProducer,
 } from './building';
+import { readSave, writeSave, type LoadedSave, type SaveData } from './save';
 
 /** Ein Tier: zieht umher, äst, flieht vor Dorfbewohnern; erlegt bleibt der Kadaver liegen. */
 export interface Animal {
@@ -237,24 +238,6 @@ const DELIVER_REACH = 0.6;
 /** So lange (Sekunden) bleibt ein Dorfbewohner beim Abladen im Gebäude. */
 const INSIDE_TIME = 1.2;
 
-interface SaveData {
-  version: 3;
-  stock: Resources;
-  buildings: BuildingSave[];
-  villagers: {
-    x: number; y: number; c: number; ct: ResourceKind | null; task: Task; hp?: number;
-    /** Name und Geschlecht - fehlen in älteren Speicherständen. */
-    n?: string; f?: boolean;
-  }[];
-  /** "x,y" -> bereits entnommene Menge. */
-  harvested: Record<string, number>;
-  /** Tiere: Art, Lage, Trefferpunkte, Nahrung, erlegt; dazu die Stücke, in denen sie schon entstanden sind. */
-  animals?: { k: AnimalKind; x: number; y: number; hp: number; f: number; d?: boolean }[];
-  spawned?: string[];
-  /** Wann gespeichert wurde (ms seit 1970) - fürs Laden-Menü; fehlt in älteren Ständen. */
-  savedAt?: number;
-}
-
 export class World {
   private buildings = new Map<string, Building>();
   /** Jedes belegte Feld zeigt auf den Ankerpunkt seines Gebäudes. */
@@ -313,7 +296,8 @@ export class World {
   groundAt: ((x: number, y: number) => number) | null = null;
 
   constructor(private terrain: Terrain, private seed: string) {
-    this.load();
+    const saved = readSave(seed);
+    if (saved) this.applySave(saved);
   }
 
   /** Seed als Zahl - damit die Tiere in jeder Welt woanders stehen. */
@@ -323,9 +307,6 @@ export class World {
     return (h >>> 0) % 100000;
   }
 
-  private get storageKey() {
-    return `pgm.world.${this.seed}`;
-  }
 
   // --- Abfragen ------------------------------------------------------------
 
@@ -1931,9 +1912,16 @@ export class World {
   // --- Speichern -----------------------------------------------------------
 
   /** Schreibt nur, wenn sich etwas geändert hat. */
+  /** Speichert den Stand dieser Welt - nur, wenn sich seit dem letzten Mal etwas geändert hat. */
   save() {
     if (!this.dirty) return;
-    const data: SaveData = {
+    // Ohne Speicher (privater Modus, voll) läuft das Spiel weiter, nur ohne Spielstand.
+    if (writeSave(this.seed, this.toSave())) this.dirty = false;
+  }
+
+  /** Der Stand als Speicherstand (siehe save.ts). */
+  private toSave(): SaveData {
+    return {
       version: 3,
       savedAt: Date.now(),
       stock: this.stock,
@@ -1948,65 +1936,29 @@ export class World {
       })),
       spawned: [...this.spawnedChunks],
     };
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(data));
-      this.dirty = false;
-    } catch {
-      // Privater Modus oder volles Kontingent - das Spiel läuft weiter,
-      // nur ohne Speicherstand.
-    }
   }
 
-  private load() {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(this.storageKey);
-    } catch {
-      return;
-    }
-    if (!raw) return;
-
-    let data:
-      | SaveData
-      | { version: 2 } & Omit<SaveData, 'version'>
-      | { version: 1 } & Omit<SaveData, 'version' | 'villagers'>;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    // Version 1 kannte noch keine Dorfbewohner - Gebäude und Vorrat bleiben.
-    if (data.version !== 1 && data.version !== 2 && data.version !== 3) return;
-    // Bis Version 2 war ein Tile doppelt so lang: Koordinaten verdoppeln sich,
-    // damit alles auf demselben Gelände steht. Was abgebaut war, lässt sich
-    // nicht übertragen - aus einem Tile sind vier geworden -, und laufende
-    // Aufträge zeigen auf alte Felder; beides beginnt von vorn.
-    const scale = data.version < 3 ? 2 : 1;
-
-    // Bis zur Umbenennung hieß Nahrung im Vorrat "berries".
-    const stock = data.stock as Partial<Resources> & { berries?: number };
-    this.stock = { ...initialResources(), ...stock, food: stock.food ?? stock.berries ?? initialResources().food };
-    delete (this.stock as Partial<Resources> & { berries?: number }).berries;
+  /** Übernimmt einen geladenen Stand - schon auf das heutige Format gebracht (save.ts). */
+  private applySave({ data, scale }: LoadedSave) {
+    this.stock = data.stock;
     // Welche Felder leer sind, steht nicht im Speicherstand - es ergibt sich
     // aus der entnommenen Menge und dem, was der Generator dort hergibt. So
     // bleibt die Datei klein und übersteht eine Änderung an den Vorkommen.
-    for (const [k, amount] of Object.entries(scale === 1 ? data.harvested ?? {} : {})) {
+    for (const [k, amount] of Object.entries(data.harvested)) {
       this.harvested.set(k, amount);
       const comma = k.indexOf(',');
-      const tile = this.terrain.getTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1)));
+      const [x, y] = [Number(k.slice(0, comma)), Number(k.slice(comma + 1))];
+      const tile = this.terrain.getTile(x, y);
       if (amount >= tile.resourceAmount) this.exhausted.add(k);
       // Wann zuletzt gepflückt wurde, steht nicht im Speicherstand - die
       // Pause beginnt beim Laden von vorn.
       if (tile.resource === 'berries') this.berryTiles.set(k, { total: tile.resourceAmount, picked: 0 });
       // Angefangene Bäume liegen schon - ohne noch einmal umzufallen. Die
       // Richtung steht nicht im Speicherstand; sie ergibt sich aus der Lage.
-      if (tile.resource === 'wood') {
-        const [x, y] = [Number(k.slice(0, comma)), Number(k.slice(comma + 1))];
-        this.felled.set(k, { at: -Infinity, dir: ((x * 7 + y * 13) % 8) * (Math.PI / 4) });
-      }
+      if (tile.resource === 'wood') this.felled.set(k, { at: -Infinity, dir: ((x * 7 + y * 13) % 8) * (Math.PI / 4) });
     }
 
-    for (const saved of data.buildings ?? []) {
+    for (const saved of data.buildings) {
       // Unbekannte Arten fallen weg; umbenannte schreibt buildingFromSave um.
       const building = buildingFromSave(saved, scale);
       if (!building) continue;
@@ -2014,26 +1966,20 @@ export class World {
       for (const [tx, ty] of building.footprintTiles()) this.occupied.set(key(tx, ty), building.anchor);
     }
 
-    if (data.version === 3) {
-      for (const k of data.spawned ?? []) this.spawnedChunks.add(k);
-      for (const a of data.animals ?? []) {
-        if (ANIMALS[a.k]) this.addAnimal(a.k, a.x, a.y, a.hp, a.f, a.d);
-      }
+    for (const k of data.spawned ?? []) this.spawnedChunks.add(k);
+    for (const a of data.animals ?? []) {
+      if (ANIMALS[a.k]) this.addAnimal(a.k, a.x, a.y, a.hp, a.f, a.d);
     }
 
-    if (data.version !== 1) {
-      for (const s of data.villagers ?? []) {
-        // Ältere Speicherstände kennen weder Namen noch Geschlecht.
-        const female = s.f ?? this.nextId % 2 === 1;
-        const v = newVillager(this.nextId++, s.x * scale, s.y * scale, s.n ?? this.freeName(female), female);
-        v.carrying = s.c;
-        // Früher trug er "berries" statt Nahrung.
-        const carried = (s.ct as string) === 'berries' ? 'food' : s.ct;
-        v.carryType = carried && RESOURCE_KINDS.includes(carried) ? carried : null;
-        v.task = scale === 1 ? s.task ?? { kind: 'idle' } : { kind: 'idle' };
-        v.hp = Math.min(s.hp ?? VILLAGER.hp, VILLAGER.hp);
-        this.villagers.push(v);
-      }
+    for (const s of data.villagers) {
+      // Ältere Speicherstände kennen weder Namen noch Geschlecht.
+      const female = s.f ?? this.nextId % 2 === 1;
+      const v = newVillager(this.nextId++, s.x * scale, s.y * scale, s.n ?? this.freeName(female), female);
+      v.carrying = s.c;
+      v.carryType = s.ct;
+      v.task = s.task;
+      v.hp = Math.min(s.hp ?? VILLAGER.hp, VILLAGER.hp);
+      this.villagers.push(v);
     }
   }
 

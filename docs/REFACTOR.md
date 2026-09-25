@@ -210,7 +210,7 @@ src/
 
 ### Phase 2: `world.ts` aufteilen (B7)
 
-- [ ] 2.1 `save.ts`: `SaveData`, `save()`, `load()` und die Umrechnung alter Versionen
+- [x] 2.1 `save.ts`: `SaveData`, Schlüssel, lesen, schreiben und die Umrechnung alter Versionen; `worlds.ts` und `demo.ts` nutzen es
 - [ ] 2.2 `farming.ts`: Feldgruppen, Phasen, freie Furche, Bauern, Wachsen
 - [ ] 2.3 `animals.ts`: Tiere erzeugen, bewegen, jagen
 - [ ] 2.4 `villagers.ts`: Aufgaben, Laufen, Sammeln, Abliefern, `describe()`

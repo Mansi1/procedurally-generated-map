@@ -3,14 +3,16 @@
 // localStorage: die zuletzt gewählte. Eine andere Welt beginnt mit einem
 // Neuladen der Seite; ein Vermerk im sessionStorage sagt der neuen Seite,
 // dass sie gleich ins Spiel geht (neu oder weiter) statt ins Hauptmenü.
-// Dazu die Liste der Spielstände fürs Laden-Menü.
+// Dazu die Liste der Spielstände fürs Laden-Menü - das Format und den Ort
+// der Spielstände kennt world/save.ts.
+
+import { readSave, saveKey, seedOfKey } from './world/save';
 
 /** Die Welt, wenn noch keine gewählt wurde. */
 export const DEFAULT_SEED = 'Soliva';
 
 const SEED_KEY = 'pgm.seed';
 const START_KEY = 'pgm.start';
-const SAVE_PREFIX = 'pgm.world.';
 
 /** Wie die Seite nach dem Wechsel der Welt beginnt. */
 export type StartRequest = 'new' | 'continue';
@@ -26,12 +28,8 @@ export function currentSeed(): string {
 
 /** Hat die Welt einen Spielstand mit Gebäuden oder Dorfbewohnern? */
 export function hasProgress(seed: string): boolean {
-  try {
-    const data = JSON.parse(localStorage.getItem(SAVE_PREFIX + seed) ?? 'null');
-    return (data?.buildings?.length ?? 0) > 0 || (data?.villagers?.length ?? 0) > 0;
-  } catch {
-    return false;
-  }
+  const info = saveInfo(seed);
+  return info !== null && (info.buildings > 0 || info.villagers > 0);
 }
 
 /** Ein Spielstand, wie ihn das Laden-Menü zeigt. */
@@ -43,36 +41,34 @@ export interface SaveInfo {
   savedAt?: number;
 }
 
+/** Kurzinfo zum Spielstand einer Welt - null, wenn es keinen (lesbaren) gibt. */
+function saveInfo(seed: string): SaveInfo | null {
+  const saved = readSave(seed);
+  if (!saved) return null;
+  const { data } = saved;
+  return { seed, buildings: data.buildings.length, villagers: data.villagers.length, savedAt: data.savedAt };
+}
+
 /** Alle Spielstände mit Gebäuden oder Dorfbewohnern, der jüngste zuerst. */
 export function listSaves(): SaveInfo[] {
-  const saves: SaveInfo[] = [];
+  const seeds: string[] = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key?.startsWith(SAVE_PREFIX)) continue;
-      try {
-        const data = JSON.parse(localStorage.getItem(key) ?? 'null');
-        const info = {
-          seed: key.slice(SAVE_PREFIX.length),
-          buildings: data?.buildings?.length ?? 0,
-          villagers: data?.villagers?.length ?? 0,
-          savedAt: typeof data?.savedAt === 'number' ? data.savedAt : undefined,
-        };
-        if (info.buildings > 0 || info.villagers > 0) saves.push(info);
-      } catch {
-        // Kaputter Eintrag - nicht anbieten.
-      }
+      const seed = seedOfKey(localStorage.key(i) ?? '');
+      if (seed !== null) seeds.push(seed);
     }
   } catch {
     return [];
   }
-  return saves.sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
+  return seeds.map(saveInfo)
+    .filter((info): info is SaveInfo => info !== null && (info.buildings > 0 || info.villagers > 0))
+    .sort((a, b) => (b.savedAt ?? 0) - (a.savedAt ?? 0));
 }
 
 /** Spielstand einer Welt löschen. */
 export function deleteSave(seed: string) {
   try {
-    localStorage.removeItem(SAVE_PREFIX + seed);
+    localStorage.removeItem(saveKey(seed));
   } catch {
     // Ohne Speicher gibt es auch nichts zu löschen.
   }
