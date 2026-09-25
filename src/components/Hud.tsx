@@ -77,13 +77,34 @@ function SoundButton() {
 }
 
 /**
- * Kompass auf dem Ring um die Minimap: die vier Himmelsrichtungen stehen an
- * den Stellen des Rings, in die sie zeigen - main.ts stellt sie je nach
- * Blickrichtung (game/Compass.ts). Ein Klick dreht die Richtung nach oben.
+ * Eine Spitze der Windrose: zeigt von der Mitte nach außen, halb dunkel, halb
+ * hell, hinten eingekerbt. Oben und unten liegt die dunkle Hälfte links bzw.
+ * rechts, seitlich unten bzw. oben - wie auf einer gezeichneten Karte.
+ */
+function RoseArrow({ angle }: { angle: number }) {
+  const mirror = angle % 180 === 0 ? 1 : -1;
+  // Maße ab der Mitte: Spitze außen, Fuß auf dem Ring, Kerbe dazwischen.
+  const tip = 145, base = 119, notch = 124, half = 10;
+  return (
+    <g transform={`translate(166 166) rotate(${angle}) scale(${mirror} 1)`}>
+      <polygon class="rose-dark" points={`0,${-tip} ${-half},${-base} 0,${-notch}`} />
+      <polygon class="rose-light" points={`0,${-tip} 0,${-notch} ${half},${-base}`} />
+    </g>
+  );
+}
+
+/**
+ * Windrose auf dem Ring um die Minimap: vier Spitzen, die immer nach oben,
+ * rechts, unten und links zeigen, und davor die Himmelsrichtungen - main.ts
+ * stellt die Buchstaben je nach Blickrichtung (game/Compass.ts). Ein Klick
+ * auf einen Buchstaben dreht die Richtung nach oben.
  */
 function Compass() {
   return (
     <div id="compass" title="Blickrichtung - klicke auf eine Himmelsrichtung">
+      <svg class="rose" viewBox="0 0 332 332" width="332" height="332">
+        {[0, 90, 180, 270].map((angle) => <RoseArrow angle={angle} />)}
+      </svg>
       <button type="button" data-dir="N">N</button>
       <button type="button" data-dir="E">O</button>
       <button type="button" data-dir="S">S</button>
@@ -109,9 +130,10 @@ function TurnIcon({ flip }: { flip?: boolean }) {
  * Menü (mountMinimapMenu), unten links der Ton, unten rechts das Drehen.
  */
 function Minimap() {
-  // Maße wie in Hud.css: Rahmen 312 px, Karte 284 px, Mitte bei 156.
-  const c = 156;
-  const ring = 146;
+  // Maße wie in Hud.css: Rahmen 332 px, Karte 244 px, Mitte bei 166. Außen
+  // um den Ring bleibt Platz für die Windrose.
+  const c = 166;
+  const ring = 127;
   // Nägel im Ring, zwischen den Himmelsrichtungen - wie auf den Planken oben.
   const nails = [22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5].map((deg) => {
     const a = (deg * Math.PI) / 180;
@@ -119,7 +141,7 @@ function Minimap() {
   });
   return (
     <div id="minimap-frame" style={`background-image:url(${woodBar})`}>
-      <svg class="minimap-ring" viewBox="0 0 312 312" width="312" height="312">
+      <svg class="minimap-ring" viewBox="0 0 332 332" width="332" height="332">
         <defs>
           <radialGradient id="minimap-disc" cx="50%" cy="45%" r="55%">
             <stop offset="0" stop-color="#3e2614" />

@@ -376,7 +376,7 @@ export class MiniMap {
   private terrain: TerrainRenderer;
   private entities: EntityRenderer;
   /** Kantenlänge des Canvas in CSS-Pixeln - der Kreis reicht von Rand zu Rand (Hud.css). */
-  private cssSize = 284;
+  private cssSize = 244;
 
   /**
    * Wie viel breiter als die Hauptansicht die Minimap zeigt - bei jeder

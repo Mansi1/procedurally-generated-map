@@ -234,8 +234,8 @@ world.onEvent = worldSounds(sound, camera, (x, y) => ground.heightAt(x, y));
 
 // --- Kompass ---------------------------------------------------------------
 
-/** Kompass auf dem Ring der Minimap (game/Compass.ts) - etwas innerhalb des Rings (146 px, Hud.tsx), damit W und O nicht über den Rahmen ragen. */
-const compass = new Compass(document.getElementById('compass')!, 143, (dir) => faceDirection(dir));
+/** Windrose um die Minimap (game/Compass.ts) - die Buchstaben außen vor den Spitzen (Hud.tsx). */
+const compass = new Compass(document.getElementById('compass')!, 155, (dir) => faceDirection(dir));
 // Die Pfeile unter der Minimap drehen um eine Vierteldrehung: was rechts bzw. links liegt, kommt nach oben.
 document.getElementById('turn-left')!.addEventListener('click', () => faceDirection(directionAt(1)));
 document.getElementById('turn-right')!.addEventListener('click', () => faceDirection(directionAt(-1)));

@@ -5,8 +5,8 @@
   position: absolute;
   left: 12px;
   bottom: 12px;
-  /* Rechts Platz für die Minimap (300 px + Abstand). */
-  right: 336px;
+  /* Rechts Platz für die Minimap (332 px + Abstand). */
+  right: 356px;
   max-width: 900px;
   height: 156px;
   display: flex;
