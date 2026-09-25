@@ -145,6 +145,24 @@ function hatchet({ box }, [x0, x1], gy) {
   box('Arm.R.Lower.Tool.Edge', 'Steel', [hc - 0.011, hc + 0.011], [gy - 0.24, gy + 0.03], [0.42, 0.49], { z: [0.47, 0.53] });
 }
 
+/**
+ * Zugmesser, nur beim Schnitzen (Pose 5) zu sehen: zwei Griffe in den Fäusten,
+ * dazwischen die Klinge quer. Gebaut in der Ruhelage (Arme hängen); der Shader
+ * bewegt jeden Punkt mit beiden Unterarmen und blendet nach seiner Lage
+ * zwischen den Händen über - so bleiben beide Griffe in den Händen (P_KNIFE).
+ * Die Klinge sitzt hinter den Fäusten: mit angehobenem Unterarm zeigt sie
+ * nach unten auf den Stab.
+ */
+function drawknife({ box }, [x0, x1], top) {
+  const xc = (x0 + x1) / 2;
+  for (const s of [-1, 1]) {
+    box('Knife.Handle', 'Wood', [s * xc - 0.02, s * xc + 0.02], [top - 0.17, top - 0.03], [-0.02, 0.02], { r: 0.3 });
+    box('Knife.Tang', 'Iron', [s * xc - 0.012, s * xc + 0.012], [top - 0.17, top - 0.15], [-0.07, -0.02]);
+  }
+  box('Knife.Blade', 'Iron', [-xc + 0.01, xc - 0.01], [top - 0.175, top - 0.145], [-0.1, -0.06]);
+  box('Knife.Edge', 'Steel', [-xc + 0.015, xc - 0.015], [top - 0.172, top - 0.148], [-0.12, -0.1]);
+}
+
 const MOW = JSON.parse(readFileSync(new URL('../../src/models/mow_pose.json', import.meta.url), 'utf8'));
 
 /**
@@ -299,6 +317,7 @@ function male() {
 
   hatchet(m, [0.26, 0.322], sh - 0.64);
   scythe(m);
+  drawknife(m, [0.26, 0.322], sh - 0.56);
   load(m, -0.13);
   return m.out.join('\n');
 }
@@ -357,6 +376,7 @@ function female() {
 
   hatchet(m, [0.212, 0.268], sh - 0.62);
   scythe(m);
+  drawknife(m, [0.212, 0.268], sh - 0.54);
   load(m, -0.125);
   return m.out.join('\n');
 }
@@ -366,7 +386,8 @@ const header = (what) => `# villager_${what}.obj - ${what === 'female' ? 'Dorfbe
 # nach +Z - so wie Blender eine Figur exportiert (Standard-Achsen beim OBJ-Export).
 # Die Objektnamen steuern die Animation: Leg.L/Leg.R schwingen an der Huefte,
 # Leg.*.Lower (Unterschenkel) knickt zusaetzlich am Knie; Arm.L/Arm.R schwingen
-# an der Schulter, Arm.*.Lower (Unterarm, Hand, Beil) am Ellbogen. Head (samt
+# an der Schulter, Arm.*.Lower (Unterarm, Hand, Beil) am Ellbogen; Knife (das
+# Zugmesser) haengt an beiden Haenden. Head (samt
 # Haaren) dreht sich, Load waechst mit der Ladung. Material Tunic
 # (${what === 'female' ? 'Kleid' : 'Hose'}) bekommt die Spielerfarbe, Load die Farbe der Ressource.
 mtllib villager.mtl

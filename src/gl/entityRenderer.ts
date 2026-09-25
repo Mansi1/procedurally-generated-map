@@ -495,6 +495,7 @@ const int P_FOREARM_L = 11;
 const int P_FOREARM_R = 12;
 const int P_TOOL = 13;       // Beil in der rechten Hand, schwingt mit dem Unterarm
 const int P_SCYTHE = 23;     // Sense in der rechten Hand - nur beim Mähen zu sehen
+const int P_KNIFE = 31;      // Zugmesser in beiden Händen - nur beim Schnitzen zu sehen
 // Beere am Strauch. aCorner.w = 14 + Zufall * 0.45 je Beere: sie ist zu
 // sehen, solange der Rest des Vorkommens (aMotion.w) über dem Zufall liegt.
 const int P_BERRY = 14;
@@ -703,24 +704,37 @@ void main() {
         twist = sweep * 0.55;
         bob = ${MOW.bob.toFixed(3)};
       } else if (pose == 5) {
-        // Schnitzen an der Werkbank: leicht gebeugt, beide Hände vorn auf
-        // Tischhöhe am Zugmesser. Es gleitet mit gestreckten Armen vom Körper
-        // weg an den Stab und wird mit angewinkelten Ellbogen herangezogen -
-        // der Oberkörper geht ein wenig mit.
-        float t = phase * 0.6;
-        float pull = 0.5 + 0.5 * sin(t);
-        hipL = 0.12;
-        hipR = -0.08;
-        kneeL = -0.2;
-        kneeR = -0.15;
-        shL = 0.55 + 0.35 * (1.0 - pull);
+        // Schnitzen mit dem Zugmesser an der Werkbank. Ein Zug: schnell zum
+        // Körper heran - da schneidet es, und der Ton kommt (villagers.ts,
+        // swing) -, dann langsam wieder vor an den Stab. Der Oberkörper geht
+        // mit, die Knie federn, der Blick bleibt auf dem Stab. Jeder fünfte
+        // Zug ist keiner: er hebt das Messer, richtet sich auf und prüft.
+        float t = phase * 0.6 - 4.712389;
+        float k = floor(t / 6.2831853);
+        float cyc = t / 6.2831853 - k;
+        bool inspect = int(mod(k, 5.0) + 0.5) == 4;
+        float pull = cyc < 0.3 ? smoothstep(0.0, 0.3, cyc) : 1.0 - smoothstep(0.3, 1.0, cyc);
+        float lift = 0.0;
+        if (inspect) {
+          lift = sin(cyc * 3.1415927);
+          pull = 0.4;
+        }
+        hipL = 0.14;
+        hipR = -0.1;
+        kneeL = -0.24 - 0.1 * pull;
+        kneeR = -0.2 - 0.1 * pull;
+        shL = 1.0 - 0.5 * pull + 0.35 * lift;
         shR = shL;
-        elL = 0.45 + 0.75 * pull;
+        elL = 0.3 + 0.9 * pull + 0.35 * lift;
         elR = elL;
-        inL = 0.25;
-        inR = 0.25;
-        lean = 0.22 + 0.1 * (1.0 - pull);
-        bob = -0.02;
+        inL = 0.22;
+        inR = 0.22;
+        lean = 0.36 - 0.16 * pull - 0.2 * lift;
+        // Mal etwas weiter links, mal rechts am Stab.
+        twist = 0.06 * sin(k * 1.7);
+        bob = -0.02 - 0.02 * pull;
+        // Kopf gesenkt, beim Prüfen hebt er ihn.
+        if (part == P_HEAD) p = swingAround(p, uShoulder + 0.03, 0.4 - 0.3 * lift);
       } else {
         // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
         // eine Gruppe nicht im Gleichtakt atmet.
@@ -761,6 +775,20 @@ void main() {
       if (part == P_TOOL && (pose == 3 || pose == 4 || pose == 5)) p = vec3(0.0, 0.0, uHip);
       // Die Sense nur beim Mähen - sonst trägt er das Beil.
       if (part == P_SCYTHE && pose != 4) p = vec3(0.0, 0.0, uHip);
+      // Das Zugmesser nur beim Schnitzen. Es hängt an beiden Händen: jeder
+      // Punkt geht mit dem rechten und mit dem linken Arm mit, überblendet
+      // nach seiner Lage zwischen den Händen - so bleiben beide Griffe fest.
+      if (part == P_KNIFE) {
+        if (pose != 5) {
+          p = vec3(0.0, 0.0, uHip);
+        } else {
+          vec3 a = swingSideways(swingAround(p, uElbow, elR), vec2(-uArm, uShoulder), inR);
+          vec3 b = swingSideways(swingAround(p, uElbow, elL), vec2(uArm, uShoulder), -inL);
+          a = swingAround(a, uShoulder, shR);
+          b = swingAround(b, uShoulder, shL);
+          p = mix(a, b, clamp((p.y + uArm) / (2.0 * uArm), 0.0, 1.0));
+        }
+      }
       if (legL) p = swingAround(p, uHip, hipL);
       if (legR) p = swingAround(p, uHip, hipR);
       // Beim Mähen schwenkt der hängende Arm erst zur Mitte, dann nach vorn.
@@ -1634,6 +1662,8 @@ const PARTS: [prefix: string, part: number][] = [
   ['Load', 6],
   ['Sails', 7],
   ['Cloth', 8],
+  // Zugmesser der Figuren (siehe P_KNIFE).
+  ['Knife', 31],
   // Waffenkammer (siehe P_CUT_ROOF).
   ['Cut.Roof', 28],
   ['Stock', 29],
