@@ -46,7 +46,7 @@ export class DevPanel {
   }
 
   showZoom(tileSize: number) {
-    setText(this.zoom, `${tileSize}px`);
+    setText(this.zoom, `${Math.round(tileSize * 10) / 10}px`);
   }
 
   /** Tile unter dem Zeiger mit seinen Gelände-Werten - oder keins. */

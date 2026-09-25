@@ -52,6 +52,15 @@ export interface GpuCamera {
   centerY: number;
   /** Geräte-Pixel je Einheit von u bzw. v. */
   pixelsPerTile: number;
+  /**
+   * Maßstab des Gelände-Caches, falls er vom Bild abweicht: beim weichen
+   * Zoomen bleibt der Cache auf der nächstkleineren Zoomstufe und wird nur
+   * gestreckt, statt je Bild neu berechnet zu werden. Ohne Angabe wie
+   * pixelsPerTile.
+   */
+  cachePixelsPerTile?: number;
+  /** Maßstäbe, für die der Gelände-Cache im Hintergrund vorberechnet wird (kleinere Zoomstufen). */
+  prefetchPixelsPerTile?: number[];
   /** 1 = volles Relief, 0 = flach (Minimap). */
   reliefScale: number;
 }

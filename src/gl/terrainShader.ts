@@ -201,6 +201,17 @@ uniform vec2 uCacheSize;    // Texturgroesse in Texeln
 `;
 
 /**
+ * Nur beim Zeichnen: Texel je u/v-Einheit - beim weichen Zoomen ungleich
+ * uPixelsPerTile. Dazu der alte Cache, der beim Wechsel der Zoomstufe
+ * stehen bleibt, bis der neue fertig ist (siehe TerrainRenderer.previous).
+ */
+const CACHE_SCALE_GLSL = `
+uniform float uCacheScale;
+uniform vec2  uPrevWindowStart;  // (u, v) der Fenster-Ecke des alten Caches
+uniform float uPrevCacheScale;   // seine Texel je u/v-Einheit
+`;
+
+/**
  * Das Gelände ist ein Gitter, das auf dem Bildschirm gleichmäßig liegt (in
  * Boden-Koordinaten u/v, siehe iso.ts). Jeder Eckpunkt wird ins Weltsystem
  * zurückgerechnet und um seine Höhe angehoben. Die Eckpunkte hängen am
@@ -220,9 +231,11 @@ uniform vec2  uGridOrigin;  // (u, v) des ersten Eckpunkts
 uniform float uGridCell;    // Zellgroesse in u/v-Einheiten
 uniform int   uGridColumns;
 ${CACHE_GLSL}
+${CACHE_SCALE_GLSL}
 
 out vec2 vWorld;
 out vec2 vCache;            // normierte Koordinate im Farb-Cache
+out vec2 vPrevTexel;        // Texel im alten Cache ab seiner Fenster-Ecke
 
 void main() {
   int col = gl_VertexID % uGridColumns;
@@ -241,7 +254,8 @@ void main() {
   vWorld = world;
   // Ringpuffer: Texturkoordinaten laufen ueber den Rand hinaus, REPEAT
   // faltet sie zurueck.
-  vCache = ((g - uWindowStart) * uPixelsPerTile + uWindowMod) / uCacheSize;
+  vCache = ((g - uWindowStart) * uCacheScale + uWindowMod) / uCacheSize;
+  vPrevTexel = (g - uPrevWindowStart) * uPrevCacheScale;
   gl_Position = project(world, z);
 }
 `;
@@ -1037,9 +1051,17 @@ precision highp float;
 
 in vec2 vWorld;
 in vec2 vCache;
+in vec2 vPrevTexel;
 out vec4 fragColor;
 
 uniform sampler2D uCache;
+// Alter Cache beim Wechsel der Zoomstufe: Anteil (0 = aus), Lage im
+// Ringpuffer und der fertige Bereich (Texel ab Fenster-Ecke: u0, v0, u1, v1).
+uniform sampler2D uCachePrev;
+uniform float uPrevMix;
+uniform vec2  uPrevWindowMod;
+uniform vec2  uPrevCacheSize;
+uniform vec4  uPrevReady;
 uniform vec2  uResolution;
 uniform float uPixelsPerTile;
 
@@ -1093,6 +1115,10 @@ void main() {
   float step = 1.0 / uPixelsPerTile;
   vec2 tile = vWorld;
   vec3 color = texture(uCache, vCache).rgb;
+  if (uPrevMix > 0.0 && all(greaterThanEqual(vPrevTexel, uPrevReady.xy)) && all(lessThan(vPrevTexel, uPrevReady.zw))) {
+    vec3 before = texture(uCachePrev, (vPrevTexel + uPrevWindowMod) / uPrevCacheSize).rgb;
+    color = mix(color, before, uPrevMix);
+  }
 
   if (uFieldActive > 0.5) {
     vec2 ft = floor(vWorld - uFieldOrigin);

@@ -25,7 +25,7 @@ import { FixedStep, Interval } from './game/timing';
 import { Pointer } from './game/Pointer';
 import { DevPanel } from './game/DevPanel';
 import { Keyboard } from './game/keyboard';
-import { MouseInput } from './game/MouseInput';
+import { MouseInput, type CanvasPoint } from './game/MouseInput';
 import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
@@ -298,7 +298,7 @@ new MouseInput(canvas, boxEl, {
   rightClick: (p) => actions.rightClick(p),
   pan: (dx, dy) => camera.panPixels(dx, dy),
   panEnd: () => ui.updateCursor(),
-  zoom: (step, p) => setZoom(camera.zoomIndex + step, p.x, p.y),
+  zoom: (steps, p) => zoomBy(steps, p.x, p.y),
   move: (p, buttons) => {
     const tileChanged = updateHoveredTile(p.x, p.y);
     // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
@@ -318,22 +318,39 @@ window.addEventListener('resize', resize);
 
 
 
+/** Bildschirmstelle, um die gezoomt wird - bleibt bis zur nächsten Zoom-Eingabe. */
+let zoomAnchor: CanvasPoint | null = null;
+
 /**
- * Zoomt so, dass das Welt-Tile unter dem Ankerpunkt dort stehen bleibt.
+ * Zoomziel verschieben (game/Camera.ts); gezoomt wird weich in updateZoom().
  * Anker ist der Mauszeiger, solange er über der Karte ist, sonst die Bildmitte.
  */
-function setZoom(index: number, anchorX?: number, anchorY?: number) {
-  const ax = anchorX ?? pointer.pixel?.x ?? camera.centerX;
-  const ay = anchorY ?? pointer.pixel?.y ?? camera.centerY;
+function zoomBy(steps: number, anchorX?: number, anchorY?: number) {
+  zoomAnchor = {
+    x: anchorX ?? pointer.pixel?.x ?? camera.centerX,
+    y: anchorY ?? pointer.pixel?.y ?? camera.centerY,
+  };
+  camera.zoomBy(steps);
+}
+
+/**
+ * Ein Bild Zoom: so, dass das Welt-Tile unter dem Anker dort stehen bleibt.
+ * true, wenn sich die Ansicht geändert hat.
+ */
+function updateZoom(dt: number, now: number): boolean {
+  const ax = zoomAnchor?.x ?? camera.centerX;
+  const ay = zoomAnchor?.y ?? camera.centerY;
+  // Das Ziel kennt der Renderer schon, bevor der Zoom dort ist - er bereitet
+  // den Gelände-Cache der Zielstufe im Hintergrund vor.
+  renderer.targetTileSize = camera.targetTileSize;
   // Welt-Punkt unter dem Anker vor dem Zoom ...
   const anchor = picker.point(ax, ay);
-  if (!camera.setZoomIndex(index)) return;
+  if (!camera.stepZoom(dt, now)) return false;
   renderer.tileSize = camera.tileSize;
   // ... und danach wieder genau unter den Anker legen.
   camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
-
-  refreshPointer();
   devPanel.showZoom(camera.tileSize);
+  return true;
 }
 
 /** Tastatur: gehaltene Tasten und die Belegung (game/keyboard.ts) - hier, was sie im Spiel tut. */
@@ -345,7 +362,7 @@ const keyboard = new Keyboard({
   closeMenu: () => menu.close(),
   togglePause,
   toggleSound,
-  zoom: (step) => setZoom(camera.zoomIndex + step),
+  zoom: (step) => zoomBy(step),
   cancel: () => ui.cancel(),
   demolish: () => actions.demolishSelected(),
   home: () => actions.cycleTownCenter(),
@@ -465,7 +482,8 @@ function loop(now: number) {
 
 
   // WASD, Leertaste, hinter dem Hauptmenü langsam vorbeiziehen (game/cameraControl.ts).
-  if (steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen())) refreshPointer();
+  const zoomed = updateZoom(dt, now);
+  if (steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen()) || zoomed) refreshPointer();
 
   simulation.advance(paused || start.isOpen() ? 0 : dt * settings.speed, (step) => world.tick(step));
 

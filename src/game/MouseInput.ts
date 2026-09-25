@@ -25,8 +25,8 @@ export interface MouseHandlers {
   pan(dx: number, dy: number): void;
   /** Ziehen mit der rechten Taste beendet. */
   panEnd(): void;
-  /** Eine Zoomstufe hinein (+1) oder hinaus (-1), um die Stelle p. */
-  zoom(step: 1 | -1, p: CanvasPoint): void;
+  /** Um `steps` Zoomstufen hinein (> 0) oder hinaus (< 0), um die Stelle p - auch Bruchteile. */
+  zoom(steps: number, p: CanvasPoint): void;
   /** Zeiger bewegt; `buttons` wie MouseEvent.buttons. */
   move(p: CanvasPoint, buttons: number): void;
   /** Zeiger hat das Canvas verlassen. */
@@ -36,15 +36,14 @@ export interface MouseHandlers {
 /** Ab so vielen Pixeln Bewegung wird aus dem Klick ein Rechteck bzw. ein Ziehen. */
 const DRAG_THRESHOLD = 5;
 /**
- * Mausrad und Trackpad: jede Zoomstufe verdoppelt den Maßstab, also nicht je
- * Ereignis eine Stufe. Ein Mausrad schickt je Raste ein Ereignis (~100 px),
- * ein Trackpad beim Wischen Dutzende kleine samt Nachschwung - gesammelt
- * wird bis etwa eine Raste, dann eine Stufe und kurz Ruhe, damit der
- * Nachschwung nicht weiterzoomt. Zusammenziehen/Spreizen (Pinch, kommt als
- * Rad mit Strg) zählt stärker.
+ * Mausrad und Trackpad: jede Zoomstufe verdoppelt den Maßstab. Ein Mausrad
+ * schickt je Raste ein Ereignis (~100 px) - das ist eine Stufe. Ein Trackpad
+ * schickt Dutzende kleine; die zoomen anteilig, die Kamera gleitet weich
+ * hinterher und rastet danach auf einer Stufe ein (Camera.stepZoom).
+ * Zusammenziehen/Spreizen (Pinch, kommt als Rad mit Strg) zählt stärker.
  */
 const WHEEL_STEP = 100;
-const WHEEL_PAUSE = 220;
+const PINCH_STEP = 40;
 
 export class MouseInput {
   private drag: { x: number; y: number; active: boolean } | null = null;
@@ -54,9 +53,6 @@ export class MouseInput {
    * Kontextmenü-Ereignis kommt auf dem Mac schon beim Drücken.
    */
   private rightDrag: { x: number; y: number; moved: boolean } | null = null;
-  private wheelSum = 0;
-  private wheelLast = 0;
-  private wheelLocked = 0;
 
   /** @param box das Auswahlrechteck (ein absolut platziertes Element) */
   constructor(private canvas: HTMLCanvasElement, private box: HTMLElement, private handlers: MouseHandlers) {
@@ -136,18 +132,10 @@ export class MouseInput {
 
   private wheel(e: WheelEvent) {
     e.preventDefault();
-    const now = performance.now();
     // Zeilen bzw. Seiten (Firefox mit Mausrad) in Pixel umrechnen.
     const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 400 : 1;
-    const delta = e.deltaY * unit * (e.ctrlKey ? 4 : 1);
-    // Nach längerer Pause oder in die andere Richtung: von vorn zählen.
-    if (now - this.wheelLast > 250 || Math.sign(delta) !== Math.sign(this.wheelSum)) this.wheelSum = 0;
-    this.wheelLast = now;
-    if (now < this.wheelLocked) return;
-    this.wheelSum += delta;
-    if (Math.abs(this.wheelSum) < WHEEL_STEP) return;
-    this.handlers.zoom(this.wheelSum < 0 ? 1 : -1, this.point(e));
-    this.wheelSum = 0;
-    this.wheelLocked = now + WHEEL_PAUSE;
+    const steps = (-e.deltaY * unit) / (e.ctrlKey ? PINCH_STEP : WHEEL_STEP);
+    // Höchstens eine Stufe je Ereignis - manche Mäuse melden riesige Rasten.
+    this.handlers.zoom(Math.max(-1, Math.min(1, steps)), this.point(e));
   }
 }
