@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "gen:models": "node tools/blender/models.mjs",
     "check:models": "node tools/blender/check-models.mjs",
+    "test": "node --test tests/",
+    "test:update-ids": "node tests/update-ids.mjs",
     "gen:ui": "node tools/ui/icons.mjs && node tools/ui/wood-bar.mjs",
     "smoke": "node tools/ui/smoke.mjs",
     "export:bognerei": "node tools/export/bognerei.mjs && node tools/export/bognerei.mjs frau",
