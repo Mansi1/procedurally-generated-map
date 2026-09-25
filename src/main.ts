@@ -2,9 +2,7 @@
 import { MapGenerator } from './noise';
 import {
   pickWorld,
-  setViewRotation,
   visibleWorldRect,
-  worldToGround,
   worldToScreen,
 } from './gl/iso';
 import {
@@ -34,6 +32,7 @@ import { World, type Villager } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { Compass, isDirection, rotateToFace } from './game/Compass';
 import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
@@ -361,52 +360,18 @@ world.onEvent = worldSounds(sound, camera, (x, y) => ground.heightAt(x, y));
 
 // --- Kompass ---------------------------------------------------------------
 
-const compassEl = document.getElementById('compass')!;
-
-/**
- * Himmelsrichtungen als Welt-Vektoren. Norden ist, was in der Grundstellung
- * oben im Bild liegt; Osten liegt dann rechts.
- */
-const COMPASS: Record<string, [number, number]> = {
-  N: [-1, -1],
-  E: [1, -1],
-  S: [1, 1],
-  W: [-1, 1],
-};
-
-/** Stellt die Buchstaben dorthin, wohin ihre Richtung gerade im Bild zeigt. */
-function updateCompass() {
-  const size = compassEl.clientWidth;
-  for (const button of compassEl.querySelectorAll<HTMLButtonElement>('button')) {
-    const [dx, dy] = COMPASS[button.dataset.dir!];
-    const g = worldToGround(dx, dy);
-    // u zeigt nach rechts, v nach unten; die Länge ist egal.
-    const len = Math.hypot(g.u, g.v * 2);
-    const x = (g.u / len) * (size / 2 - 14);
-    const y = ((g.v * 2) / len) * (size / 2 - 14);
-    button.style.left = `${size / 2 + x - 11}px`;
-    button.style.top = `${size / 2 + y - 11}px`;
-    if (button.dataset.dir === 'N') {
-      const needle = compassEl.querySelector<HTMLElement>('.needle')!;
-      needle.style.transform = `rotate(${Math.atan2(x, -y)}rad)`;
-    }
-  }
-}
+/** Kompass über der Minimap (game/Compass.ts). */
+const compass = new Compass(document.getElementById('compass')!, (dir) => faceDirection(dir));
 
 /** Dreht die Ansicht so, dass die Richtung `dir` nach oben zeigt. */
 function faceDirection(dir: string) {
-  const [dx, dy] = COMPASS[dir];
   // Gedreht wird um die Stelle, die man in der Bildmitte sieht - mit ihrer
   // Geländehöhe. Um den Punkt auf Meereshöhe gedreht, wanderte ein Dorf auf
   // einem Hügel beim Drehen aus dem Bild.
-  const pivot = pick(camera.width / 2, camera.height / 2);
-  for (let k = 0; k < 4; k++) {
-    setViewRotation(k);
-    const g = worldToGround(dx, dy);
-    if (g.v < 0 && Math.abs(g.u) < 1e-9) break;
-  }
+  const pivot = pick(camera.centerX, camera.centerY);
+  rotateToFace(dir);
   camera.centerOn(pivot.x, pivot.y, pivot.z);
-  updateCompass();
+  compass.update();
   // Die Blickrichtung bleibt beim Neuladen.
   settings.facing = dir;
   saveSettings(settings);
@@ -419,10 +384,6 @@ function faceDirection(dir: string) {
   invalidatePlacementCheck();
 }
 
-compassEl.addEventListener('click', (e) => {
-  const dir = (e.target as HTMLElement).closest('button')?.dataset.dir;
-  if (dir) faceDirection(dir);
-});
 
 // --- Auswahl ---------------------------------------------------------------
 
@@ -1299,16 +1260,9 @@ function loop(now: number) {
 zoomEl.textContent = `${camera.tileSize}px`;
 // Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
 // Feld aus der Adresse - gedreht wird nur die Ansicht.
-if (settings.facing in COMPASS) {
-  const [dx, dy] = COMPASS[settings.facing];
-  for (let k = 0; k < 4; k++) {
-    setViewRotation(k);
-    const g = worldToGround(dx, dy);
-    if (g.v < 0 && Math.abs(g.u) < 1e-9) break;
-  }
-}
+if (isDirection(settings.facing)) rotateToFace(settings.facing);
 if (settings.paused && !paused) togglePause();
-updateCompass();
+compass.update();
 updateResourceUI();
 // Wer die Seite aufmacht, landet im Hauptmenü - wie bei einem Spiel. Nach
 // der Wahl einer anderen Welt geht es dort gleich los - neu oder geladen.
