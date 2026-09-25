@@ -22,6 +22,70 @@ Phase 0 und Phase 1 sind fertig: Das Schnitzen kommt als Clip aus Blender.
 
 Alle anderen Posen und die Tiere laufen noch über die Formeln.
 
+## Überblick: wie es aufgebaut ist
+
+Die Migration läuft auf dem Branch `animation-migration`.
+
+```
+ 1. KÖRPER (per Skript erzeugt)
+    tools/models/villagers.mjs ──► src/models/villager_male.obj
+                                   src/models/villager_female.obj
+                                   (Form + Teilnamen wie Arm.L.Lower + Materialnamen)
+
+ 2. EINMALIGE EINRICHTUNG (erledigt)
+    tools/export/bognerei.mjs ──► tools/export/out/bognerei.glb
+    tools/blender/bootstrap_humanoid.py ──► assets/blender/humanoid.blend
+
+ 3. DER ARBEITSABLAUF
+    assets/blender/humanoid.blend      ◄── hier wird bearbeitet (Skelett "humanoid", Actions)
+            │  npm run gen:anim
+            │  (tools/blender/export-all.mjs → Blender → tools/blender/export_clips.py)
+            ▼
+    src/models/humanoid_clips.glb      Skelett + alle Clips (erzeugt, nicht bearbeiten)
+    src/models/humanoid_clips.json     Länge, Werkzeuge, Pose, Körperhöhe (erzeugt)
+            │
+            ▼
+    src/gl/clips.ts                    liest die Clips (Drehung je Knochen gegenüber
+                                       der Ruhelage) und backt sie je Figur in eine Textur
+            │
+            ▼
+    src/gl/entityRenderer.ts           Shader: Pose mit Clip → Skinning aus der Textur,
+                                       sonst → die alten Formeln
+            │
+            ▼
+    Spiel und Galerie („Clips aus Blender“)
+```
+
+**Quelle und Erzeugtes:**
+
+| Art | Dateien | Bearbeiten? |
+|---|---|---|
+| Quelle: Bewegung | `assets/blender/*.blend` (Git LFS) | ja, in Blender |
+| Quelle: Körperform | `tools/models/villagers.mjs` | ja, als Code |
+| Quelle: Spiel-Logik | `src/gl/clips.ts`, `src/gl/entityRenderer.ts` | ja, als Code |
+| Erzeugt | `src/models/*_clips.glb` + `.json`, `src/models/*.obj` | nein, neu erzeugen |
+| Werkzeuge | `tools/blender/*` (Export), `tools/export/*` (Einrichtung, glTF-Vorschau) | nur für die Pipeline |
+
+**Was wo geändert wird:**
+
+| Ich will … | Wo | Danach |
+|---|---|---|
+| eine Bewegung ändern | `humanoid.blend` → die Action gleichen Namens | `npm run gen:anim` |
+| einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
+| festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
+| die Form eines Körpers ändern | `tools/models/villagers.mjs` | `npm run gen:models` |
+| einen Clip ansehen | Galerie → „Clips aus Blender“ | – |
+
+**Drei Regeln halten es zusammen:**
+
+1. **Knochennamen sind der Vertrag.** Das Spiel erkennt Knochen am Namen
+   (`HUMANOID_BONES` in `clips.ts`). Wird einer in Blender umbenannt, findet
+   das Spiel ihn nicht mehr.
+2. **Clips sind getrennt von den Körpern.** Ein Clip trägt nur Drehungen und
+   passt deshalb auf jeden Körper mit denselben Knochen.
+3. **Materialnamen bleiben.** Das Aussehen kommt aus dem Shader nach Namen.
+   Farben in Blender sind nur Vorschau.
+
 ## So wird jetzt gearbeitet
 
 1. `assets/blender/humanoid.blend` in Blender öffnen. Es enthält das
