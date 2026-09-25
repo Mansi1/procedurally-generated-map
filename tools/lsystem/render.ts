@@ -26,8 +26,10 @@ export interface View {
 }
 
 /** Dreiecke je Look, als Soup mit flachen Normalen - fertig für den Upload. */
-interface Batch {
+export interface Batch {
   readonly look: Look;
+  /** Name des Materials im OBJ - für den glTF-Export. */
+  readonly name: string;
   /** Erster Eckpunkt und Anzahl im gemeinsamen Buffer. */
   readonly first: number;
   readonly count: number;
@@ -57,12 +59,16 @@ export function sceneFromObj(lines: readonly string[], look: (material: string) 
   interface Face { look: Look; verts: Vec3[]; uvs: ([number, number] | undefined)[] }
   const faces: Face[] = [];
   let current: Look = { color: FALLBACK };
+  const names = new Map<Look, string>();
   let triangles = 0;
   for (const line of lines) {
     const [kind, ...rest] = line.split(' ');
     if (kind === 'v') vertices.push([Number(rest[0]), Number(rest[1]), Number(rest[2])]);
     else if (kind === 'vt') uvList.push([Number(rest[0]), Number(rest[1])]);
-    else if (kind === 'usemtl') current = look(rest[0]) ?? { color: FALLBACK };
+    else if (kind === 'usemtl') {
+      current = look(rest[0]) ?? { color: FALLBACK };
+      if (!names.has(current)) names.set(current, rest[0]);
+    }
     else if (kind === 'f') {
       const refs = rest.map((ref) => ref.split('/'));
       faces.push({
@@ -84,7 +90,7 @@ export function sceneFromObj(lines: readonly string[], look: (material: string) 
   const cursor = new Map<Look, number>();
   let first = 0;
   for (const [batchLook, count] of counts) {
-    batches.push({ look: batchLook, first, count });
+    batches.push({ look: batchLook, name: names.get(batchLook) ?? 'Material', first, count });
     cursor.set(batchLook, first);
     first += count;
   }
@@ -239,6 +245,8 @@ function textureOf(r: Renderer, texture: Texture): WebGLTexture {
     const { gl } = r;
     t = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, t);
+    // OBJ-Konvention: v = 0 ist unten im Bild - Bilder darum gespiegelt hochladen.
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
     gl.generateMipmap(gl.TEXTURE_2D);
     const wrap = texture.tile ? gl.REPEAT : gl.CLAMP_TO_EDGE;

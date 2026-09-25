@@ -36,6 +36,9 @@ in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
   Mausrad zoomt, als OBJ + MTL herunterladen.
 - Galerie aller Beispiele: <http://localhost:5173/tools/lsystem/gallery.html>
   (`?leaves=texture` für die Fotos)
+- „Für Blender herunterladen (.glb)“ in der Spielwiese: eine glTF-2.0-Datei mit
+  eingebetteten Texturen (gltf.ts), Blender öffnet sie über File > Import > glTF 2.0.
+  Echte .blend-Dateien kann nur Blender selbst schreiben - glTF ist der Austauschweg.
 - Export aller Beispiele: `npx vite-node tools/lsystem/export.ts [--texture] [--einzeln] [Zielordner]`
   (Standard `tools/lsystem/out`, nicht eingecheckt). Ohne `--texture` sind die Blätter
   einfarbige Flächen nach dem Umriss des Fotos und die Rinde einfarbig, mit `--texture`

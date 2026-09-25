@@ -40,5 +40,10 @@ export async function looksFor(tree: Tree, mode: LeafMode): Promise<(material: s
   }));
   // Rinde in beiden Modi als Foto - die Vorschau hat keinen Shader wie das Spiel (treeTexture).
   if (tree.bark) looks.set(tree.bark.material, { texture: await texture(`./bark/img/${barkFile(tree.bark.texture)}`, [1, 1, 1], true) });
-  return (name) => looks.get(name) ?? (isMaterial(name) ? { color: MATERIALS[name] } : undefined);
+  return (name) => {
+    // Je Name dasselbe Look-Objekt zurückgeben - sceneFromObj fasst danach zusammen.
+    let look = looks.get(name);
+    if (!look && isMaterial(name)) looks.set(name, look = { color: MATERIALS[name] });
+    return look;
+  };
 }

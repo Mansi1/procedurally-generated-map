@@ -1,5 +1,6 @@
 // Spielwiese für L-System-Bäume: Beispiel wählen, Regeln und Regler ändern,
 // das Ergebnis dreht sich in der Vorschau und lässt sich als OBJ speichern.
+import { buildGlb } from './gltf.ts';
 import { grow, type LeafMode, type Tree, type TreeSpec } from './lsystem.ts';
 import { looksFor } from './looks.ts';
 import { mtlFile } from './mtl.ts';
@@ -96,12 +97,18 @@ async function update() {
 
 const draw = () => render(canvas, scene, view);
 
-function save(name: string, text: string) {
+function save(name: string, data: string | Blob) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.href = URL.createObjectURL(typeof data === 'string' ? new Blob([data], { type: 'text/plain' }) : data);
   a.download = name;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+/** Eine Datei mit eingebetteten Texturen - Blender: File > Import > glTF 2.0. */
+async function downloadGlb() {
+  if (!scene) return;
+  save(`lsys_${presetSelect.value}.glb`, await buildGlb(scene, PRESETS[presetSelect.value as PresetName]?.label ?? presetSelect.value));
 }
 
 /** OBJ und MTL; die Bilder liegen in tools/lsystem/{leaves,bark}/img (MTL verweist auf textures/). */
@@ -151,6 +158,7 @@ element('reseed', HTMLButtonElement).addEventListener('click', () => {
   update();
 });
 element('download', HTMLButtonElement).addEventListener('click', download);
+element('download-glb', HTMLButtonElement).addEventListener('click', () => { void downloadGlb(); });
 
 // ?preset=<name>&seed=<n>&leaves=shape|texture&cards=0|1 - so verlinkt auch die Galerie (gallery.html) hierher.
 const params = new URLSearchParams(location.search);
