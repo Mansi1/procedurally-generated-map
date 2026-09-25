@@ -1,20 +1,25 @@
 // Exportiert die Bognerei mit schnitzendem Bogner als glTF (.glb) - zum
 // Öffnen und Bearbeiten in Blender (Datei > Import > glTF 2.0).
 //
-// Im Spiel bewegt der Shader die Figur (src/gl/entityRenderer.ts, Pose 5
-// "carve"): jedes Körperteil dreht um feste Gelenklinien. Hier wird daraus ein
-// Skelett mit denselben Gelenken, und die Bewegung wird mit denselben Formeln
-// als Keyframes hineingerechnet. Das Zugmesser hängt wie im Shader an beiden
-// Unterarmen - je Eckpunkt zwei Gewichte, nach seiner Lage zwischen den Händen.
-// Die Werkbank zeigt nacheinander die drei Stufen des Bogens (Craft.0-2),
-// je fünf Züge lang - in Blender sind das drei Objekte, die per Skalierung
-// ein- und ausgeblendet werden.
+// Im Shader dreht jedes Körperteil um feste Gelenklinien (src/gl/entityRenderer.ts,
+// Posen 0-5). Hier wird daraus ein Skelett mit denselben Gelenken, und jede Pose
+// wird mit denselben Formeln (tools/export/poses.mjs) als Animation
+// hineingerechnet: stand, walk, chop, pick, mow, carve. Das Zugmesser hängt wie
+// im Shader an beiden Unterarmen - je Eckpunkt zwei Gewichte, nach seiner Lage
+// zwischen den Händen. Die Werkbank zeigt im Clip carve nacheinander die drei
+// Stufen des Bogens (Craft.0-2), je fünf Züge lang - in Blender sind das drei
+// Objekte, die per Skalierung ein- und ausgeblendet werden.
+//
+// Daneben schreibt es <Ausgabe>.clips.json: je Clip Pose, Werkzeuge und den
+// Phasenbereich - tools/blender/bootstrap_humanoid.py macht daraus Custom
+// Properties der Actions.
 //
 // Aufruf: node tools/export/bognerei.mjs [frau] [Ausgabedatei]
 //   Standard: Bogner (Mann), tools/export/out/bognerei.glb
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { CLIPS, boneRotations, pose, qAxis, strikeTimes } from './poses.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const female = process.argv.includes('frau');
@@ -25,8 +30,6 @@ const outFile = process.argv.slice(2).find((a) => a.endsWith('.glb'))
 const PLAYER = [64 / 255, 160 / 255, 72 / 255];
 /** Bilder je Sekunde der Keyframes. */
 const FPS = 30;
-/** Phase der Animation je Sekunde - WORK_TEMPO in src/world/world.ts. */
-const WORK_TEMPO = 6;
 
 // --- OBJ lesen (wie src/gl/obj.ts) -----------------------------------------
 
@@ -65,9 +68,6 @@ function parseMtl(source) {
 }
 
 const read = (file) => readFileSync(`${root}src/models/${file}`, 'utf8');
-/** Haltung beim Schnitzen - dieselben Werte wie der Shader. */
-const CARVE = JSON.parse(read('carve_pose.json'));
-const mix = (a, b, t) => a + (b - a) * t;
 
 // --- Figur: Teile und Gelenke wie loadModel() ------------------------------
 
@@ -124,69 +124,9 @@ const BONES = [
 ];
 const boneIndex = new Map(BONES.map(([name], i) => [name, i]));
 
-// --- Pose 5 (Schnitzen), wie im Shader ------------------------------------
-
-const smoothstep = (a, b, x) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
-/** Winkel zur Phase (Radiant, = Sekunden * WORK_TEMPO) - Abschnitt "pose == 5". */
-function carve(phase) {
-  const t = phase * 0.6 - 4.712389;
-  const k = Math.floor(t / (Math.PI * 2));
-  const cyc = t / (Math.PI * 2) - k;
-  const inspect = ((k % 5) + 5) % 5 === 4;
-  let pull = cyc < 0.3 ? smoothstep(0, 0.3, cyc) : 1 - smoothstep(0.3, 1, cyc);
-  let lift = 0;
-  if (inspect) {
-    lift = Math.sin(cyc * Math.PI);
-    pull = 0.4;
-  }
-  return {
-    hipL: 0.18, hipR: -0.12,
-    kneeL: -0.32 - 0.1 * pull, kneeR: -0.26 - 0.1 * pull,
-    sh: mix(CARVE.extended.shoulder, CARVE.pulled.shoulder, pull) + CARVE.inspect.shoulder * lift,
-    el: mix(CARVE.extended.elbow, CARVE.pulled.elbow, pull) + CARVE.inspect.elbow * lift,
-    inL: 0.22, inR: 0.22,
-    lean: mix(CARVE.extended.lean, CARVE.pulled.lean, pull) + CARVE.inspect.lean * lift,
-    twist: 0.06 * Math.sin(k * 1.7),
-    bob: -0.04 - 0.02 * pull,
-    nod: 0.4 - 0.3 * lift,
-  };
-}
-
-// Die Drehungen des Shaders in Datei-Koordinaten: swingAround(p, pivot, a)
-// dreht um die Querachse = Datei-x um -a; swingSideways(p, pivot, a) um die
-// Blickachse = Datei-z um a; der Oberkörper dreht um die Hochachse (Datei-y).
-const qAxis = ([x, y, z], a) => {
-  const s = Math.sin(a / 2);
-  return [x * s, y * s, z * s, Math.cos(a / 2)];
-};
-const qMul = ([ax, ay, az, aw], [bx, by, bz, bw]) => [
-  aw * bx + ax * bw + ay * bz - az * by,
-  aw * by - ax * bz + ay * bw + az * bx,
-  aw * bz + ax * by - ay * bx + az * bw,
-  aw * bw - ax * bx - ay * by - az * bz,
-];
-const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
-
-/** Drehung je Knochen und die Verschiebung der Wurzel (bob) zur Phase. */
-function boneRotations(phase) {
-  const a = carve(phase);
-  return {
-    translation: [0, a.bob * H, 0],
-    rotations: {
-      'thigh.L': qAxis(X, -a.hipL), 'shin.L': qAxis(X, -a.kneeL),
-      'thigh.R': qAxis(X, -a.hipR), 'shin.R': qAxis(X, -a.kneeR),
-      // Erst die Drehung der Schultern gegen die Hüfte, dann vorneigen.
-      upperBody: qMul(qAxis(X, a.lean), qAxis(Y, a.twist)),
-      head: qAxis(X, -a.nod),
-      'shoulder.L': qAxis(X, -a.sh), 'upperArm.L': qAxis(Z, -a.inL), 'forearm.L': qAxis(X, -a.el),
-      'shoulder.R': qAxis(X, -a.sh), 'upperArm.R': qAxis(Z, a.inR), 'forearm.R': qAxis(X, -a.el),
-    },
-  };
-}
+// Knie in Modell-Einheiten (Körperhöhe 1) - die Pose "pick" braucht es.
+const kneeModel = (knee - minY) / H;
+const Y = [0, 1, 0];
 
 // --- glTF zusammenbauen -----------------------------------------------------
 
@@ -349,35 +289,46 @@ const figureNode = addNode({
   children: [boneNodes[0], figureMeshNode],
 });
 
-// --- Animation: 15 Züge (drei Stufen je fünf Züge), in einer Schleife ------
+// --- Animationen: je Clip eine, als Schleife -------------------------------
 
-/** Sekunden je Zug: eine volle Periode von phase * 0.6. */
-const STROKE = (Math.PI * 2) / (0.6 * WORK_TEMPO);
-const DURATION = STROKE * 15;
-const frames = Math.round(DURATION * FPS) + 1;
-const times = new Float32Array(frames).map((_, i) => Math.min(DURATION, i / FPS));
-// Beginnt mit einem Zug: t = 0 liegt bei phase = 4.712389 / 0.6.
-const phaseAt = (s) => s * WORK_TEMPO + 4.712389 / 0.6;
-const timeInput = accessor(times, 'SCALAR', FLOAT, frames, { min: [0], max: [DURATION] });
-
-const samplers = [];
-const channels = [];
-function track(node, path, values, type, interpolation = 'LINEAR', input = timeInput) {
-  samplers.push({ input, output: accessor(values, type, FLOAT, values.length / (type === 'VEC4' ? 4 : 3)), interpolation });
-  channels.push({ sampler: samplers.length - 1, target: { node, path } });
+// Je Clip: Bild i (30 je Sekunde) zeigt die Phase shift + i / (Bilder - 1) *
+// period. Das letzte Bild ist die Phase des ersten eine Periode später - die
+// Schleife schließt genau, auch wenn period / (Bilder - 1) nicht glatt ist.
+const animations = [];
+const sidecar = [];
+for (const clip of CLIPS) {
+  const frames = Math.round(clip.seconds * FPS) + 1;
+  const duration = (frames - 1) / FPS;
+  const times = new Float32Array(frames).map((_, i) => i / FPS);
+  const timeInput = accessor(times, 'SCALAR', FLOAT, frames, { min: [0], max: [duration] });
+  const samplers = [];
+  const channels = [];
+  const track = (node, path, values, type, interpolation = 'LINEAR', input = timeInput) => {
+    samplers.push({ input, output: accessor(values, type, FLOAT, values.length / (type === 'VEC4' ? 4 : 3)), interpolation });
+    channels.push({ sampler: samplers.length - 1, target: { node, path } });
+  };
+  const poses = [...times].map((_, i) => boneRotations(
+    pose(clip.name, clip.shift + (i / (frames - 1)) * clip.period, { knee: kneeModel, stride: 1 }), H));
+  track(boneNodes[0], 'translation', new Float32Array(poses.flatMap((p) => p.translation)), 'VEC3');
+  for (const name of Object.keys(poses[0].rotations)) {
+    track(boneNodes[boneIndex.get(name)], 'rotation', new Float32Array(poses.flatMap((p) => p.rotations[name])), 'VEC4');
+  }
+  if (clip.name === 'carve') {
+    // Stufen des Bogens: je fünf Züge sichtbar (Skalierung 1), sonst 0.
+    const stroke = duration / 15;
+    const stageTimes = new Float32Array([0, stroke * 5, stroke * 10, duration]);
+    const stageInput = accessor(stageTimes, 'SCALAR', FLOAT, 4, { min: [0], max: [duration] });
+    stageNodes.forEach((node, s) => {
+      const scale = [0, 1, 2, 3].flatMap((i) => (i === s || (i === 3 && s === 2) ? [1, 1, 1] : [0, 0, 0]));
+      track(node, 'scale', new Float32Array(scale), 'VEC3', 'STEP', stageInput);
+    });
+  }
+  animations.push({ name: clip.name, samplers, channels });
+  sidecar.push({
+    name: clip.name, pose: clip.pose, props: clip.props, phase_period: clip.period, phase_shift: clip.shift,
+    kneel: Boolean(clip.kneel), strike: strikeTimes(clip, duration), frames, duration,
+  });
 }
-const poses = [...times].map((s) => boneRotations(phaseAt(s)));
-track(boneNodes[0], 'translation', new Float32Array(poses.flatMap((p) => p.translation)), 'VEC3');
-for (const name of Object.keys(poses[0].rotations)) {
-  track(boneNodes[boneIndex.get(name)], 'rotation', new Float32Array(poses.flatMap((p) => p.rotations[name])), 'VEC4');
-}
-// Stufen: je fünf Züge sichtbar (Skalierung 1), sonst 0 - schrittweise.
-const stageTimes = new Float32Array([0, STROKE * 5, STROKE * 10, DURATION]);
-const stageInput = accessor(stageTimes, 'SCALAR', FLOAT, 4, { min: [0], max: [DURATION] });
-stageNodes.forEach((node, s) => {
-  const scale = [0, 1, 2, 3].flatMap((i) => (i === s || (i === 3 && s === 2) ? [1, 1, 1] : [0, 0, 0]));
-  track(node, 'scale', new Float32Array(scale), 'VEC3', 'STEP', stageInput);
-});
 
 // --- Schreiben -------------------------------------------------------------
 
@@ -390,7 +341,7 @@ const gltf = {
   meshes,
   materials,
   skins: [skin],
-  animations: [{ name: 'Schnitzen', samplers, channels }],
+  animations,
   accessors,
   bufferViews,
   buffers: [{ byteLength }],
@@ -420,4 +371,5 @@ glb.set(bin, 28 + jsonPadded.length);
 
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, glb);
-console.log(`${outFile} - ${(total / 1024).toFixed(0)} KB, ${frames} Bilder, ${DURATION.toFixed(2)} s`);
+writeFileSync(outFile.replace(/\.glb$/, '.clips.json'), JSON.stringify({ height: H, clips: sidecar }, null, 2) + '\n');
+console.log(`${outFile} - ${(total / 1024).toFixed(0)} KB, Clips: ${sidecar.map((c) => `${c.name} ${c.frames}`).join(', ')}`);

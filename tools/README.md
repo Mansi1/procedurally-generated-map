@@ -1,18 +1,21 @@
 # tools
 
-Skripte, die die Modelle und Bilder in `src/` erzeugen. Nach einer Änderung an
-einem Skript neu erzeugen und die Ergebnisse mit einchecken.
+Skripte, die die Modelle und Bilder in `src/` erzeugen. Die Modelle kommen aus
+Blender: Quelle sind die `.blend`-Dateien in `assets/blender/` (docs/BLENDER.md).
+Nach einer Änderung neu erzeugen und die Ergebnisse mit einchecken.
 
 | Befehl | erzeugt |
 | --- | --- |
-| `npm run gen:models` | `src/models/*.obj` und `*.mtl`: Dorfbewohner, Gebäude, Beerensträucher, Bäume, Stein und Gold |
+| `npm run gen:models` | `src/models/*.obj` und `*.mtl` aus `assets/blender/models/**/*.blend` (Dorfbewohner, Gebäude, Bäume, Sträucher, Stein, Gold, Tiere, Werkzeuge) |
+| `npm run gen:anim` | `src/models/*_clips.glb` + `.json` aus `assets/blender/clips/*.blend` (Bewegungen) |
 | `npm run gen:ui` | `src/icons/*.png`: Symbole der Rohstoffleiste und ihre Holztextur |
 
-Einzeln: `node tools/models/trees.mjs [Zielordner]` usw.; ohne Zielordner wird
-direkt in `src/` geschrieben.
-
-- `models/lib.mjs` - Grundformen (Quader, Prismen, Balken), Dächer, Fässer, Kisten
-- `models/*.mjs` - je ein Generator; Maße in Metern, 1 Tile = 5 m
+- `blender/` - Export aus Blender und der einmalige Umzug der Modelle nach Blender
+- `models/primitives.mjs` - Grundformen (für das L-System und die Felder)
+- `models/farmsGen.mjs` - stellt die Felder (Weizen, Mais) aus ihren Teilen aus Blender auf
+  (`src/models/field_*.obj`); `node tools/models/farms.mjs <Ordner>` schreibt sie zum Ansehen als OBJ
+- Die früheren Generatoren (`villagers.mjs`, `buildings.mjs` ...) sind mit dem
+  Umzug nach Blender entfallen; sie stehen in der Git-Geschichte.
 - `ui/icons.mjs` + `ui/icons.html` - rendert die Spielmodelle als Symbole
 - `ui/wood-bar.mjs` - Holzplanken für die Rohstoffleiste
 - `ui/smoke.mjs` - Rauchtest im Browser (`npm run smoke`, bei laufendem `npm run dev`):

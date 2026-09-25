@@ -1,6 +1,6 @@
 // Rauchtest im Browser: spielt die wichtigsten Wege einmal durch - Hauptmenü,
 // neues Spiel, bauen, ausbilden, Feld über das Untermenü, speichern und neu
-// laden, Demo, alter Spielstand, Galerie. Bricht mit Exit-Code 1 ab, wenn
+// laden, Demo, alter Spielstand, Galerie, Clips aus Blender. Bricht mit Exit-Code 1 ab, wenn
 // etwas fehlt oder die Seite einen Fehler wirft.
 //
 // Aufruf: erst `npm run dev`, dann `npm run smoke` bzw.
@@ -149,6 +149,12 @@ await page.goto(BASE + '/galerie');
 await wait(3000);
 check('Galerie zeigt Modelle', (await page.$$('.gal-item')).length > 0, `${(await page.$$('.gal-item')).length} Modelle`);
 check('Galerie zeigt Animationen', (await page.$$('.gal-chip')).length > 0);
+// Bewegt wird alles von Clips aus Blender - eine leere Bibliothek hieße: diese
+// Figuren stehen still (window.__clipLibraries, entityRenderer.ts).
+const clipLibraries = await page.evaluate(() => window.__clipLibraries ?? {});
+const emptyLibraries = ['humanoid', 'quadruped', 'mill', 'flag'].filter((n) => !(clipLibraries[n] > 0));
+check('Clips aus Blender geladen', emptyLibraries.length === 0,
+  emptyLibraries.length ? `leer: ${emptyLibraries.join(', ')}` : Object.entries(clipLibraries).map(([n, c]) => `${n} ${c}`).join(', '));
 
 check('keine Fehler auf der Seite', pageErrors.length === 0, pageErrors.join(' | '));
 await browser.close();

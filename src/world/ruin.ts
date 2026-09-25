@@ -13,7 +13,7 @@ export interface Ruin {
   y: number;
   /** Weltzeit beim Abriss (Sekunden). */
   at: number;
-  /** Uhrzeit (performance.now, Sekunden) beim Abriss - dort bleiben die Mühlenflügel stehen. */
+  /** Stand der Animations-Uhr (animationTime, wie uTime) beim Abriss - dort bleiben die Mühlenflügel stehen. */
   clock: number;
   /** Schuttbrocken: Flugrichtung und -weite, Steiggeschwindigkeit, Bodenhöhe am Landepunkt. */
   debris: { dx: number; dy: number; vz: number; size: number; heading: number; ground: number }[];

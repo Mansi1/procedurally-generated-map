@@ -10,7 +10,8 @@
 // rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot,
+  ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, animationTime,
+  buildingHeading, figureProps, frozenMillMotion, millMotion, modelWorkSpot,
   type EntityInstance,
 } from './gl/entityRenderer';
 import {
@@ -44,10 +45,28 @@ const ZOOMED = 3;
 function figure(label: string, female: boolean, pose: number, rate: number, heading: number, load = 0): Exhibit {
   return {
     label,
+    draw: (t, x, y, out) => {
+      const f: EntityInstance = {
+        x: x - 0.5, y: y - 0.5, size: VILLAGER.size * ZOOMED, color: PLAYER,
+        shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
+        motion: [heading, pose === POSE.stand ? t : t * rate, pose, load], accent: WOOD,
+      };
+      out.push(f, ...figureProps(f));
+    },
+  };
+}
+
+/**
+ * Tier spielt einen Clip aus Blender (Nummer in ANIMAL_CLIPS) - die Zeit ist
+ * die Clip-Zeit in Sekunden.
+ */
+function animalClip(kind: AnimalKind, label: string, clip: number): Exhibit {
+  const def = ANIMALS[kind];
+  return {
+    label,
     draw: (t, x, y, out) => out.push({
-      x: x - 0.5, y: y - 0.5, size: VILLAGER.size * ZOOMED, color: PLAYER,
-      shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
-      motion: [heading, pose === POSE.stand ? t : t * rate, pose, load], accent: WOOD,
+      x: x - 0.5, y: y - 0.5, size: def.height * ZOOMED, color: PLAYER, shape: def.shape, alpha: 1,
+      motion: [-Math.PI / 4, t, CLIP_POSE + clip, 0],
     }),
   };
 }
@@ -87,24 +106,36 @@ function withWorker(label: string, shape: number, size: number, female: boolean,
       out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: 1, motion: [BUILDING_HEADING, loop(t, 12), 0, 0] });
       const spot = modelWorkSpot(shape, x - 0.5, y - 0.5, size, BUILDING_HEADING);
       if (!spot) return;
-      out.push({
+      const f: EntityInstance = {
         x: spot.x - 0.5, y: spot.y - 0.5, size: VILLAGER.size, color: PLAYER,
         shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
         motion: [Math.atan2(spot.aimY - spot.y, spot.aimX - spot.x), t * 6, pose, 0], accent: WOOD,
-      });
+      };
+      out.push(f, ...figureProps(f));
     },
   };
 }
 
+const MILLS: number[] = [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4];
+
 /** Einsturz beim Abriss, in einer Schleife: stehen, zusammensacken, stehen. */
 function collapse(label: string, shape: number, size: number): Exhibit {
+  const mill = MILLS.includes(shape);
+  // Mühle: bis zum Einsturz drehen die Flügel, dann stehen sie - wie im Spiel.
+  let frozen: [number, number, number, number] | null = null;
   return {
     label,
     draw: (t, x, y, out) => {
       const f = loop(t, 4);
       const c = f < 0.3 ? 0 : f < 0.7 ? (f - 0.3) / 0.4 : 1;
-      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: f > 0.9 ? 1 - (f - 0.9) * 10 : 1,
-        motion: [BUILDING_HEADING, 0, 0, Math.max(0.001, c * c * (3 - 2 * c))] });
+      let motion: [number, number, number, number] = [BUILDING_HEADING, 0, 0, 0];
+      if (mill) {
+        if (c === 0) frozen = null;
+        else frozen ??= frozenMillMotion(0, 7, animationTime());
+        motion = frozen ? [...frozen] : millMotion(0, 7);
+      }
+      motion[3] = Math.max(0.001, c * c * (3 - 2 * c));
+      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: f > 0.9 ? 1 - (f - 0.9) * 10 : 1, motion });
     },
   };
 }
@@ -288,6 +319,10 @@ const SHOWCASE: Showcase[] = [
   // hier von selbst. Die Zeit ist die Clip-Zeit in Sekunden.
   ...[false, true].map((female) => showcase('Clips aus Blender', female ? 'Frau (Clips)' : 'Mann (Clips)',
     CLIPS.map((clip, i) => figure(clip.name, female, CLIP_POSE + i, 1, Math.PI * 0.25)), 240, 0.9)),
+  // Die Clips der Tiere (src/models/quadruped_clips.glb), je an der ersten Art,
+  // für die der Clip gilt - das Hoppeln am Hasen, das Traben an der Kuh.
+  showcase('Clips aus Blender', 'Tiere (Clips)', ANIMAL_CLIPS.map((clip, i) =>
+    animalClip((clip.species[0] ?? 'deer') as AnimalKind, clip.name, i)), 240, 0.6),
   ...(Object.keys(ANIMALS) as AnimalKind[]).map((kind) => showcase('Tiere', ANIMALS[kind].label, [
     animal(kind, 'äst', ANIMAL_POSE.graze),
     animal(kind, 'geht', ANIMAL_POSE.walk),

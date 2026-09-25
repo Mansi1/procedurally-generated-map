@@ -1,12 +1,15 @@
 # Exportiert die Clips einer .blend-Datei fürs Spiel (docs/ANIMATION.md):
 #   <out>.glb   nur das Skelett, mit allen seinen Actions als Animationen
 #   <out>.json  je Clip, was glTF nicht trägt: Länge, Werkzeuge (props),
-#               dazu die Körperhöhe des Skeletts
+#               welche Pose er ersetzt (pose, phase_period, phase_shift),
+#               kniend (kneel), bei Tieren für welche Arten (species) und
+#               ob es liegt (lying), dazu die Körperhöhe des Skeletts und
+#               bei Tieren, wie weit es den Kopf zum Äsen senkt (graze)
 # Das Spiel (src/gl/clips.ts) liest beides und backt die Clips für jede Figur
 # mit passenden Knochennamen.
 #
 # Aufruf: blender -b <datei.blend> --python tools/blender/export_clips.py -- <out>
-# (npm run gen:anim macht das für alle Dateien in assets/blender/)
+# (npm run gen:anim macht das für alle Dateien in assets/blender/clips/)
 
 import json
 import sys
@@ -38,6 +41,13 @@ if rig.animation_data:
         rig.animation_data.nla_tracks.remove(track)
     rig.animation_data.action = None
 
+# Nur Knochen, die etwas bewegen, kommen ins Spiel: Hilfsknochen zum
+# Bearbeiten (IK-Ziele ik.*, die Hände hand.* - siehe humanoid_ik.py) bleiben
+# in Blender. Nur für den Export, die Datei wird nicht gespeichert.
+for bone in rig.data.bones:
+    if bone.name.startswith('ik.'):
+        bone.use_deform = False
+
 bpy.ops.object.select_all(action='DESELECT')
 rig.select_set(True)
 bpy.context.view_layer.objects.active = rig
@@ -52,6 +62,7 @@ bpy.ops.export_scene.gltf(
     export_optimize_animation_size=False,
     export_extras=True,
     export_yup=True,
+    export_def_bones=True,
 )
 
 def listed(value):
@@ -61,16 +72,42 @@ def listed(value):
         return [v.strip() for v in value.split(',') if v.strip()]
     return list(value)
 
+def clip_entry(a):
+    entry = {
+        'name': a.name,
+        'frames': int(a.frame_range[1] - a.frame_range[0]) + 1,
+        # Das letzte Bild gleicht dem ersten: die Schleife dauert (Bilder - 1) / fps.
+        'duration': (a.frame_range[1] - a.frame_range[0]) / fps,
+        'props': listed(a.get('props')),
+        'kneel': bool(a.get('kneel', 0)),
+    }
+    # Takt-Marken: Clip-Zeiten (s) in einer Schleife, zu denen der Hieb zu
+    # hören ist (VillagerWork.swing).
+    if a.get('strike'):
+        entry['strike'] = [float(t) for t in listed(a.get('strike'))]
+    # Tiere: nur für diese Arten (leer: alle), auf der Seite liegend.
+    if 'species' in a:
+        entry['species'] = listed(a.get('species'))
+    if 'lying' in a:
+        entry['lying'] = bool(a.get('lying', 0))
+    # Ersetzt der Clip eine Pose des Spiels: welche.
+    if 'pose' in a:
+        entry['pose'] = int(a['pose'])
+    # Welcher Zeit- bzw. Phasenbereich eine Schleife ist - auch ohne Pose
+    # (Mühlenflügel, Fahne: Spielzeit statt Phase).
+    if 'phase_period' in a:
+        entry['phase_period'] = float(a['phase_period'])
+        entry['phase_shift'] = float(a.get('phase_shift', 0.0))
+    return entry
+
 manifest = {
     'rig': rig.name,
     'height': float(rig.get('height', 1.7)),
     'fps': fps,
-    'clips': [{
-        'name': a.name,
-        'frames': int(a.frame_range[1] - a.frame_range[0]) + 1,
-        'duration': (a.frame_range[1] - a.frame_range[0]) / fps,
-        'props': listed(a.get('props')),
-    } for a in clips],
+    # Tiere: das Tier des Skeletts senkt den Kopf zum Äsen so weit (uGraze) -
+    # das Spiel rechnet das Senken damit je Art um.
+    **({'graze': float(rig['graze'])} if 'graze' in rig else {}),
+    'clips': [clip_entry(a) for a in sorted(clips, key=lambda a: int(a.get('pose', 99)))],
 }
 with open(out + '.json', 'w') as f:
     json.dump(manifest, f, indent=2, ensure_ascii=False)

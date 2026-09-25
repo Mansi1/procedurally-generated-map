@@ -1,0 +1,15 @@
+# field_stake.mtl
+
+newmtl Paint
+Kd 0.251 0.627 0.282
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Wood
+Kd 0.420 0.290 0.170
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

@@ -11,17 +11,28 @@
 import type { RGB } from '../functions/Color';
 import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
-import MOW from '../models/mow_pose.json';
-import CARVE from '../models/carve_pose.json';
 import humanoidClipsGlb from '../models/humanoid_clips.glb?inline';
 import humanoidClipsManifest from '../models/humanoid_clips.json';
-import { BONE, HUMANOID_BONES, TEXELS_PER_BONE, bakeClip, loadClips, type Clip } from './clips';
+import quadrupedClipsGlb from '../models/quadruped_clips.glb?inline';
+import quadrupedClipsManifest from '../models/quadruped_clips.json';
+import millClipsGlb from '../models/mill_clips.glb?inline';
+import millClipsManifest from '../models/mill_clips.json';
+import flagClipsGlb from '../models/flag_clips.glb?inline';
+import flagClipsManifest from '../models/flag_clips.json';
+import {
+  BONE, FLAG, FLAG_SEGMENTS, HUMANOID, KNEEL_BIT, MAX_BONES, MILL, PROP_BITS, QUADRUPED, QUADRUPED_BONE, TEXELS_PER_BONE, bakeClip, loadClips,
+  type Clip, type Rig,
+} from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
 import villagerMaleObj from '../models/villager_male.obj?raw';
 import villagerFemaleObj from '../models/villager_female.obj?raw';
 import villagerMtl from '../models/villager.mtl?raw';
+import propAxeObj from '../models/prop_axe.obj?raw';
+import propKnifeObj from '../models/prop_knife.obj?raw';
+import propScytheMaleObj from '../models/prop_scythe_male.obj?raw';
+import propScytheFemaleObj from '../models/prop_scythe_female.obj?raw';
 import millObj from '../models/mill.obj?raw';
 import millMtl from '../models/mill.mtl?raw';
 import mill2Obj from '../models/mill_2.obj?raw';
@@ -90,7 +101,14 @@ import berryBush3Obj from '../models/berry_bush_3.obj?raw';
 import berryBush3Mtl from '../models/berry_bush_3.mtl?raw';
 import berryBush4Obj from '../models/berry_bush_4.obj?raw';
 import berryBush4Mtl from '../models/berry_bush_4.mtl?raw';
-import { FARM_KINDS, farmModel } from '../../tools/models/farmsGen.mjs';
+import { FARM_KINDS, FIELD_PARTS, farmModel } from '../../tools/models/farmsGen.mjs';
+
+/** Teile der Felder aus Blender (assets/blender/models/fields/, docs/BLENDER.md). */
+const FIELD_PART_FILES = import.meta.glob('../models/field_*.{obj,mtl}', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+const FIELD_PART_MODELS = Object.fromEntries(FIELD_PARTS.map((n) => [n, {
+  obj: FIELD_PART_FILES[`../models/field_${n}.obj`],
+  mtl: FIELD_PART_FILES[`../models/field_${n}.mtl`],
+}]));
 import deerObj from '../models/deer.obj?raw';
 import deerMtl from '../models/deer.mtl?raw';
 import hareObj from '../models/hare.obj?raw';
@@ -231,29 +249,62 @@ export const SHAPE = {
    * Shader wippt er.
    */
   markerArrow: 101,
+  /**
+   * Werkzeuge als Anhänge (models/prop_*.obj): je Werkzeug und Körper eine
+   * Form - sie leiht sich beim Zeichnen Gelenke und Clips des Körpers und
+   * hängt an seiner rechten Hand (figureProps, docs/ANIMATION.md).
+   */
+  propAxe: 102,
+  propAxeFemale: 103,
+  propScythe: 104,
+  propScytheFemale: 105,
+  propKnife: 106,
+  propKnifeFemale: 107,
 } as const;
 
-/** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
+/**
+ * Mittlere Drehzahl der Mühlenflügel (Radiant je Sekunde) und wie schnell die
+ * Böen wechseln - so ist der Clip "sails" gebacken (tools/export/props.mjs).
+ * Hier nur, um jede Mühle an eine passende Stelle der Schleife zu setzen.
+ */
 const SAIL_SPEED = 0.8;
-/** Böen: so weit (Radiant) eilen die Flügel vor oder zurück, und so schnell wechselt es. */
-const GUST_AMOUNT = 0.6;
 const GUST_RATE = 0.35;
 
 /**
- * Drehung einer Mühle für `motion`: [Blickrichtung, Startstellung, Drehzahl, 0].
- * Jede Mühle dreht so in ihrem eigenen Takt, dazu mit Böen, die sie mal
- * schneller, mal langsamer drehen lassen (siehe Shader, P_SAILS).
- */
-/**
  * Wie millMotion, aber die Flügel stehen still - in der Stellung, die sie
- * zur Zeit `t` (Sekunden, wie uTime im Shader) hatten. Für eingestürzte Mühlen.
+ * zur Zeit `t` (Sekunden, wie uTime im Shader) hatten. Für eingestürzte Mühlen:
+ * motion[2] < 0, der Clip "sails" liest die Mühlenzeit -motion[2] - 1.
  */
 export function frozenMillMotion(x: number, y: number, t: number): [number, number, number, number] {
   const [heading, phase, speed] = millMotion(x, y);
-  const angle = t * SAIL_SPEED * speed + phase + GUST_AMOUNT * Math.sin(t * GUST_RATE * speed + phase * 3.1);
-  return [heading, angle, -1, 0];
+  return [heading, phase, -1 - (t * speed + millClipOffset(phase)), 0];
 }
 
+/**
+ * Wo in der Schleife des Clips "sails" eine Mühle mit dieser Startstellung
+ * steht - wie millClipOffset im Shader: die Böen im Takt ihrer Startstellung,
+ * die Drehung bis auf eine Vierteldrehung (die Flügel sehen dann gleich aus)
+ * und höchstens 6.4 Grad.
+ */
+function millClipOffset(phase: number): number {
+  let best = 0;
+  let err = Infinity;
+  for (let k = 0; k < 7; k++) {
+    const o = (3.1 * phase + 2 * Math.PI * k) / GUST_RATE;
+    const quarter = Math.PI / 2;
+    const e = Math.abs(((((SAIL_SPEED * o - phase + quarter / 2) % quarter) + quarter) % quarter) - quarter / 2);
+    if (e < err) {
+      err = e;
+      best = o;
+    }
+  }
+  return best;
+}
+
+/**
+ * Drehung einer Mühle für `motion`: [Blickrichtung, Startstellung, Drehzahl, 0].
+ * Jede Mühle dreht so in ihrem eigenen Takt (Clip "sails", Shader P_SAILS).
+ */
 export function millMotion(x: number, y: number): [number, number, number, number] {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -264,7 +315,13 @@ export function millMotion(x: number, y: number): [number, number, number, numbe
 const SHAPE_RING = SHAPE.ring;
 
 /** Figuren: verdeckt zeigen sie ihren Umriss. */
-const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale];
+/** Anhänge der Dorfbewohner (Werkzeuge) - gezeichnet wie Figuren, mit deren Gelenken und Clips. */
+const PROP_SHAPES: number[] = [
+  SHAPE.propAxe, SHAPE.propAxeFemale, SHAPE.propScythe, SHAPE.propScytheFemale, SHAPE.propKnife, SHAPE.propKnifeFemale,
+];
+const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale, ...PROP_SHAPES];
+/** Im Shader: ist die Form eine Figur (Dorfbewohner oder ihr Anhang)? */
+const FIGURE_TEST = `(shape == ${SHAPE.villager} || shape == ${SHAPE.villagerFemale} || (shape >= ${SHAPE.propAxe} && shape <= ${SHAPE.propKnifeFemale}))`;
 
 /** Alle Bäume - sie werden gefällt und kippen um. */
 export const TREES: number[] = [
@@ -282,38 +339,104 @@ const LEAF_TEXTURE_UNIT = 3;
 const CLIP_TEXTURE_UNIT = 5;
 
 /**
- * Clips aus Blender (docs/ANIMATION.md, src/models/humanoid_clips.glb). Lässt
- * sich die Bibliothek nicht lesen, laufen die Figuren über die Formeln im
- * Shader weiter.
+ * Wie viele Clips jede Bibliothek geladen hat - auch als
+ * `window.__clipLibraries`, damit der Rauchtest (tools/ui/smoke.mjs) prüfen
+ * kann, dass keine leer ist.
  */
-export const CLIPS: Clip[] = (() => {
-  try {
-    return loadClips(humanoidClipsGlb, humanoidClipsManifest);
-  } catch (error) {
-    console.warn('Clips aus Blender nicht geladen - Figuren laufen über die Formeln', error);
-    return [];
-  }
-})();
-/** Höchstens so viele Clips je Figur (Uniform-Arrays im Shader). */
-const MAX_CLIPS = 8;
+export const CLIP_LIBRARIES_LOADED: Record<string, number> = {};
+(globalThis as { __clipLibraries?: Record<string, number> }).__clipLibraries = CLIP_LIBRARIES_LOADED;
 
 /**
- * Posen, die ein Clip aus Blender ersetzt. Die Phase (motion[1]) wird zur
- * Clip-Zeit: (Phase - shift) * rate. Schnitzen: Phase = Arbeitszeit *
- * WORK_TEMPO (6, world.ts); der Clip beginnt mit einem Zug, also dort, wo die
- * Formel ihren Zug beginnt (phase * 0.6 = 4.712389) - so kommt der Ton
- * (VillagerWork.swing) weiter im Takt.
+ * Clips aus Blender (docs/ANIMATION.md, src/models/humanoid_clips.glb). Lässt
+ * sich eine Bibliothek nicht lesen, stehen ihre Figuren still (Ruhelage) - und
+ * der Rauchtest schlägt an (CLIP_LIBRARIES_LOADED).
  */
-const POSE_CLIPS: { pose: number; clip: string; rate: number; shift: number }[] = [
-  { pose: 5, clip: 'carve', rate: 1 / 6, shift: 4.712389 / 0.6 },
+export const CLIPS: Clip[] = readClips('humanoid', () => loadClips(humanoidClipsGlb, humanoidClipsManifest, HUMANOID));
+/** Clips der Tiere (src/models/quadruped_clips.glb, aus assets/blender/clips/quadruped.blend). */
+export const ANIMAL_CLIPS: Clip[] = readClips('quadruped', () => loadClips(quadrupedClipsGlb, quadrupedClipsManifest, QUADRUPED));
+const FLAG_CLIPS: Clip[] = readClips('flag', () => loadClips(flagClipsGlb, flagClipsManifest, FLAG));
+
+function readClips(name: string, load: () => Clip[]): Clip[] {
+  let clips: Clip[] = [];
+  try {
+    clips = load();
+  } catch (error) {
+    console.warn(`Clips "${name}" aus Blender nicht geladen - die Figuren stehen still`, error);
+  }
+  CLIP_LIBRARIES_LOADED[name] = clips.length;
+  return clips;
+}
+
+/**
+ * Clip-Bibliotheken und welche Modelle sie nutzen - je Bibliothek ein Skelett.
+ * Tiere, Mühle und Fahne kommen hier mit ihrem Rig dazu (docs/ANIMATION.md).
+ */
+const CLIP_LIBRARIES: {
+  rig: Rig<any>; clips: Clip[]; shapes: readonly number[];
+  /** Maße fürs Backen je Modell, wenn nicht die des Modells selbst (Model). */
+  joints?: (model: Model, byShape: (shape: number) => Model | undefined) => unknown;
+  /** Art je Modell (Form) - Clips mit Custom Property "species" gelten nur für ihre Arten. */
+  species?: Readonly<Record<number, string>>;
+}[] = [
+  { rig: HUMANOID, clips: CLIPS, shapes: [SHAPE.villager, SHAPE.villagerFemale] },
+  {
+    rig: QUADRUPED, clips: ANIMAL_CLIPS,
+    shapes: [SHAPE.deer, SHAPE.hare, SHAPE.cow, SHAPE.sheep, SHAPE.goat, SHAPE.boar],
+    species: {
+      [SHAPE.deer]: 'deer', [SHAPE.hare]: 'hare', [SHAPE.cow]: 'cow',
+      [SHAPE.sheep]: 'sheep', [SHAPE.goat]: 'goat', [SHAPE.boar]: 'boar',
+    },
+  },
+  // Mühlenflügel (assets/blender/clips/mill.blend): ein Clip "sails" für alle vier Mühlen.
+  { rig: MILL, clips: readClips('mill', () => loadClips(millClipsGlb, millClipsManifest, MILL)),
+    shapes: [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4] },
+  // Fahne am Sammelpunkt und auf dem Hauptgebäude (assets/blender/clips/flag.blend):
+  // Clip "wave". Gemacht ist er für das Tuch am Sammelpunkt - ein längeres
+  // (in Modell-Einheiten) schlägt entsprechend weiter aus.
+  {
+    rig: FLAG, clips: FLAG_CLIPS, shapes: [SHAPE.rallyFlag, SHAPE.townCenter],
+    joints: (model, byShape) => {
+      const own = model.cloth[1] - model.cloth[0];
+      const ref = byShape(SHAPE.rallyFlag)!.cloth;
+      return { cloth: model.cloth, stretch: own / (ref[1] - ref[0]) };
+    },
+  },
 ];
+
+/** Höchstens so viele Clips je Figur (Uniform-Arrays im Shader). */
+const MAX_CLIPS = 8;
+/**
+ * Bilder je Spalte der Clip-Textur. Alle Clips aller Figuren ergeben mehr
+ * Bilder, als eine Textur hoch sein darf (WebGL2 garantiert nur 2048) - sie
+ * liegen darum in Spalten nebeneinander: Bild g in Spalte g / CLIP_COLUMN_ROWS,
+ * Zeile g % CLIP_COLUMN_ROWS.
+ */
+const CLIP_COLUMN_ROWS = 1024;
+
 /**
  * Pose (motion[2]) >= CLIP_POSE: spielt Clip Nummer pose - CLIP_POSE ab, die
  * Phase (motion[1]) ist dann die Clip-Zeit in Sekunden - für die Galerie.
  */
 export const CLIP_POSE = 10;
-/** uClipRow für Modelle ohne Clips. */
-const NO_CLIP_ROWS = new Int32Array(MAX_CLIPS).fill(-1);
+/** Clip-Uniforms eines Modells (je Modell gesetzt - jedes kann eine andere Bibliothek haben). */
+interface ClipUniforms {
+  rows: Int32Array;
+  frames: Int32Array;
+  fps: Float32Array;
+  props: Int32Array;
+  poseClip: Int32Array;
+  poseRate: Float32Array;
+  poseShift: Float32Array;
+  /** Je Clip: Clip-Zeit = (Zeit - shift) * rate - für Clips ohne Pose (Mühle, Fahne). */
+  rate: Float32Array;
+  shift: Float32Array;
+}
+/** Für Modelle ohne Clips. */
+const NO_CLIPS: ClipUniforms = {
+  rows: new Int32Array(MAX_CLIPS).fill(-1), frames: new Int32Array(MAX_CLIPS).fill(2), fps: new Float32Array(MAX_CLIPS).fill(30),
+  props: new Int32Array(MAX_CLIPS), poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
+  rate: new Float32Array(MAX_CLIPS).fill(1), shift: new Float32Array(MAX_CLIPS),
+};
 /** Kantenlänge der Blatt-Textur in Pixeln (textures/birch_leaf.png). */
 const LEAF_TEX_SIZE = 256;
 /** Rolle der Blattkarten (Birke): der Shader malt Zweig und Blätter darauf. */
@@ -348,7 +471,7 @@ const FIELD_SOIL_METERS = '0.02';
 
 /**
  * Stufen des Werkstücks auf der Werkbank der Bognerei (Objekte "Craft.0" bis
- * "Craft.2" in tools/models/buildings.mjs): grob behauen, ausgearbeitet,
+ * "Craft.2" in assets/blender/models/buildings/bowyer.blend): grob behauen, ausgearbeitet,
  * gespannter Bogen.
  */
 export const CRAFT_STAGES = 3;
@@ -387,7 +510,8 @@ export function setAnimationSpeed(speed: number) {
   animationSpeed = speed;
 }
 
-function animationTime(): number {
+/** Stand dieser Uhr (Sekunden) - wie uTime im Shader. Für eingestürzte Mühlen (frozenMillMotion). */
+export function animationTime(): number {
   const now = performance.now() / 1000;
   if (!animationPaused) animationClock += (now - animationLast) * animationSpeed;
   animationLast = now;
@@ -487,40 +611,48 @@ layout(location = 7) in float aGround;  // Geländehöhe in Tiles, oder ${GROUND
 
 /** Untergrenze für die Größe, damit Gebäude beim Herauszoomen sichtbar bleiben. */
 uniform float uMinSizeTiles;
-// Gelenke der Figur in Koerperhoehen - aus dem Modell abgelesen, damit ein in
-// Blender umgebautes Modell weiter richtig laeuft.
+// Maße der Figur in Koerperhoehen - aus dem Modell abgelesen: Hüfte (Rock,
+// Knochen des Rumpfs), Knie (wie tief sie kniet), Abstand der Unterarme von
+// der Mitte (Zugmesser zwischen beiden Händen). Bewegt wird sie von den Clips.
 uniform float uHip;
-uniform float uShoulder;
 uniform float uKnee;
-uniform float uElbow;
-uniform float uArm;          // Figuren: Abstand der Unterarme von der Mitte - Drehpunkt, wenn der Arm zur Mitte schwenkt
-uniform float uStride;   // Schrittweite: 1 = voller Schritt, kleiner im langen Rock
+uniform float uArm;
+// Anhänge (Werkzeuge): Mitte der rechten Hand des Körpers in Ruhelage
+// (Modell-Einheiten) und wie weit das Zugmesser auf seinen Handabstand
+// gestreckt wird.
+uniform vec3  uSocket;
+uniform float uKnifeScale;
 uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
-// Modelle: Groesse je Tile der Instanzgroesse, Nabe der Fluegel (links, oben)
-// und die Zeit fuer alles, was sich von selbst bewegt.
+// Modelle: Groesse je Tile der Instanzgroesse und die Zeit fuer alles, was
+// sich von selbst bewegt.
 uniform float uModelScale;
 uniform float uModelTop;     // Höhe des Modells in Modell-Einheiten (Bäume: Absägen)
 uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
-uniform vec2  uLegs;         // Tiere: Gelenk (vorn) der Vorder- und Hinterbeine
-uniform vec2  uNeck;         // Tiere: Gelenk des Halses (vorn, oben)
-uniform float uGraze;        // Tiere: so weit senkt sich der Kopf beim Äsen (Radiant)
-uniform float uSide;         // Tiere: halbe Breite des Körpers - so liegt es tot auf der Seite
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
+// Lage in Ruhelage (Modell-Einheiten des Körpers) - für die Texturen (vLocal).
+// Anhänge liegen in Metern im Rahmen der Hand und werden erst auf den Körper gebracht.
+vec3 gRest = vec3(0.0);
 // Feldpflanzen: 1 = frisch gesät und grün, 0 = reif in ihrer eigenen Farbe.
 float gUnripe = 0.0;
-uniform vec2  uHub;
 uniform float uTime;
 // Clips aus Blender (clips.ts): je Bild eine Zeile, je Knochen drei Texel
 // (Zeilen einer 3x4-Matrix). uClipRow: erste Zeile des Clips für diese Figur,
-// -1 = nicht gebacken. uPoseClip: welcher Clip eine Pose ersetzt (-1 = die
-// Formel), Clip-Zeit = (Phase - uPoseShift) * uPoseRate.
+// -1 = nicht gebacken. uPoseClip: welcher Clip eine Pose spielt (-1: keiner,
+// die Figur steht still), Clip-Zeit = (Phase - uPoseShift) * uPoseRate. uClipProps: Bits
+// Beil 1, Sense 2, Zugmesser 4 (PROP_BITS), kniend ${KNEEL_BIT} (KNEEL_BIT).
 uniform highp sampler2D uClipTex;
 uniform int   uClipRow[${MAX_CLIPS}];
 uniform int   uClipFrames[${MAX_CLIPS}];
 uniform float uClipFps[${MAX_CLIPS}];
 uniform int   uClipProps[${MAX_CLIPS}];
+// Clips ohne Pose (Mühle, Fahne): Clip-Zeit = (Zeit - uClipShift) * uClipRate.
+uniform float uClipRate[${MAX_CLIPS}];
+uniform float uClipShift[${MAX_CLIPS}];
+// Fahnentuch: vom Mast (x) bis zum Ende (y) in Modell-y, Höhe (z) - die Knochen
+// cloth.0-${FLAG_SEGMENTS} liegen gleichmäßig darauf (FLAG in clips.ts).
+uniform vec3  uCloth;
 uniform int   uPoseClip[8];
 uniform float uPoseRate[8];
 uniform float uPoseShift[8];
@@ -602,33 +734,6 @@ const int P_CUT_WALL = 30;
 const int P_CRAFT = 32;
 
 
-// Dreht p in der Ebene aus Blickrichtung (x) und Höhe (z) um ein Gelenk an
-// (vorn, oben) = pivot - positiv schwingt, was unter dem Gelenk hängt, nach vorn.
-vec3 swingAt(vec3 p, vec2 pivot, float angle) {
-  vec2 q = vec2(p.x - pivot.x, p.z - pivot.y);
-  float c = cos(angle);
-  float s = sin(angle);
-  return vec3(pivot.x + q.x * c - q.y * s, p.y, pivot.y + q.x * s + q.y * c);
-}
-
-// Dreht p in der Ebene aus Blickrichtung (x) und Hoehe (z) um ein Gelenk -
-// so schwingen Arme und Beine nach vorn und hinten.
-// Um die Längsachse am Punkt (y, z) = pivot drehen - ein Arm schwenkt so zur
-// Körpermitte hin oder von ihr weg.
-vec3 swingSideways(vec3 p, vec2 pivot, float angle) {
-  vec2 q = p.yz - pivot;
-  float c = cos(angle);
-  float s = sin(angle);
-  return vec3(p.x, pivot + vec2(q.x * c - q.y * s, q.x * s + q.y * c));
-}
-
-vec3 swingAround(vec3 p, float pivot, float angle) {
-  vec2 q = vec2(p.x, p.z - pivot);
-  float c = cos(angle);
-  float s = sin(angle);
-  return vec3(q.x * c - q.y * s, p.y, q.x * s + q.y * c + pivot);
-}
-
 // Abtastschritt wie beim Geländegitter (TerrainRenderer.gridCell) - sonst
 // fehlen hier die Feinwellen, die das Gelände nah herangezoomt hat.
 uniform float uGroundStep;
@@ -641,7 +746,7 @@ float groundZ(vec2 world) {
 
 // Knochen eines Eckpunkts der Figur - Reihenfolge wie HUMANOID_BONES in
 // clips.ts. Der Rumpf gehört über der Hüfte zum Oberkörper, darunter zum
-// Unterkörper (wie bei den Formeln). Werkzeuge hängen am rechten Unterarm.
+// Unterkörper. Werkzeuge hängen am rechten Unterarm.
 int boneOf(int part, float z) {
   if (part == P_LEG_L) return ${BONE['thigh.L']};
   if (part == P_SHIN_L) return ${BONE['shin.L']};
@@ -656,13 +761,29 @@ int boneOf(int part, float z) {
   return z > uHip ? ${BONE.upperBody} : ${BONE.lowerBody};
 }
 
-// Punkt p mit der Matrix eines Knochens in Bild "row" (eine Zeile der Textur).
+// Texel "i" (0..2: Zeile der 3x4-Matrix) eines Knochens in Bild "row" - die
+// Bilder liegen in Spalten zu ${CLIP_COLUMN_ROWS} (CLIP_COLUMN_ROWS).
+vec4 clipTexel(int row, int bone, int i) {
+  int column = row / ${CLIP_COLUMN_ROWS};
+  int x = column * ${MAX_BONES * TEXELS_PER_BONE} + bone * ${TEXELS_PER_BONE} + i;
+  return texelFetch(uClipTex, ivec2(x, row - column * ${CLIP_COLUMN_ROWS}), 0);
+}
+
+// Punkt p mit der Matrix eines Knochens in Bild "row".
 vec3 clipBone(vec3 p, int row, int bone) {
-  int x = bone * ${TEXELS_PER_BONE};
   vec4 h = vec4(p, 1.0);
-  return vec3(dot(texelFetch(uClipTex, ivec2(x, row), 0), h),
-              dot(texelFetch(uClipTex, ivec2(x + 1, row), 0), h),
-              dot(texelFetch(uClipTex, ivec2(x + 2, row), 0), h));
+  return vec3(dot(clipTexel(row, bone, 0), h), dot(clipTexel(row, bone, 1), h), dot(clipTexel(row, bone, 2), h));
+}
+
+// Drehung der Schultern gegen die Hüfte (Radiant) zur Zeit "time": aus der
+// Matrix des Oberkörpers, dessen Vorwärts-Achse sie zur Seite dreht (Zeile 1,
+// Spalte 0 = sin). Der Rock schwingt damit mit.
+float clipTwist(int clip, float time) {
+  int frames = uClipFrames[clip];
+  float f = mod(time * uClipFps[clip], float(frames - 1));
+  int row = uClipRow[clip] + int(floor(f));
+  float s = mix(clipTexel(row, ${BONE.upperBody}, 1).x, clipTexel(row + 1, ${BONE.upperBody}, 1).x, fract(f));
+  return asin(clamp(s, -1.0, 1.0));
 }
 
 // Punkt p mit einem Knochen des Clips zur Zeit "time" (Sekunden, Schleife),
@@ -674,6 +795,25 @@ vec3 clipSkin(vec3 p, int clip, float time, int bone) {
   int f0 = int(floor(f));
   int row = uClipRow[clip] + f0;
   return mix(clipBone(p, row, bone), clipBone(p, row + 1, bone), f - float(f0));
+}
+
+// Mühlenzeit für den Clip "sails" (mill_clips.glb): wo in der Schleife eine
+// Mühle mit Startstellung "phase" (millMotion) steht. Die Böen kommen im
+// Takt der Startstellung (3.1 * phase); die Drehung passt bis auf
+// höchstens 6.4 Grad - die vier Flügel sind nach einer Vierteldrehung gleich,
+// gesucht wird die nächste von sieben Stellungen (millClipOffset in TS).
+float millClipOffset(float phase) {
+  float best = 0.0;
+  float err = 10.0;
+  for (int k = 0; k < 7; k++) {
+    float o = (3.1 * phase + 6.2831853 * float(k)) / ${GUST_RATE.toFixed(3)};
+    float e = abs(mod(${SAIL_SPEED.toFixed(3)} * o - phase + 0.7853982, 1.5707963) - 0.7853982);
+    if (e < err) {
+      err = e;
+      best = o;
+    }
+  }
+  return best;
 }
 
 void main() {
@@ -705,7 +845,8 @@ void main() {
     // Modell aus einer OBJ-Datei. Eckpunkte in Modell-Einheiten: x nach vorn,
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
-    bool figure = shape == 5 || shape == 18;
+    bool figure = ${FIGURE_TEST};
+    bool prop = shape >= ${SHAPE.propAxe} && shape <= ${SHAPE.propKnifeFemale};
     bool beast = ${BEASTS.map((n) => `shape == ${n}`).join(' || ')};
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
     bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
@@ -717,12 +858,20 @@ void main() {
     float scale = size * uModelScale;
     int part = int(aCorner.w + 0.5);
     vec3 p = aCorner.xyz;
+    if (prop) {
+      // Anhang (Werkzeug): in Metern im Rahmen der rechten Hand - an die Hand
+      // des Körpers, der es trägt, in dessen Einheiten. Das Zugmesser auf
+      // seinen Handabstand gestreckt (gebaut ist es für den Mann).
+      if (part == P_KNIFE) p.y *= uKnifeScale;
+      p = uSocket + p / uMeters;
+    }
+    gRest = p;
 
     if (figure) {
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
-      // Clip aus Blender statt Formel: Pose >= CLIP_POSE (Galerie) oder eine
-      // Pose, die ein Clip ersetzt (uPoseClip).
+      // Clip aus Blender (assets/blender/clips/humanoid.blend): Pose >=
+      // CLIP_POSE (Galerie) oder die Pose, die ein Clip ersetzt (uPoseClip).
       int clip = pose >= ${CLIP_POSE} ? pose - ${CLIP_POSE} : pose < 8 ? uPoseClip[pose] : -1;
       if (clip >= 0 && uClipRow[clip] < 0) clip = -1;
       if (clip >= 0) {
@@ -736,6 +885,18 @@ void main() {
         } else {
           // Die Last waechst mit der Ladung aus dem Ruecken heraus.
           if (part == P_LOAD) p = uLoadAnchor + (p - uLoadAnchor) * aMotion.w;
+          // Rock und Hosenboden schwingen etwas mit, wenn sich die Schultern
+          // gegen die Hüfte drehen - vor dem Stauchen.
+          if (part == P_TORSO && p.z <= uHip) p.y += clipTwist(clip, time) * 0.25 * (uHip - p.z);
+          if ((props & ${KNEEL_BIT}) != 0 && part == P_TORSO && p.z <= uHip) {
+            // Kniend: der Rock staucht sich bis zum Boden und legt sich vorn
+            // über das aufgestellte Knie - so tief, wie die Knochen die Figur
+            // senken (das Knie auf dem Boden: -(uKnee - 0.04)).
+            float kneelBob = -(uKnee - 0.04);
+            float below = (uHip - p.z) / uHip;
+            p.z = uHip - (uHip - p.z) * (uHip + kneelBob) / (uHip - 0.02);
+            p.x += below * 0.14;
+          }
           if (part == P_KNIFE) {
             // Zweihändig: nach der Lage zwischen den Händen auf beide Unterarme verteilt.
             float k = clamp((p.y + uArm) / (2.0 * uArm), 0.0, 1.0);
@@ -745,257 +906,26 @@ void main() {
           }
         }
       } else {
-        bool legL = part == P_LEG_L || part == P_SHIN_L;
-        bool legR = part == P_LEG_R || part == P_SHIN_R;
-        bool armL = part == P_ARM_L || part == P_FOREARM_L;
-        bool armR = part == P_ARM_R || part == P_FOREARM_R || part == P_TOOL || part == P_SCYTHE;
-        // Oberkörper: alles über der Hüfte, was kein Bein ist - er neigt und
-        // dreht sich über der Hüfte, Arme und Kopf gehen mit.
-        bool upper = !legL && !legR && (part != P_TORSO || p.z > uHip);
-        // Winkel je Gelenk: positiv schwingt nach vorn. Knie beugen nach
-        // hinten (negativ), Ellbogen nach vorn (positiv).
-        float hipL = 0.0, hipR = 0.0, kneeL = -0.05, kneeR = -0.05;
-        float shL = -0.05, shR = -0.05, elL = 0.15, elR = 0.15;
-        // Arme zur Körpermitte hin (nur beim Mähen).
-        float inL = 0.0, inR = 0.0;
-        float lean = 0.0, twist = 0.0, sway = 0.0, bob = 0.0;
-
-        if (pose == 1) {
-          // Gehen: Beine gegengleich, das Knie des nach vorn schwingenden Beins
-          // hebt den Fuß an, Arme pendeln gegen die Beine mit lockerem Ellbogen,
-          // Schultern drehen gegen die Hüfte, der Körper wippt und neigt sich
-          // leicht in die Laufrichtung.
-          float s = sin(phase);
-          float c = cos(phase);
-          hipL = s * 0.55 * uStride;
-          hipR = -s * 0.55 * uStride;
-          kneeL = -0.1 - 0.95 * max(c, 0.0);
-          kneeR = -0.1 - 0.95 * max(-c, 0.0);
-          shL = -s * 0.5;
-          shR = s * 0.5;
-          elL = 0.3 + 0.45 * max(shL, 0.0);
-          elR = 0.3 + 0.45 * max(shR, 0.0);
-          twist = s * 0.12;
-          lean = 0.07;
-          sway = s * 0.012;
-          bob = abs(c) * 0.03;
-        } else if (pose == 2) {
-          // Arbeiten: breiter Stand mit gebeugten Knien, der rechte Arm holt
-          // mit angewinkeltem Ellbogen aus und schlägt mit gestrecktem Arm zu,
-          // der Oberkörper beugt sich beim Schlag vor. Axt, Spitzhacke oder
-          // Pflücken sehen auf diese Größe gleich aus.
-          float up = 0.5 + 0.5 * sin(phase);
-          hipL = 0.25;
-          hipR = -0.15;
-          kneeL = -0.35;
-          kneeR = -0.3;
-          shR = 0.6 + 1.9 * up;
-          elR = 0.15 + 0.9 * up;
-          shL = 0.7 + 0.2 * up;
-          elL = 0.6;
-          lean = 0.12 + 0.18 * (1.0 - up);
-          twist = -0.15 + 0.3 * up;
-          bob = -0.03;
-        } else if (pose == 3) {
-          // Pflücken: auf dem rechten Knie, das linke Bein aufgestellt, der
-          // Oberkörper zum Strauch gebeugt. Die rechte Hand greift in den
-          // Strauch und zieht zurück, die linke hält einen Zweig fest. Die
-          // Hüfte sinkt so weit, dass das rechte Knie den Boden berührt.
-          float t = phase * 0.6;
-          float reach = 0.5 + 0.5 * sin(t);
-          hipL = 1.95;
-          kneeL = -1.95;
-          hipR = -0.05;
-          kneeR = -1.5;
-          // Gestreckt in den Strauch (reach = 1), dann die Hand zur Brust.
-          shR = 0.3 + 0.85 * reach;
-          elR = 1.95 - 1.85 * reach;
-          shL = 1.05 + 0.08 * sin(t * 0.5);
-          elL = 0.75;
-          lean = 0.32 + 0.08 * reach;
-          twist = -0.1 + 0.12 * reach;
-          bob = -(uKnee - 0.04);
-        } else if (pose == 4) {
-          // Mähen: breit und leicht gebeugt, vorgeneigt; beide Hände vor dem
-          // Körper am Stiel, die linke oben am Ende, die rechte weiter unten
-          // (mow_pose.json - danach ist die Sense gebaut). Der Oberkörper dreht
-          // hin und her und zieht die Sense flach über den Boden von rechts
-          // nach links; die Arme bleiben dabei ruhig, sonst lösten sich die Hände.
-          float t = phase * 0.6;
-          float sweep = sin(t);
-          hipL = 0.3;
-          hipR = -0.2;
-          kneeL = -0.4;
-          kneeR = -0.3;
-          shL = ${MOW.left.forward.toFixed(3)};
-          elL = ${MOW.left.elbow.toFixed(3)};
-          inL = ${MOW.left.inward.toFixed(3)};
-          shR = ${MOW.right.forward.toFixed(3)};
-          elR = ${MOW.right.elbow.toFixed(3)};
-          inR = ${MOW.right.inward.toFixed(3)};
-          lean = ${MOW.lean.toFixed(3)};
-          twist = sweep * 0.55;
-          bob = ${MOW.bob.toFixed(3)};
-        } else if (pose == 5) {
-          // Schnitzen mit dem Zugmesser an der Werkbank. Ein Zug: schnell zum
-          // Körper heran - da schneidet es, und der Ton kommt (villagers.ts,
-          // swing) -, dann langsam wieder vor an den Stab. Der Oberkörper geht
-          // mit, die Knie federn, der Blick bleibt auf dem Stab. Jeder fünfte
-          // Zug ist keiner: er hebt das Messer, richtet sich auf und prüft.
-          float t = phase * 0.6 - 4.712389;
-          float k = floor(t / 6.2831853);
-          float cyc = t / 6.2831853 - k;
-          bool inspect = int(mod(k, 5.0) + 0.5) == 4;
-          float pull = cyc < 0.3 ? smoothstep(0.0, 0.3, cyc) : 1.0 - smoothstep(0.3, 1.0, cyc);
-          float lift = 0.0;
-          if (inspect) {
-            lift = sin(cyc * 3.1415927);
-            pull = 0.4;
-          }
-          // Über den Stab gebeugt, die Hände auf dem Stab: vorn weit vorgestreckt,
-          // beim Zug am Stabende (carve_pose.json - so ausgerechnet, dass sie
-          // auf Stabhöhe bleiben), beim Prüfen gehoben.
-          hipL = 0.18;
-          hipR = -0.12;
-          kneeL = -0.32 - 0.1 * pull;
-          kneeR = -0.26 - 0.1 * pull;
-          shL = mix(${CARVE.extended.shoulder.toFixed(3)}, ${CARVE.pulled.shoulder.toFixed(3)}, pull) + ${CARVE.inspect.shoulder.toFixed(3)} * lift;
-          shR = shL;
-          elL = mix(${CARVE.extended.elbow.toFixed(3)}, ${CARVE.pulled.elbow.toFixed(3)}, pull) + ${CARVE.inspect.elbow.toFixed(3)} * lift;
-          elR = elL;
-          inL = 0.22;
-          inR = 0.22;
-          lean = mix(${CARVE.extended.lean.toFixed(3)}, ${CARVE.pulled.lean.toFixed(3)}, pull) + ${CARVE.inspect.lean.toFixed(3)} * lift;
-          // Mal etwas weiter links, mal rechts am Stab.
-          twist = 0.06 * sin(k * 1.7);
-          bob = -0.04 - 0.02 * pull;
-          // Kopf gesenkt, beim Prüfen hebt er ihn.
-          if (part == P_HEAD) p = swingAround(p, uShoulder + 0.03, 0.4 - 0.3 * lift);
-        } else {
-          // Stehen: nie ganz still. Phase = Sekunden, je Figur versetzt, damit
-          // eine Gruppe nicht im Gleichtakt atmet.
-          float t = phase;
-          // Atmen: Oberkörper hebt und senkt sich.
-          if (p.z > uHip) p.z += sin(t * 1.7) * 0.008 * (p.z - uHip) / (1.0 - uHip);
-          // Arme hängen locker und pendeln leicht gegeneinander, die Ellbogen
-          // federn mit.
-          shL = sin(t * 0.9) * 0.08 - 0.05;
-          shR = sin(t * 0.9 + 1.3) * 0.08 - 0.05;
-          elL = 0.18 + sin(t * 0.9) * 0.06;
-          elR = 0.18 + sin(t * 0.9 + 1.3) * 0.06;
-          // Umschauen: der Kopf dreht sich ab und zu nach links oder rechts,
-          // bleibt dort kurz und kommt zurück.
-          if (part == P_HEAD) {
-            float yaw = 0.6 * clamp(sin(t * 0.37) * 2.5 - sign(sin(t * 0.37)) * 1.2, -1.0, 1.0);
-            float c = cos(yaw);
-            float s = sin(yaw);
-            p.xy = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
-          }
-          // Gewicht verlagern: der ganze Körper neigt sich leicht zur Seite,
-          // das entlastete Knie knickt ein wenig ein.
-          float shift = sin(t * 0.55);
-          p.y += shift * 0.02 * p.z;
-          kneeL = -0.05 - 0.12 * max(shift, 0.0);
-          kneeR = -0.05 - 0.12 * max(-shift, 0.0);
-          twist = sin(t * 0.3) * 0.04;
-        }
-
-        // Erst das untere Glied am Knie bzw. Ellbogen, dann das ganze Glied an
-        // Hüfte bzw. Schulter.
-        if (part == P_SHIN_L) p = swingAround(p, uKnee, kneeL);
-        if (part == P_SHIN_R) p = swingAround(p, uKnee, kneeR);
-        if (part == P_FOREARM_L) p = swingAround(p, uElbow, elL);
-        if (part == P_FOREARM_R || part == P_TOOL || part == P_SCYTHE) p = swingAround(p, uElbow, elR);
-        // Beim Pflücken, Mähen und Schnitzen ist das Beil weggesteckt: alle Ecken auf einen Punkt,
-        // die Dreiecke haben dann keine Fläche mehr.
-        if (part == P_TOOL && (pose == 3 || pose == 4 || pose == 5)) p = vec3(0.0, 0.0, uHip);
-        // Die Sense nur beim Mähen - sonst trägt er das Beil.
-        if (part == P_SCYTHE && pose != 4) p = vec3(0.0, 0.0, uHip);
-        // Das Zugmesser nur beim Schnitzen. Es hängt an beiden Händen: jeder
-        // Punkt geht mit dem rechten und mit dem linken Arm mit, überblendet
-        // nach seiner Lage zwischen den Händen - so bleiben beide Griffe fest.
-        if (part == P_KNIFE) {
-          if (pose != 5) {
-            p = vec3(0.0, 0.0, uHip);
-          } else {
-            vec3 a = swingSideways(swingAround(p, uElbow, elR), vec2(-uArm, uShoulder), inR);
-            vec3 b = swingSideways(swingAround(p, uElbow, elL), vec2(uArm, uShoulder), -inL);
-            a = swingAround(a, uShoulder, shR);
-            b = swingAround(b, uShoulder, shL);
-            p = mix(a, b, clamp((p.y + uArm) / (2.0 * uArm), 0.0, 1.0));
-          }
-        }
-        if (legL) p = swingAround(p, uHip, hipL);
-        if (legR) p = swingAround(p, uHip, hipR);
-        // Beim Mähen schwenkt der hängende Arm erst zur Mitte, dann nach vorn.
-        if (armL && inL != 0.0) p = swingSideways(p, vec2(uArm, uShoulder), -inL);
-        if (armR && inR != 0.0) p = swingSideways(p, vec2(-uArm, uShoulder), inR);
-        if (armL) p = swingAround(p, uShoulder, shL);
-        if (armR) p = swingAround(p, uShoulder, shR);
-        // Die Last waechst mit der Ladung aus dem Ruecken heraus.
+        // Ohne Clip (Bibliothek nicht geladen): Ruhelage, Werkzeuge weggesteckt.
+        if (part == P_TOOL || part == P_SCYTHE || part == P_KNIFE) p = vec3(0.0, 0.0, uHip);
         if (part == P_LOAD) p = uLoadAnchor + (p - uLoadAnchor) * aMotion.w;
-        if (upper) {
-          // Schultern gegen die Hüfte drehen, dann über der Hüfte vorneigen.
-          float c = cos(twist);
-          float s = sin(twist);
-          p.xy = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
-          p = swingAround(p, uHip, -lean);
-        } else if (part == P_TORSO) {
-          // Rock und Hosenboden schwingen beim Gehen etwas mit.
-          p.y += twist * 0.25 * (uHip - p.z);
-          if (pose == 3) {
-            // Kniend: der Rock staucht sich bis zum Boden und legt sich vorn
-            // über das aufgestellte Knie.
-            float below = (uHip - p.z) / uHip;
-            p.z = uHip - (uHip - p.z) * (uHip + bob) / (uHip - 0.02);
-            p.x += below * 0.14;
-          }
-        }
-        p.y += sway;
-        p.z += bob;
       }
     }
 
     if (beast) {
-      // Tiere: Beine schwingen um ihr oberes Gelenk, der Kopf samt Hals nickt
-      // um den Halsansatz. Rehe gehen im Kreuzgang und springen auf der
-      // Flucht, Hasen hoppeln - Vorder- und Hinterbeine jeweils zusammen.
-      // Kühe trotten auch auf der Flucht im Kreuzgang.
+      // Tiere: Clip aus Blender (assets/blender/clips/quadruped.blend) - Pose
+      // >= CLIP_POSE (Galerie) oder die Pose, die ein Clip dieser Art ersetzt.
+      // Ohne Clip (Bibliothek nicht geladen) steht es still.
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
-      bool hare = shape == ${SHAPE.hare};
-      bool jump = hare || (pose == 5 && shape != ${SHAPE.cow});
-      bool front = part == 24 || part == 25;
-      bool leg = part >= 24 && part <= 27;
-      vec2 pivot = vec2(front ? uLegs.x : uLegs.y, uHip);
-      float bob = 0.0;
-      float dip = 0.0;
-      if (pose == 1 || pose == 5) {
-        float amp = pose == 5 ? 0.8 : 0.45;
-        float s = sin(phase);
-        float a = 0.0;
-        if (jump) {
-          // Hoppeln bzw. Springen: vorn und hinten gegengleich, der Körper hebt ab.
-          a = (front ? s : -s) * amp;
-          bob = max(0.0, sin(phase + 1.2)) * (hare ? 0.25 : 0.1);
-        } else {
-          // Kreuzgang: links vorn mit rechts hinten.
-          a = (part == 24 || part == 27 ? s : -s) * amp;
-          bob = abs(cos(phase)) * 0.015;
-        }
-        if (leg) p = swingAt(p, pivot, a);
-        dip = pose == 5 ? 0.15 : -0.1;
-      } else if (pose == 0) {
-        // Äsen: meist mit dem Kopf unten, ab und zu schaut es auf.
-        float up = smoothstep(0.6, 0.9, sin(phase * 0.21 + 1.0));
-        // Weit genug, dass das Maul ans Gras kommt.
-        dip = mix(uGraze, 0.0, up) + sin(phase * 2.3) * 0.05 * (1.0 - up);
-      }
-      if (part == P_HEAD) p = swingAt(p, uNeck, -dip);
-      p.z += bob;
-      if (pose == 6) {
-        // Erlegt: auf die Seite gekippt, die Beine zeigen zur Seite.
-        p = vec3(p.x, -p.z, p.y + uSide);
+      int clip = pose >= ${CLIP_POSE} ? pose - ${CLIP_POSE} : pose < 8 ? uPoseClip[pose] : -1;
+      if (clip >= 0 && uClipRow[clip] >= 0) {
+        float time = pose >= ${CLIP_POSE} ? phase : (phase - uPoseShift[pose]) * uPoseRate[pose];
+        // Knochen je Teil (QUADRUPED in clips.ts): die vier Beine, der Kopf, sonst die Wurzel.
+        int bone = part == 24 ? ${QUADRUPED_BONE['leg.FL']} : part == 25 ? ${QUADRUPED_BONE['leg.FR']}
+            : part == 26 ? ${QUADRUPED_BONE['leg.BL']} : part == 27 ? ${QUADRUPED_BONE['leg.BR']}
+            : part == P_HEAD ? ${QUADRUPED_BONE.head} : ${QUADRUPED_BONE.root};
+        p = clipSkin(p, clip, time, bone);
       }
     }
 
@@ -1102,22 +1032,23 @@ void main() {
       }
     }
 
-    if (part == P_CLOTH) {
-      // Fahnentuch weht: eine Welle läuft vom Mast zum freien Ende, das
-      // weiter ausschlägt als die Seite am Mast.
-      p.x += sin(uTime * 5.0 - p.y * 14.0) * 0.12 * p.y;
+    if (part == P_CLOTH && !figure && uClipRow[0] >= 0) {
+      // Fahnentuch (Sammelpunkt, Hauptgebäude): Clip "wave" aus Blender. Die
+      // Knochen cloth.0-N liegen gleichmäßig längs des Tuchs; dazwischen die
+      // beiden Nachbarn nach der Lage gemischt (an den Eckpunkten genau einer).
+      float time = (uTime - uClipShift[0]) * uClipRate[0];
+      float s = clamp((p.y - uCloth.x) / (uCloth.y - uCloth.x), 0.0, 1.0) * ${FLAG_SEGMENTS}.0;
+      int j = min(int(floor(s)), ${FLAG_SEGMENTS - 1});
+      p = mix(clipSkin(p, 0, time, 1 + j), clipSkin(p, 0, time, 2 + j), s - float(j));
     }
 
-    if (part == P_SAILS) {
-      // Muehlenfluegel drehen sich um die Nabe, die Achse zeigt nach vorn.
-      // aMotion.y = Startstellung, aMotion.z = Drehzahl (millMotion), dazu Böen.
-      // Drehzahl < 0: steht still - aMotion.y ist dann der feste Winkel
-      // (eingestürzte Mühle, siehe frozenMillMotion).
+    if (part == P_SAILS && uClipRow[0] >= 0) {
+      // Mühlenflügel: Clip "sails" aus Blender, in Mühlenzeit (Spielzeit *
+      // Drehzahl + Stellung der Mühle). aMotion.z < 0: eingestürzt, die Zeit
+      // steht bei -aMotion.z - 1 (frozenMillMotion).
       float speed = aMotion.z > 0.0 ? aMotion.z : 1.0;
-      float a = aMotion.z < 0.0 ? -aMotion.y : -(uTime * ${SAIL_SPEED.toFixed(3)} * speed + aMotion.y
-          + ${GUST_AMOUNT.toFixed(3)} * sin(uTime * ${GUST_RATE.toFixed(3)} * speed + aMotion.y * 3.1));
-      vec2 q = p.yz - uHub;
-      p.yz = uHub + vec2(q.x * cos(a) - q.y * sin(a), q.x * sin(a) + q.y * cos(a));
+      float t = aMotion.z < 0.0 ? -aMotion.z - 1.0 : uTime * speed + millClipOffset(aMotion.y);
+      p = clipSkin(p, 0, (t - uClipShift[0]) * uClipRate[0], 1);
     }
 
     // Blickrichtung je Instanz (Gebäude bekommen sie vom Renderer).
@@ -1280,15 +1211,15 @@ void main() {
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
-    bool villager = shape == 5 || shape == 18;
+    bool villager = ${FIGURE_TEST};
     bool figureTex = role >= ${FIGURE_TEX.cloth} && role <= ${FIGURE_TEX.skin};
     vTex = figureTex ? (villager ? role : 0)
       : villager && (role == 1 || role == 2) ? ${FIGURE_TEX.cloth}
       : role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
-    vLocal = aCorner.xyz * uMeters;
+    vLocal = gRest * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
-    if (shape != 5 && shape != 18 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
+    if (!${FIGURE_TEST} && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
   }
   vParams = aParams;
   vRoof = aCorner.w;
@@ -1298,7 +1229,7 @@ void main() {
   // höher - es schnitte Füße und Ring ab. Ihre Tiefe wird deshalb um etwa
   // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
   // wo es ist (siehe project: näher = kleinere Tiefe).
-  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || ${BEASTS.map((n) => `shape == ${n}`).join(' || ')}) gl_Position.z -= 0.5 / uDepthRange;
+  if (${FIGURE_TEST} || shape == ${SHAPE_RING} || ${BEASTS.map((n) => `shape == ${n}`).join(' || ')}) gl_Position.z -= 0.5 / uDepthRange;
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
   if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
@@ -1891,6 +1822,8 @@ interface Model {
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
+  /** Fahnentuch (Teil Cloth): vom Mast bis zum Ende in Modell-y, seine Höhe - für die Fahne (FLAG). */
+  cloth: [number, number, number];
   /** Bäume, Sträucher: Mitte und halbe Ausdehnung der Krone (Modell-Einheiten). */
   canopy: [number, number, number];
   canopyHalf: [number, number, number];
@@ -1908,6 +1841,8 @@ interface Model {
   stockSlots: number;
   /** Werkstatt: wo der Arbeiter steht und wohin er schaut (Modell-Einheiten: vorn, links). */
   work?: { stand: [number, number]; aim: [number, number] };
+  /** Figuren: Mitte der rechten Hand in Ruhelage (Modell-Einheiten) - dort hängen Werkzeuge. */
+  hand: [number, number, number];
   /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
   meters: number;
 }
@@ -1996,7 +1931,7 @@ function berryRandom(index: number): number {
  * mitzählen. Der Boden liegt danach bei 0. Blender hängt beim Export manchmal
  * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
  */
-function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'width', lod = false, sawable = false,
+function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'width' | 'meters', lod = false, sawable = false,
                    only?: ObjTriangle[]): Model {
   // Die Objekte "Entry" (Eingang) und "Work.*" (Platz an der Werkbank)
   // markieren nur Stellen - nicht zeichnen, nicht mitmessen.
@@ -2021,6 +1956,11 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   const stockSlots = triangles.reduce((n, t) => (t.object.startsWith('Stock') ? Math.max(n, stockNumber(t.object) + 1) : n), 0);
 
   let unitLength = maxY - minY;
+  // Anhänge: in Metern, wie sie sind - der Shader bringt sie auf den Körper.
+  if (unit === 'meters') {
+    unitLength = 1;
+    minY = 0;
+  }
   if (unit === 'width') {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -2039,6 +1979,15 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   // Datei (x links, y oben, z vorn) -> Modell (x vorn, y links, z oben)
   const local = (p: [number, number, number]) =>
     [p[2] / unitLength, p[0] / unitLength, (p[1] - minY) / unitLength] as const;
+
+  // Figuren: Mitte der rechten Hand in Ruhelage - dort hängen Werkzeuge (uSocket).
+  // Der Mittelwert der Eckpunkte des Objekts (so wurden die Werkzeuge an die Hand gesetzt).
+  const handPoints = new Map<string, readonly [number, number, number]>();
+  for (const t of triangles) {
+    if (t.object.startsWith('Arm.R.Lower.Hand')) for (const p of t.points) handPoints.set(p.join(), local(p));
+  }
+  const hand = [...handPoints.values()].reduce<[number, number, number]>(
+    (s, q) => [s[0] + q[0] / handPoints.size, s[1] + q[1] / handPoints.size, s[2] + q[2] / handPoints.size], [0, 0, 0]);
 
   // Größe jedes Teils (größte Ausdehnung in Modell-Einheiten) - für die
   // vereinfachten Fassungen.
@@ -2080,6 +2029,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   let mouth: [number, number] = [-Infinity, 0];
   let side = 0;
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+  const cloth = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
   // Bäume: Oberkante des Stumpfs in Datei-Einheiten - dort liegen die beiden
   // Schnittflächen (Deckel des Stumpfs, Boden des Stamms), siehe P_STUMP.
@@ -2192,6 +2142,10 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
         load.y = [Math.min(load.y[0], y), Math.max(load.y[1], y)];
         load.z = [Math.min(load.z[0], z), Math.max(load.z[1], z)];
       }
+      if (part === 8) {
+        cloth.y = [Math.min(cloth.y[0], y), Math.max(cloth.y[1], y)];
+        cloth.z = [Math.min(cloth.z[0], z), Math.max(cloth.z[1], z)];
+      }
       if (part === 7) {
         sails.y = [Math.min(sails.y[0], y), Math.max(sails.y[1], y)];
         sails.z = [Math.min(sails.z[0], z), Math.max(sails.z[1], z)];
@@ -2225,6 +2179,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
     hub: [(sails.y[0] + sails.y[1]) / 2, (sails.z[0] + sails.z[1]) / 2],
+    cloth: Number.isFinite(cloth.y[0]) ? [cloth.y[0], cloth.y[1], (cloth.z[0] + cloth.z[1]) / 2] : [0, 1, 0],
     canopy: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (l + crown.hi[i]) / 2) as [number, number, number] : [0, 0, 0.5],
     canopyHalf: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (crown.hi[i] - l) / 2) as [number, number, number] : [0.5, 0.5, 0.5],
     legs: [legSum[0] / Math.max(1, legCount[0]), legSum[1] / Math.max(1, legCount[1])],
@@ -2233,6 +2188,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     side,
     top: (maxY - minY) / unitLength,
     meters: unitLength,
+    hand,
   };
 }
 
@@ -2285,7 +2241,7 @@ function fieldModels(kind: (typeof FARM_KINDS)[number], base: number) {
   // weniger Halmen, die man von weit weg ohnehin nicht einzeln sieht.
   // Je Fassung einmal nach Furchen aufgeteilt (Pflöcke und Schnur zur ersten).
   const versions = FIELD_DETAIL.map((detail) => {
-    const { obj, mtl } = farmModel(kind, detail);
+    const { obj, mtl } = farmModel(kind, detail, FIELD_PART_MODELS);
     const triangles = parseObj(obj);
     const rows: ObjTriangle[][] = Array.from({ length: FIELD_FURROWS }, () => []);
     for (const t of triangles) {
@@ -2314,10 +2270,25 @@ function natural(shape: number, obj: string, mtl: string, meters: number) {
  * Formen, die aus Modell-Dateien kommen. `scale`: Tiles je Einheit der
  * Instanzgröße - eine Figur der Größe 0.55 ist 0.55 * 1.7 Tiles hoch.
  */
-const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] = [
+const PROP_AXE = loadModel(propAxeObj, villagerMtl, 'meters');
+const PROP_KNIFE = loadModel(propKnifeObj, villagerMtl, 'meters');
+
+const MODELS: {
+  shape: number; model: Model; scale: number; stride?: number;
+  /** Anhang: der Körper, dessen Gelenke, Clips und Hand es beim Zeichnen nutzt. */
+  body?: number;
+}[] = [
   { shape: SHAPE.villager, model: loadModel(villagerMaleObj, villagerMtl, 'height'), scale: 1.7 },
   // Kürzere Schritte, sonst treten die Beine hinten aus dem langen Rock.
   { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleObj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
+  // Werkzeuge als Anhänge: Beil und Zugmesser einmal für beide Körper, die
+  // Sense je Körper (ihr Stiel liegt in der Mäh-Haltung in beiden Händen).
+  { shape: SHAPE.propAxe, model: PROP_AXE, scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propAxeFemale, model: PROP_AXE, scale: 1.7, body: SHAPE.villagerFemale },
+  { shape: SHAPE.propKnife, model: PROP_KNIFE, scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propKnifeFemale, model: PROP_KNIFE, scale: 1.7, body: SHAPE.villagerFemale },
+  { shape: SHAPE.propScythe, model: loadModel(propScytheMaleObj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propScytheFemale, model: loadModel(propScytheFemaleObj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villagerFemale },
   { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
   { shape: SHAPE.mill2, model: loadModel(mill2Obj, mill2Mtl, 'width'), scale: 1 },
   { shape: SHAPE.mill3, model: loadModel(mill3Obj, mill3Mtl, 'width'), scale: 1 },
@@ -2368,6 +2339,46 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.goat, model: loadModel(goatObj, goatMtl, 'height'), scale: 1 },
   { shape: SHAPE.boar, model: loadModel(boarObj, boarMtl, 'height'), scale: 1 },
 ];
+
+/**
+ * Halber Handabstand (Meter), für den das Zugmesser gebaut ist - der des
+ * Mannes (prop_knife.blend). Andere Körper strecken es auf ihren.
+ */
+const KNIFE_HALF_SPAN = (() => {
+  const man = MODELS.find((m) => m.shape === SHAPE.villager)!.model;
+  return Math.abs(man.hand[1]) * man.meters;
+})();
+
+/** Anhänge der Dorfbewohner: Bit in den props eines Clips (PROP_BITS) → Form je Körper. */
+const FIGURE_PROPS: { bit: number; shapes: Record<number, number> }[] = [
+  { bit: PROP_BITS.axe, shapes: { [SHAPE.villager]: SHAPE.propAxe, [SHAPE.villagerFemale]: SHAPE.propAxeFemale } },
+  { bit: PROP_BITS.scythe, shapes: { [SHAPE.villager]: SHAPE.propScythe, [SHAPE.villagerFemale]: SHAPE.propScytheFemale } },
+  { bit: PROP_BITS.knife, shapes: { [SHAPE.villager]: SHAPE.propKnife, [SHAPE.villagerFemale]: SHAPE.propKnifeFemale } },
+];
+
+/**
+ * Was eine Figur in der Hand hat - Bits aus PROP_BITS: die props des Clips,
+ * den ihre Pose spielt (humanoid_clips.json). Ohne Clip keine - die Figur
+ * steht in Ruhelage und hat die Werkzeuge weggesteckt.
+ */
+function propsOfPose(pose: number): number {
+  if (pose >= CLIP_POSE) return CLIPS[pose - CLIP_POSE]?.props ?? 0;
+  const clip = CLIPS.find((c) => c.pose === pose);
+  return clip?.props ?? 0;
+}
+
+/**
+ * Die Anhänge (Werkzeuge) einer Figur als eigene Instanzen: gleiche Lage,
+ * Größe und Bewegung wie die Figur - der Shader hängt sie an ihre Hand.
+ * Leer für alles, was keine Figur ist. Wer Figuren zeichnet, zeichnet diese dazu.
+ */
+export function figureProps(figure: EntityInstance): EntityInstance[] {
+  if (figure.shape !== SHAPE.villager && figure.shape !== SHAPE.villagerFemale) return [];
+  const bits = propsOfPose(Math.round(figure.motion?.[2] ?? 0));
+  return FIGURE_PROPS
+    .filter((p) => (bits & p.bit) !== 0)
+    .map((p) => ({ ...figure, shape: p.shapes[figure.shape], health: undefined }));
+}
 
 /**
  * Eingang eines Gebäudes in der Welt: Mitte (x, y wie EntityInstance, also
@@ -2432,7 +2443,7 @@ export class EntityRenderer {
   /** Spielerfarbe (0..255) - Felder bekommen sie als Uniform (siehe uPlayerColor). */
   playerColor: [number, number, number] = [64, 160, 72];
   private models: {
-    shape: number; model: Model; scale: number; stride?: number;
+    shape: number; model: Model; scale: number; stride?: number; body?: number;
     mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
   }[];
   private instanceBuffer: WebGLBuffer;
@@ -2440,8 +2451,8 @@ export class EntityRenderer {
   private leafTexture: WebGLTexture;
   /** Knochen-Matrizen der Clips, für jede Figur gebacken (uClipTex, siehe clips.ts). */
   private clipTexture: WebGLTexture;
-  /** Erste Zeile jedes Clips in clipTexture je Figur (Form) - -1: nicht gebacken. */
-  private clipRows = new Map<number, Int32Array>();
+  /** Clip-Uniforms je Modell (Form): erste Zeile jedes Clips in clipTexture, Länge, Pose ... */
+  private clipUniforms = new Map<number, ClipUniforms>();
   private uniforms = new Map<string, WebGLUniformLocation | null>();
   /** Wird nur vergrößert, nie neu belegt - eine Allokation je Frame wäre Müll. */
   private data = new Float32Array(STRIDE * 256);
@@ -2507,58 +2518,73 @@ export class EntityRenderer {
    */
   private bakeClips(): WebGLTexture {
     const gl = this.gl;
-    const width = HUMANOID_BONES.length * TEXELS_PER_BONE;
-    const clips = CLIPS.slice(0, MAX_CLIPS);
-    const blocks: Float32Array[] = [];
+    // Ein Bild ist MAX_BONES Knochen breit, gleich für jedes Skelett.
+    const width = MAX_BONES * TEXELS_PER_BONE;
+    const blocks: { data: Float32Array; bones: number }[] = [];
     let rows = 0;
-    for (const m of this.models) {
-      if (!FIGURES.includes(m.shape)) continue;
-      const starts = new Int32Array(MAX_CLIPS).fill(-1);
-      clips.forEach((clip, i) => {
-        starts[i] = rows;
-        blocks.push(bakeClip(clip, m.model));
-        rows += clip.frames;
-      });
-      this.clipRows.set(m.shape, starts);
+    for (const library of CLIP_LIBRARIES) {
+      const clips = library.clips.slice(0, MAX_CLIPS);
+      if (clips.length === 0 || library.rig.bones.length > MAX_BONES) continue;
+      for (const m of this.models) {
+        if (!library.shapes.includes(m.shape)) continue;
+        const u: ClipUniforms = {
+          rows: new Int32Array(MAX_CLIPS).fill(-1),
+          frames: Int32Array.from(NO_CLIPS.frames), fps: Float32Array.from(NO_CLIPS.fps), props: new Int32Array(MAX_CLIPS),
+          poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
+          rate: new Float32Array(MAX_CLIPS).fill(1), shift: new Float32Array(MAX_CLIPS),
+        };
+        const species = library.species?.[m.shape];
+        clips.forEach((clip, i) => {
+          // Clips anderer Arten (z. B. das Hoppeln des Hasen) nicht für dieses Tier.
+          if (clip.species.length > 0 && (species === undefined || !clip.species.includes(species))) return;
+          u.rows[i] = rows;
+          u.frames[i] = clip.frames;
+          u.fps[i] = clip.fps;
+          u.props[i] = clip.props | (clip.kneel ? KNEEL_BIT : 0);
+          u.rate[i] = clip.phaseRate;
+          u.shift[i] = clip.phaseShift;
+          // Welche Pose ein Clip ersetzt, steht im Clip selbst (Custom Property
+          // "pose" der Action in Blender). Die Phase (motion[1]) wird zur
+          // Clip-Zeit: (Phase - phaseShift) * phaseRate.
+          if (clip.pose !== null && clip.pose >= 0 && clip.pose < 8) {
+            u.poseClip[clip.pose] = i;
+            u.poseRate[clip.pose] = clip.phaseRate;
+            u.poseShift[clip.pose] = clip.phaseShift;
+          }
+          const joints = library.joints ? library.joints(m.model, (shape) => this.models.find((x) => x.shape === shape)?.model) : m.model;
+          blocks.push({ data: bakeClip(clip, joints, { stride: m.stride }, library.rig), bones: library.rig.bones.length });
+          rows += clip.frames;
+        });
+        this.clipUniforms.set(m.shape, u);
+      }
     }
-    if (rows > gl.getParameter(gl.MAX_TEXTURE_SIZE)) {
-      console.warn(`Clips: ${rows} Zeilen passen nicht in eine Textur - Figuren laufen über die Formeln`);
-      this.clipRows.clear();
+    // Bilder in Spalten zu CLIP_COLUMN_ROWS nebeneinander (siehe clipTexel im Shader).
+    const columns = Math.max(1, Math.ceil(rows / CLIP_COLUMN_ROWS));
+    const height = Math.max(1, Math.min(rows, CLIP_COLUMN_ROWS));
+    if (columns * width > gl.getParameter(gl.MAX_TEXTURE_SIZE)) {
+      console.warn(`Clips: ${rows} Bilder passen nicht in eine Textur - die Figuren stehen still`);
+      for (const name of Object.keys(CLIP_LIBRARIES_LOADED)) CLIP_LIBRARIES_LOADED[name] = 0;
+      this.clipUniforms.clear();
       rows = 0;
     }
-    const data = new Float32Array(Math.max(1, rows) * width * 4);
-    let offset = 0;
-    for (const block of blocks) {
-      if (offset + block.length > data.length) break;
-      data.set(block, offset);
-      offset += block.length;
+    const data = new Float32Array(columns * width * height * 4);
+    let frame = 0;
+    for (const block of rows > 0 ? blocks : []) {
+      const perFrame = block.bones * TEXELS_PER_BONE * 4;
+      for (let f = 0; f < block.data.length / perFrame; f++, frame++) {
+        const column = Math.floor(frame / CLIP_COLUMN_ROWS);
+        const row = frame % CLIP_COLUMN_ROWS;
+        data.set(block.data.subarray(f * perFrame, (f + 1) * perFrame), (row * columns * width + column * width) * 4);
+      }
     }
     const texture = gl.createTexture()!;
     gl.activeTexture(gl.TEXTURE0 + CLIP_TEXTURE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, Math.max(1, rows), 0, gl.RGBA, gl.FLOAT, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, columns * width, height, 0, gl.RGBA, gl.FLOAT, data);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.activeTexture(gl.TEXTURE0);
-
     gl.uniform1i(this.location('uClipTex'), CLIP_TEXTURE_UNIT);
-    const pad = <T extends number>(values: T[], fill: T) => [...values, ...Array(MAX_CLIPS - values.length).fill(fill)];
-    gl.uniform1iv(this.location('uClipFrames'), pad(clips.map((c) => c.frames), 2));
-    gl.uniform1fv(this.location('uClipFps'), pad(clips.map((c) => c.fps), 30));
-    gl.uniform1iv(this.location('uClipProps'), pad(clips.map((c) => c.props), 0));
-    const poseClip = new Int32Array(8).fill(-1);
-    const poseRate = new Float32Array(8);
-    const poseShift = new Float32Array(8);
-    for (const { pose, clip, rate, shift } of POSE_CLIPS) {
-      const i = clips.findIndex((c) => c.name === clip);
-      if (i < 0 || rows === 0) continue;
-      poseClip[pose] = i;
-      poseRate[pose] = rate;
-      poseShift[pose] = shift;
-    }
-    gl.uniform1iv(this.location('uPoseClip'), poseClip);
-    gl.uniform1fv(this.location('uPoseRate'), poseRate);
-    gl.uniform1fv(this.location('uPoseShift'), poseShift);
     return texture;
   }
 
@@ -2725,26 +2751,33 @@ export class EntityRenderer {
     const fieldLod = FIELD_LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     let first = flats.length + solids.length;
     const drawModel = (m: (typeof this.models)[number], offset: number) => {
+      // Ein Anhang (Werkzeug) zeichnet sich mit Gelenken, Clips und Hand
+      // seines Körpers - er bewegt sich genau mit dessen Unterarm.
+      const b = m.body === undefined ? m : this.models.find((x) => x.shape === m.body) ?? m;
       gl.uniform1f(this.location('uModelScale'), m.scale);
-      gl.uniform1f(this.location('uHip'), m.model.hip);
-      gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
-      gl.uniform1f(this.location('uKnee'), m.model.knee);
-      gl.uniform1f(this.location('uElbow'), m.model.elbow);
-      gl.uniform1f(this.location('uArm'), m.model.arm);
-      gl.uniform1f(this.location('uStride'), m.stride ?? 1);
+      gl.uniform3fv(this.location('uSocket'), b.model.hand);
+      gl.uniform1f(this.location('uKnifeScale'), Math.abs(b.model.hand[1]) * b.model.meters / KNIFE_HALF_SPAN);
+      gl.uniform1f(this.location('uHip'), b.model.hip);
+      gl.uniform1f(this.location('uKnee'), b.model.knee);
+      gl.uniform1f(this.location('uArm'), b.model.arm);
       gl.uniform1f(this.location('uModelTop'), m.model.top);
-      gl.uniform1f(this.location('uMeters'), m.model.meters);
+      gl.uniform1f(this.location('uMeters'), b.model.meters);
       gl.uniform1f(this.location('uStump'), m.model.stump);
       gl.uniform1f(this.location('uStumpRadius'), m.model.stumpRadius);
-      gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
-      gl.uniform2fv(this.location('uHub'), m.model.hub);
-      gl.uniform2fv(this.location('uLegs'), m.model.legs);
+      gl.uniform3fv(this.location('uLoadAnchor'), b.model.loadAnchor);
       gl.uniform3fv(this.location('uCanopy'), m.model.canopy);
       gl.uniform3fv(this.location('uCanopyHalf'), m.model.canopyHalf);
-      gl.uniform2fv(this.location('uNeck'), m.model.neck);
-      gl.uniform1f(this.location('uGraze'), m.model.graze);
-      gl.uniform1f(this.location('uSide'), m.model.side);
-      gl.uniform1iv(this.location('uClipRow'), this.clipRows.get(m.shape) ?? NO_CLIP_ROWS);
+      const clips = this.clipUniforms.get(b.shape) ?? NO_CLIPS;
+      gl.uniform1iv(this.location('uClipRow'), clips.rows);
+      gl.uniform1iv(this.location('uClipFrames'), clips.frames);
+      gl.uniform1fv(this.location('uClipFps'), clips.fps);
+      gl.uniform1iv(this.location('uClipProps'), clips.props);
+      gl.uniform1fv(this.location('uClipRate'), clips.rate);
+      gl.uniform1fv(this.location('uClipShift'), clips.shift);
+      gl.uniform3fv(this.location('uCloth'), m.model.cloth);
+      gl.uniform1iv(this.location('uPoseClip'), clips.poseClip);
+      gl.uniform1fv(this.location('uPoseRate'), clips.poseRate);
+      gl.uniform1fv(this.location('uPoseShift'), clips.poseShift);
       const level = FIELDS.includes(m.shape) ? fieldLod : lod;
       this.draw(level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[level - 1] : m.mesh, offset, m.list.length);
     };

@@ -26,7 +26,13 @@ dist-ssr
 # L-System-Export (tools/lsystem/export.ts)
 tools/lsystem/out
 tools/lsystem/leaves/.cache
+tools/lsystem/bark/.cache
 
 # Blender-Export der Bognerei (tools/export/bognerei.mjs)
 tools/export/out
-tools/lsystem/bark/.cache
+
+# Sicherungen, die Blender beim Speichern anlegt
+*.blend1
+
+# Python-Cache der Blender-Skripte (tools/blender/*.py importieren einander)
+__pycache__/
