@@ -335,7 +335,7 @@ function humanoidPivots(j: Joints): Vec3[] {
   return HUMANOID_BONES.map(([name]) => at[name]);
 }
 
-/** Das Skelett der Dorfbewohner (assets/blender/humanoid.blend). */
+/** Das Skelett der Dorfbewohner (assets/blender/clips/humanoid.blend). */
 export const HUMANOID: Rig<Joints> = {
   name: 'humanoid',
   bones: HUMANOID_BONES,
@@ -350,7 +350,7 @@ export const HUMANOID: Rig<Joints> = {
 // --- Vierbeiner ---------------------------------------------------------------
 
 /**
- * Knochen der Tiere (assets/blender/quadruped.blend): die vier Beine schwingen
+ * Knochen der Tiere (assets/blender/clips/quadruped.blend): die vier Beine schwingen
  * um ihr oberes Gelenk, Hals und Kopf drehen um den Halsansatz. Der Hals trägt
  * das Senken zum Gras - je Art so weit, dass das Maul den Boden erreicht
  * (uGraze, beim Backen skaliert) -, der Kopf alles andere (Kauen, Heben).
@@ -400,7 +400,7 @@ export interface MillJoints {
 }
 
 /**
- * Die Flügel der Mühlen (assets/blender/mill.blend): ein Knochen an der Nabe,
+ * Die Flügel der Mühlen (assets/blender/clips/mill.blend): ein Knochen an der Nabe,
  * er dreht um die Blickachse. Alles andere steht still (root).
  */
 export const MILL: Rig<MillJoints> = {
@@ -418,7 +418,7 @@ export interface FlagJoints {
 }
 
 /**
- * Das Tuch der Fahne am Sammelpunkt (assets/blender/flag.blend): Knochen
+ * Das Tuch der Fahne am Sammelpunkt (assets/blender/clips/flag.blend): Knochen
  * cloth.0 (am Mast) bis cloth.6 (am Ende) in gleichen Abständen - dort liegen
  * die Eckpunkte des Tuchs. Sie verschieben sich seitwärts; dazwischen mischt
  * der Shader die beiden Nachbarn nach der Lage im Tuch.

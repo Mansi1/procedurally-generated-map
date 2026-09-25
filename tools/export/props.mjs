@@ -1,5 +1,5 @@
 // Exportiert Mühle und Fahne am Sammelpunkt mit Skelett und Clip als glTF
-// (.glb) - Ausgangspunkt für assets/blender/mill.blend und flag.blend
+// (.glb) - Ausgangspunkt für assets/blender/clips/mill.blend und flag.blend
 // (tools/blender/bootstrap_rig.py). Die Clips rechnen dieselben Formeln wie
 // bisher der Shader (src/gl/entityRenderer.ts, P_SAILS und P_CLOTH):
 //

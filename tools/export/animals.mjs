@@ -1,5 +1,5 @@
 // Exportiert das Skelett der Tiere mit allen Clips als glTF (.glb) - daraus
-// wird assets/blender/quadruped.blend (tools/blender/bootstrap_rig.py). Am
+// wird assets/blender/clips/quadruped.blend (tools/blender/bootstrap_rig.py). Am
 // Reh (REFERENCE) werden die Clips in Blender bearbeitet; das Spiel backt sie
 // für jede Art mit deren Gelenken (src/gl/clips.ts, QUADRUPED).
 //
