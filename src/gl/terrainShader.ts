@@ -205,8 +205,10 @@ uniform vec2 uCacheSize;    // Texturgroesse in Texeln
  */
 const CACHE_SCALE_GLSL = `
 uniform float uCacheScale;
+uniform float uCacheStretch;     // Bodenstauchung des Caches / jetzige (Neigen)
 uniform vec2  uPrevWindowStart;  // (u, v) der Fenster-Ecke des alten Caches
 uniform float uPrevCacheScale;   // seine Texel je u/v-Einheit
+uniform float uPrevStretch;      // seine Bodenstauchung / jetzige
 `;
 
 /**
@@ -252,8 +254,9 @@ void main() {
   vWorld = world;
   // Ringpuffer: Texturkoordinaten laufen ueber den Rand hinaus, REPEAT
   // faltet sie zurueck.
-  vCache = ((g - uWindowStart) * uCacheScale + uWindowMod) / uCacheSize;
-  vPrevTexel = (g - uPrevWindowStart) * uPrevCacheScale;
+  // Beim Neigen liegt der Cache in seiner eigenen Stauchung: nur v streckt sich.
+  vCache = ((vec2(g.x, g.y * uCacheStretch) - uWindowStart) * uCacheScale + uWindowMod) / uCacheSize;
+  vPrevTexel = (vec2(g.x, g.y * uPrevStretch) - uPrevWindowStart) * uPrevCacheScale;
   gl_Position = project(world, z);
 }
 `;

@@ -1,7 +1,12 @@
 
 import { MapGenerator } from './noise';
 import {
+  TILT_DEFAULT,
+  TILT_MAX,
+  TILT_MIN,
+  setViewElevation,
   type IsoView,
+  viewElevation,
   visibleWorldRect,
 } from './gl/iso';
 import {
@@ -124,6 +129,8 @@ const ui = new GameUi({ world, selection, placement, pointer, resources, sound, 
 // --- Einstellungen und Menü ------------------------------------------------
 
 const settings = loadSettings();
+// Blickwinkel wie beim letzten Mal - vor dem ersten Bild.
+setViewElevation(clampTilt((settings.tilt * Math.PI) / 180));
 /** Angehalten (F3 oder Menü): die Welt steht, Kamera und Auswahl gehen weiter. */
 let paused = false;
 const pausedEl = document.getElementById('paused')!;
@@ -263,9 +270,9 @@ function applyFacing(dir: string) {
   // Gedreht wird um die Stelle, die man in der Bildmitte sieht - mit ihrer
   // Geländehöhe. Um den Punkt auf Meereshöhe gedreht, wanderte ein Dorf auf
   // einem Hügel beim Drehen aus dem Bild.
-  const pivot = picker.point(camera.centerX, camera.centerY);
+  const pivot = focusPoint();
   rotateToFace(dir);
-  camera.centerOn(pivot.x, pivot.y, pivot.z);
+  keepFocus(pivot);
   compass.update();
   // Die Blickrichtung bleibt beim Neuladen.
   settings.facing = dir;
@@ -322,6 +329,8 @@ new MouseInput(canvas, boxEl, {
   pan: (dx, dy) => camera.panPixels(dx, dy),
   panEnd: () => ui.updateCursor(),
   zoom: (steps, p) => zoomBy(steps, p.x, p.y),
+  tilt: (dy) => tiltBy(dy * TILT_PER_PIXEL),
+  turn: (direction) => faceDirection(directionAt(direction === 1 ? -1 : 1)),
   move: (p, buttons) => {
     const tileChanged = updateHoveredTile(p.x, p.y);
     // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
@@ -340,6 +349,80 @@ new MouseInput(canvas, boxEl, {
 window.addEventListener('resize', resize);
 
 
+
+// --- Neigung ---------------------------------------------------------------
+
+/**
+ * Der Punkt, auf den man schaut (Welt, mit Geländehöhe): beim Neigen und
+ * Drehen bleibt er genau in der Bildmitte. Bestimmt wird er einmal und gilt,
+ * bis die Kamera anders bewegt wird (Verschieben, Zoomen, Minimap) oder das
+ * Relief sich ändert (Leertaste). Je Bild neu gepickt, wanderte er mit jedem
+ * kleinen Rechenfehler weiter - und flacher geneigt verdeckt ein Berg im
+ * Vordergrund die Stelle, dann spränge er auf dessen Hang.
+ */
+let focus: { x: number; y: number; z: number; cameraX: number; cameraY: number; relief: number } | null = null;
+
+function focusPoint() {
+  if (!focus || focus.cameraX !== camera.x || focus.cameraY !== camera.y || focus.relief !== renderer.relief) {
+    const p = picker.point(camera.centerX, camera.centerY);
+    focus = { x: p.x, y: p.y, z: p.z, cameraX: camera.x, cameraY: camera.y, relief: renderer.relief };
+  }
+  return focus;
+}
+
+/** Legt den Punkt nach einer Winkeländerung wieder genau in die Bildmitte - und merkt sich, dass die Kamera nun so steht. */
+function keepFocus(f: NonNullable<typeof focus>) {
+  camera.centerOn(f.x, f.y, f.z);
+  f.cameraX = camera.x;
+  f.cameraY = camera.y;
+}
+
+/** Neigen mit Alt und rechter Maustaste: Radiant je Pixel (wie in der Galerie). */
+const TILT_PER_PIXEL = 0.006;
+/** Neigen mit Alt und Pfeil hoch/runter: ein Schritt (7,5°). */
+const TILT_STEP = Math.PI / 24;
+/** Wie schnell der Blickwinkel seinem Ziel folgt (je Sekunde) - wie beim Zoom. */
+const TILT_RATE = 18;
+/** So lange nach der letzten Eingabe (ms) gilt noch als "wird geneigt". */
+const TILT_SETTLE = 200;
+
+function clampTilt(rad: number): number {
+  return Math.min(TILT_MAX, Math.max(TILT_MIN, Number.isFinite(rad) ? rad : TILT_DEFAULT));
+}
+
+/** Wohin der Blickwinkel gleitet (Radiant) - geneigt wird weich in updateTilt(). */
+let tiltTarget = viewElevation();
+let lastTiltInput = 0;
+
+/** Zielwinkel verschieben (positiv: steiler, mehr von oben). */
+function tiltBy(rad: number) {
+  tiltTarget = clampTilt(tiltTarget + rad);
+  lastTiltInput = performance.now();
+}
+
+/**
+ * Ein Bild Neigung: der Blickwinkel folgt dem Ziel weich (Lerp). Gekippt
+ * wird um die Stelle in der Bildmitte mit ihrer Geländehöhe - wie beim
+ * Drehen, sonst wanderte ein Dorf auf einem Hügel aus dem Bild.
+ * true, wenn sich die Ansicht geändert hat.
+ */
+function updateTilt(dt: number, now: number): boolean {
+  // Solange noch gezogen wird, bleibt der Gelände-Cache gestreckt stehen.
+  const current = viewElevation();
+  renderer.tilting = current !== tiltTarget || now - lastTiltInput < TILT_SETTLE;
+  if (current === tiltTarget) return false;
+  let next = current + (tiltTarget - current) * (1 - Math.exp(-TILT_RATE * dt));
+  if (Math.abs(tiltTarget - next) < 0.0005) next = tiltTarget;
+  const pivot = focusPoint();
+  setViewElevation(next);
+  keepFocus(pivot);
+  if (next === tiltTarget) {
+    // Der Blickwinkel bleibt beim Neuladen - wie die Blickrichtung.
+    settings.tilt = Math.round((next * 180) / Math.PI * 10) / 10;
+    saveSettings(settings);
+  }
+  return true;
+}
 
 /** Bildschirmstelle, um die gezoomt wird - bleibt bis zur nächsten Zoom-Eingabe. */
 let zoomAnchor: CanvasPoint | null = null;
@@ -386,6 +469,9 @@ const keyboard = new Keyboard({
   togglePause,
   toggleSound,
   zoom: (step) => zoomBy(step),
+  tiltStep: (step) => tiltBy(step * TILT_STEP),
+  // Wie die Pfeile unter der Minimap: rechts = was rechts liegt, kommt nach oben.
+  turn: (direction) => faceDirection(directionAt(direction === 1 ? -1 : 1)),
   cancel: () => ui.cancel(),
   demolish: () => actions.demolishSelected(),
   home: () => actions.cycleTownCenter(),
@@ -521,7 +607,8 @@ function loop(now: number) {
 
   // WASD, Leertaste, hinter dem Hauptmenü langsam vorbeiziehen (game/cameraControl.ts).
   const zoomed = updateZoom(dt, now);
-  if (steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen()) || zoomed) refreshPointer();
+  const tilted = updateTilt(dt, now);
+  if (steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen()) || zoomed || tilted) refreshPointer();
 
   simulation.advance(paused || start.isOpen() ? 0 : dt * settings.speed, (step) => world.tick(step));
 

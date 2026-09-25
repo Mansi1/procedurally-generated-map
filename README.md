@@ -74,6 +74,12 @@ gewählte Welt unter `pgm.seed`.
 | `H` / `.` | zum Hauptgebäude / untätige Dorfbewohner |
 | `Entf` | abreißen |
 | `Leertaste` halten | Gelände flachlegen, um hinter Berge zu sehen |
+| `Alt` + rechte Maustaste ziehen | Blickwinkel: hoch/runter neigen (20°–70°), links/rechts eine Vierteldrehung |
+| `Alt` + `↑` / `↓` | steiler / flacher neigen |
+| `Alt` + `←` / `→` | Vierteldrehung nach links / rechts |
+
+`Alt` ist auf dem Mac die Option-Taste; unter Windows geht auch `AltGr`. Der
+Blickwinkel bleibt wie die Blickrichtung beim Neuladen erhalten.
 | `F3` / `F10` / `M` | Pause / Menü / Ton an und aus |
 
 ## Modelle

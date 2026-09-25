@@ -27,6 +27,10 @@ export interface MouseHandlers {
   panEnd(): void;
   /** Um `steps` Zoomstufen hinein (> 0) oder hinaus (< 0), um die Stelle p - auch Bruchteile. */
   zoom(steps: number, p: CanvasPoint): void;
+  /** Mit Alt gezogen, senkrecht: um `dy` Pixel neigen (nach unten gezogen: steiler). */
+  tilt(dy: number): void;
+  /** Mit Alt gezogen, waagerecht weit genug: eine Vierteldrehung (1 = nach rechts, -1 = nach links). */
+  turn(direction: 1 | -1): void;
   /** Zeiger bewegt; `buttons` wie MouseEvent.buttons. */
   move(p: CanvasPoint, buttons: number): void;
   /** Zeiger hat das Canvas verlassen. */
@@ -44,6 +48,16 @@ const DRAG_THRESHOLD = 5;
  */
 const WHEEL_STEP = 100;
 const PINCH_STEP = 40;
+/** So weit (Pixel) muss man mit Alt waagerecht ziehen für eine Vierteldrehung. */
+const TURN_DRAG = 120;
+
+/**
+ * Alt, Option (Mac) oder AltGr gehalten? AltGr meldet sich unter Windows als
+ * Strg+Alt, anderswo nur über getModifierState.
+ */
+export function altHeld(e: MouseEvent | KeyboardEvent): boolean {
+  return e.altKey || e.getModifierState('AltGraph');
+}
 
 export class MouseInput {
   private drag: { x: number; y: number; active: boolean } | null = null;
@@ -52,7 +66,12 @@ export class MouseInput {
    * kurz klicken ist ein Befehl. Entschieden wird erst beim Loslassen - das
    * Kontextmenü-Ereignis kommt auf dem Mac schon beim Drücken.
    */
-  private rightDrag: { x: number; y: number; moved: boolean } | null = null;
+  /**
+   * Mit Alt (auch erst beim Ziehen gedrückt) wird aus dem Ziehen ein Winkel:
+   * senkrecht neigen, waagerecht in Vierteln drehen - `turned` sammelt die
+   * waagerechte Strecke bis TURN_DRAG.
+   */
+  private rightDrag: { x: number; y: number; moved: boolean; turned: number } | null = null;
 
   /** @param box das Auswahlrechteck (ein absolut platziertes Element) */
   constructor(private canvas: HTMLCanvasElement, private box: HTMLElement, private handlers: MouseHandlers) {
@@ -75,7 +94,7 @@ export class MouseInput {
 
   private down(e: MouseEvent) {
     if (e.button === 2) {
-      this.rightDrag = { x: e.clientX, y: e.clientY, moved: false };
+      this.rightDrag = { x: e.clientX, y: e.clientY, moved: false, turned: 0 };
       return;
     }
     if (e.button !== 0) return;
@@ -98,6 +117,24 @@ export class MouseInput {
       style.height = `${Math.abs(p.y - drag.y)}px`;
     }
     const right = this.rightDrag;
+    if (right && e.buttons & 2 && altHeld(e)) {
+      const dx = e.clientX - right.x;
+      const dy = e.clientY - right.y;
+      right.x = e.clientX;
+      right.y = e.clientY;
+      // Mit Alt gezogen, wird beim Loslassen kein Befehl daraus.
+      right.moved = true;
+      this.canvas.style.cursor = 'ns-resize';
+      if (dy !== 0) this.handlers.tilt(dy);
+      // Waagerecht: je TURN_DRAG Pixel in einer Richtung eine Vierteldrehung.
+      // Kleines Zucken zurück zieht nur ab, statt von vorn zu zählen.
+      right.turned += dx;
+      if (Math.abs(right.turned) >= TURN_DRAG) {
+        this.handlers.turn(right.turned > 0 ? 1 : -1);
+        right.turned = 0;
+      }
+      return;
+    }
     if (right && e.buttons & 2) {
       const dx = e.clientX - right.x;
       const dy = e.clientY - right.y;

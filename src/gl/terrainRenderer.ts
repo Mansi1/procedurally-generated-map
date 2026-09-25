@@ -14,10 +14,12 @@ import {
 } from './terrainShader';
 import {
   MAX_RELIEF,
-  Z_SCREEN,
+  Z_SCREEN_MAX,
   setCameraUniforms,
   setViewUniforms,
+  viewGroundV,
   viewRotation,
+  viewZScreen,
   worldToGround,
   type GpuCamera,
 } from './iso';
@@ -436,7 +438,10 @@ export class TerrainRenderer {
   private selectCache(camera: GpuCamera) {
     const relief = camera.reliefScale > 0 ? 1 : 0;
     const view = `${this.debugMode}|${viewRotation()}`;
-    const keyOf = (scale: number) => `${scale}|${relief}|${view}`;
+    // Die Bodenstauchung gehört zum Inhalt: ein Texel zeigt je nach ihr eine
+    // andere Weltstelle. Überblenden lässt sich trotzdem - gestreckt.
+    const groundV = camera.cacheGroundV ?? viewGroundV();
+    const keyOf = (scale: number) => `${scale}|${groundV.toFixed(5)}|${relief}|${view}`;
     const scale = cacheScale(camera);
     const key = keyOf(scale);
     if (key !== this.active.key) {
@@ -444,7 +449,7 @@ export class TerrainRenderer {
       const found = this.buffers.find((b) => b !== this.active && b.key === key) ?? null;
       const keep = isReady(this.active) ? this.active : this.previous;
       this.previous = keep && keep !== found && keep.view === view ? keep : null;
-      this.active = found ?? this.resetCache(this.freeBuffer([this.previous]), key, scale, view);
+      this.active = found ?? this.resetCache(this.freeBuffer([this.previous]), key, scale, view, groundV);
     }
 
     // Vorberechnen: die gewünschten Stufen, die schon einen Cache haben,
@@ -463,7 +468,7 @@ export class TerrainRenderer {
       if (!b) {
         const busy = [...taken, this.previous];
         if (this.buffers.length >= MAX_CACHES && !this.buffers.some((x) => !busy.includes(x))) return;
-        b = this.resetCache(this.freeBuffer(busy), w.key, w.scale, view);
+        b = this.resetCache(this.freeBuffer(busy), w.key, w.scale, view, groundV);
         taken.push(b);
       }
       this.prefetch.push(b);
@@ -484,10 +489,11 @@ export class TerrainRenderer {
   }
 
   /** Macht `b` zum leeren Cache für den Maßstab `scale`. */
-  private resetCache(b: CacheBuffer, key: string, scale: number, view: string): CacheBuffer {
+  private resetCache(b: CacheBuffer, key: string, scale: number, view: string, groundV: number): CacheBuffer {
     b.key = key;
     b.scale = scale;
     b.view = view;
+    b.groundV = groundV;
     b.window = null;
     b.pending = [];
     b.background = [];
@@ -520,13 +526,21 @@ export class TerrainRenderer {
     // Neubefüllen je Bild wäre viel zu teuer. Die Farben behalten dabei die
     // Schattierung des vollen Reliefs; man erkennt die Berge so auch flach.
     const relief = camera.reliefScale > 0 ? 1 : 0;
-    const reach = Math.ceil(relief * Z_SCREEN * MAX_RELIEF * ppt);
+    // Beim Neigen wird der Cache senkrecht um `stretch` gestreckt: flacher
+    // gesehen deckt das Bild mehr Cache-Zeilen ab, steiler weniger.
+    const stretch = b.groundV / viewGroundV();
+    const viewHeight = Math.ceil(height * stretch);
+    // Die Größe der Textur richtet sich nach dem flachsten Blickwinkel - so
+    // bleibt sie beim Neigen dieselbe. Was wirklich hereinragt, hängt vom
+    // jetzigen ab.
+    const reachSize = Math.ceil(relief * Z_SCREEN_MAX * MAX_RELIEF * ppt);
+    const reach = Math.ceil(relief * viewZScreen() * MAX_RELIEF * ppt * stretch);
     // Mit der Zellgröße der Cache-Stufe: beim weichen Zoomen bleibt die Textur
     // so gleich groß - eine neue müsste ganz neu befüllt werden.
     const margin = CACHE_MARGIN + Math.ceil(this.cellSize({ ...camera, pixelsPerTile: ppt }) * ppt);
     // Unten überlappen Blase und Gipfel-Reichweite - es zählt die größere.
     let cacheWidth = Math.min(width + 2 * (margin + this.bubblePixels), max);
-    let cacheHeight = Math.min(height + 2 * margin + this.bubblePixels + Math.max(this.bubblePixels, reach), max);
+    let cacheHeight = Math.min(height + 2 * margin + this.bubblePixels + Math.max(this.bubblePixels, reachSize), max);
     // Reicht die vorhandene Textur und ist sie nicht viel zu groß, bleibt sie:
     // Neu anlegen und leeren kostet bei solchen Größen spürbar ein Bild. Der
     // Überschuss macht nur die Blase größer.
@@ -536,16 +550,17 @@ export class TerrainRenderer {
     }
     // Bei sehr großem Bildschirm kann die Texturgrenze die Blase auffressen.
     const bubbleU = Math.max(0, Math.floor((cacheWidth - width) / 2) - margin);
-    const bubbleV = Math.max(0, Math.min(this.bubblePixels, cacheHeight - height - 2 * margin));
+    const bubbleV = Math.max(0, Math.min(this.bubblePixels, cacheHeight - viewHeight - 2 * margin));
 
     if (cacheWidth !== b.width || cacheHeight !== b.height) {
       this.allocateCache(b, cacheWidth, cacheHeight);
       b.window = null;
     }
 
+    // Kameramitte in den Boden-Koordinaten des Caches (seine Stauchung).
     const cam = worldToGround(camera.centerX, camera.centerY);
     const u = Math.floor(cam.u * ppt - width / 2 - margin - bubbleU);
-    const v = Math.floor(cam.v * ppt - height / 2 - margin - bubbleV);
+    const v = Math.floor(cam.v * stretch * ppt - viewHeight / 2 - margin - bubbleV);
     const next: TexelRect = { u, v, width: cacheWidth, height: cacheHeight };
 
     // Dringend ist nur, was im Bild liegt (plus schmaler Rand). Alles andere -
@@ -555,14 +570,14 @@ export class TerrainRenderer {
       u: u + bubbleU,
       v: v + bubbleV,
       width: width + 2 * margin,
-      height: height + 2 * margin,
+      height: Math.min(viewHeight + 2 * margin, cacheHeight - bubbleV),
     };
     // Was fertig sein muss, damit der Cache ein vollständiges Bild ergibt:
     // das Sichtbare samt der Gipfel, die von unten hereinragen - aber höchstens
     // eine Bildhöhe tief. Stark herangezoomt reichte die volle Gipfelhöhe
     // sonst viele Bildhöhen hinab, und das Vorberechnen würde nie fertig;
     // was darunter liegt, kommt wie bisher im Hintergrund nach.
-    b.needed = { ...visible, height: Math.min(visible.height + Math.min(reach, height), cacheHeight - bubbleV) };
+    b.needed = { ...visible, height: Math.min(visible.height + Math.min(reach, viewHeight), cacheHeight - bubbleV) };
     // Beim Vorberechnen zählt nur das vollständige Bild - die Blase nicht.
     const focus = prefetch ? b.needed : visible;
     const split = (rects: TexelRect[]) => {
@@ -632,6 +647,8 @@ export class TerrainRenderer {
     gl.uniform1f(f('uPixelsPerTile'), ppt);
     gl.uniform1f(f('uReliefScale'), camera.reliefScale > 0 ? 1 : 0);
     setViewUniforms(gl, f);
+    // Berechnet wird für die Stauchung des Caches, nicht für den jetzigen Blickwinkel.
+    gl.uniform1f(f('uGroundV'), b.groundV);
     gl.uniform1i(f('uDebug'), this.debugMode);
     gl.uniform2f(f('uWindowStart'), win.u / ppt, win.v / ppt);
     gl.uniform2f(f('uWindowMod'), mod(win.u, W), mod(win.v, H));
@@ -684,19 +701,33 @@ export class TerrainRenderer {
     }
   }
 
-  /** Ob der fertige Teil von `b` das ganze Bild dieser Kamera abdeckt (samt Gipfeln von unten). */
+  /**
+   * Ob `b` das ganze Bild dieser Kamera fertig abdeckt (samt Gipfeln von
+   * unten, höchstens eine Bildhöhe tief): der Bereich liegt im Fenster, und
+   * nichts davon wartet noch aufs Befüllen. Auch die Blase zählt, soweit sie
+   * gefüllt ist - beim Flacherneigen rückt sie ins Bild.
+   */
   private covers(b: CacheBuffer, camera: GpuCamera): boolean {
-    const r = b.needed;
-    if (!r) return false;
+    if (!b.window) return false;
     const { width, height } = this.gl.canvas;
     const s = b.scale;
+    const stretch = b.groundV / viewGroundV();
     const halfU = width / 2 / camera.pixelsPerTile;
     const halfV = height / 2 / camera.pixelsPerTile;
-    // Wie in updateCache höchstens eine Bildhöhe (Texel des Caches) tief.
-    const reach = Math.min(camera.reliefScale * Z_SCREEN * MAX_RELIEF, height / s);
+    const reach = Math.min(camera.reliefScale * viewZScreen() * MAX_RELIEF, 2 * halfV);
     const c = worldToGround(camera.centerX, camera.centerY);
-    return (c.u - halfU) * s >= r.u && (c.u + halfU) * s <= r.u + r.width
-        && (c.v - halfV) * s >= r.v && (c.v + halfV + reach) * s <= r.v + r.height;
+    const u0 = Math.floor((c.u - halfU) * s);
+    const v0 = Math.floor((c.v - halfV) * stretch * s);
+    const need: TexelRect = {
+      u: u0,
+      v: v0,
+      width: Math.ceil((c.u + halfU) * s) - u0,
+      height: Math.ceil((c.v + halfV + reach) * stretch * s) - v0,
+    };
+    const win = b.window;
+    const inside = need.u >= win.u && need.v >= win.v
+        && need.u + need.width <= win.u + b.width && need.v + need.height <= win.v + b.height;
+    return inside && ![...b.pending, ...b.background].some((r) => intersect(r, need) !== null);
   }
 
   /**
@@ -710,7 +741,8 @@ export class TerrainRenderer {
     this.selectCache(camera);
     const active = this.active;
     this.updateCache(active, camera);
-    const frozen = this.previous !== null && !isReady(active) && !this.covers(this.previous, camera);
+    const prevCovers = this.previous !== null && this.covers(this.previous, camera);
+    const frozen = this.previous !== null && !isReady(active) && !prevCovers;
     // Ist etwas Vollständiges im Bild, wird gleichmäßig wenig je Bild befüllt.
     // Sonst (Laden, Bild steht) zählt nur, schnell fertig zu werden - steht
     // das Bild ohnehin, darf es noch mehr kosten.
@@ -758,7 +790,7 @@ export class TerrainRenderer {
     this.gridCell = cell;
     const halfU = width / 2 / camera.pixelsPerTile;
     const halfV = height / 2 / camera.pixelsPerTile;
-    const reach = camera.reliefScale * Z_SCREEN * MAX_RELIEF;
+    const reach = camera.reliefScale * viewZScreen() * MAX_RELIEF;
     const { u: camU, v: camV } = worldToGround(camera.centerX, camera.centerY);
 
     // Am Weltraster ausgerichtet, damit die Eckpunkte beim Verschieben an
@@ -792,6 +824,8 @@ export class TerrainRenderer {
     const win = active.window!;
     setCameraUniforms(gl, (name) => this.location(name), camera);
     gl.uniform1f(this.location('uCacheScale'), ppt);
+    // Beim Neigen senkrecht gestreckt: v des Bildes -> v des Caches.
+    gl.uniform1f(this.location('uCacheStretch'), active.groundV / viewGroundV());
     gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
     gl.uniform1i(this.location('uFlatCount'), this.flatCount);
     gl.uniform2f(this.location('uWindowStart'), win.u / ppt, win.v / ppt);
@@ -799,7 +833,12 @@ export class TerrainRenderer {
     gl.uniform2f(this.location('uCacheSize'), active.width, active.height);
     // Der alte Cache: eigenes Fenster, eigener Maßstab, und nur der fertige Teil zählt.
     const pwin = prev.window ?? win;
-    const done = prev.needed ?? { u: 0, v: 0, width: 0, height: 0 };
+    // Deckt er das Bild ab, zählt sein ganzes Fenster (auch die gefüllte
+    // Blase, siehe covers) - sonst nur, was für ein Bild nötig war.
+    const done = prevCovers && prev === this.previous
+      ? { ...pwin, width: prev.width, height: prev.height }
+      : prev.needed ?? { u: 0, v: 0, width: 0, height: 0 };
+    gl.uniform1f(this.location('uPrevStretch'), prev.groundV / viewGroundV());
     gl.uniform1f(this.location('uPrevMix'), prevMix);
     gl.uniform2f(this.location('uPrevWindowStart'), pwin.u / prev.scale, pwin.v / prev.scale);
     gl.uniform1f(this.location('uPrevCacheScale'), prev.scale);
@@ -838,6 +877,8 @@ interface CacheBuffer {
   key: string;
   /** Texel je u/v-Einheit, in denen der Inhalt berechnet ist. */
   scale: number;
+  /** Bodenstauchung (groundV), für die der Inhalt berechnet ist - siehe GpuCamera.cacheGroundV. */
+  groundV: number;
   /** Debug-Modus und Blickrichtung - nur bei gleichen lässt sich überblenden. */
   view: string;
   /** Absolute Texel-Ecke des Fensters, oder null wenn leer. */
@@ -860,6 +901,7 @@ function createCacheBuffer(gl: WebGL2RenderingContext): CacheBuffer {
     height: 0,
     key: '',
     scale: 1,
+    groundV: 0.5,
     view: '',
     window: null,
     pending: [],

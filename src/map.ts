@@ -7,6 +7,7 @@ import {
   setViewElevation,
   snapCamera,
   viewElevation,
+  viewGroundV,
   visibleWorldRect,
   type IsoView,
 } from './gl/iso';
@@ -321,6 +322,14 @@ export class MapRenderer {
    * der Zoom noch hingleitet.
    */
   targetTileSize = 0;
+  /**
+   * Wird gerade geneigt? Dann bleibt der Gelände-Cache auf seiner
+   * Bodenstauchung und wird nur gestreckt; neu berechnet wird, wenn der
+   * Blickwinkel steht - oder wenn die Streckung zu groß wird.
+   */
+  tilting = false;
+  /** Bodenstauchung, für die der Gelände-Cache gerade berechnet ist (0 = noch keine). */
+  private cacheGroundV = 0;
 
   constructor(
       canvas: HTMLCanvasElement,
@@ -369,6 +378,11 @@ export class MapRenderer {
     // deckt das ganze Bild ab.
     const level = 2 ** Math.floor(Math.log2(this.tileSize) + 1e-9);
     this.cacheTileSize = level === this.tileSize ? level : Math.min(this.cacheTileSize || level, level);
+    // Beim Neigen: flacher gesehen deckt der gestreckte Cache nur so weit ab,
+    // wie seine Blase reicht (bis 1,25), steiler wird er unscharf (ab 1/1,6).
+    const groundV = viewGroundV();
+    const stretch = this.cacheGroundV / groundV;
+    if (!this.tilting || !this.cacheGroundV || stretch > 1.25 || stretch < 1 / 1.6) this.cacheGroundV = groundV;
     // Die Stufe, auf der der Zoom zur Ruhe kommen wird.
     const goal = 2 ** Math.ceil(Math.log2(this.targetTileSize || this.tileSize) - 1e-9);
     const camera = snapCamera({
@@ -376,6 +390,7 @@ export class MapRenderer {
       centerY,
       pixelsPerTile: this.tileSize * this.pixelRatio,
       cachePixelsPerTile: this.cacheTileSize * this.pixelRatio,
+      cacheGroundV: this.cacheGroundV,
       // Beim Hineinzoomen zuerst die Zielstufe, damit sie beim Ankommen fertig
       // ist; die zwei nächstkleineren liegen so beim Herauszoomen bereit.
       prefetchPixelsPerTile: [...(goal > this.cacheTileSize ? [goal] : []), this.cacheTileSize / 2, this.cacheTileSize / 4]
