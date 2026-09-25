@@ -7,7 +7,7 @@ import { render, sceneFromObj } from './render.ts';
 
 /** ?leaves=texture zeigt die Blätter als Foto, sonst als Form; ?cards=0 einzelne Blätter statt Blattebenen. */
 const params = new URLSearchParams(location.search);
-const mode: LeafMode = params.get('leaves') === 'texture' ? 'texture' : 'shape';
+const mode: LeafMode = params.get('leaves') === 'shape' ? 'shape' : 'texture';
 const cards = params.get('cards') !== '0';
 
 const VIEW = { yaw: 0.6, pitch: 0.2, zoom: 1 };

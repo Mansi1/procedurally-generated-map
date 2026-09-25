@@ -165,7 +165,7 @@ const params = new URLSearchParams(location.search);
 const requested = params.get('preset') ?? '';
 const initial: PresetName = isPresetName(requested) ? requested : 'laubbaum';
 const seed = Number(params.get('seed'));
-if (params.get('leaves') === 'texture') leafModeSelect.value = 'texture';
+if (params.get('leaves') === 'shape') leafModeSelect.value = 'shape';
 if (params.get('cards') === '0') cardsSelect.value = '0';
 presetSelect.value = initial;
 load(initial, Number.isInteger(seed) && seed >= 1 ? seed : undefined);

@@ -126,6 +126,54 @@ export function installLeafTools(): void {
     const o = octx.getImageData(0, 0, OW, OH);
     const od = o.data;
     const opaque = (x: number, y: number) => x >= 0 && y >= 0 && x < OW && y < OH && od[(y * OW + x) * 4 + 3] >= 128;
+
+    // Heller Saum: gepresste Blätter haben oft einen hellen Rand, und beim
+    // Verkleinern wird er zur weißen Kante. Darum die äußersten zwei Pixel
+    // (und alles Halbtransparente) mit der Farbe von weiter innen umfärben -
+    // Quellen sind Pixel ab drei Pixel Tiefe. Das Alpha bleibt unverändert,
+    // damit dünne Nadeln nicht verschwinden; haben sie kein Inneres, sind
+    // alle satt deckenden Pixel Quellen.
+    let core = 200;
+    if (!od.some((v, i) => i % 4 === 3 && v >= core)) core = 128;
+    const isCore = (i: number) => od[i * 4 + 3] >= core;
+    const depth = new Int32Array(OW * OH).fill(-1);
+    let queue: number[] = [];
+    for (let y = 0; y < OH; y++) for (let x = 0; x < OW; x++) {
+      const i = y * OW + x;
+      if (!isCore(i)) { depth[i] = 0; queue.push(i); }
+      else if (x === 0 || y === 0 || x === OW - 1 || y === OH - 1) { depth[i] = 1; queue.push(i); }
+    }
+    for (let q = 0; q < queue.length; q++) {
+      const i = queue[q], qx = i % OW, qy = (i / OW) | 0;
+      for (const [nx, ny] of [[qx - 1, qy], [qx + 1, qy], [qx, qy - 1], [qx, qy + 1]]) {
+        if (nx < 0 || ny < 0 || nx >= OW || ny >= OH) continue;
+        const n = ny * OW + nx;
+        if (depth[n] >= 0) continue;
+        depth[n] = depth[i] + 1;
+        queue.push(n);
+      }
+    }
+    const coreCount = depth.reduce((c, d, i) => c + (d !== 0 && isCore(i) ? 1 : 0), 0);
+    let innerCount = 0;
+    for (let i = 0; i < OW * OH; i++) if (isCore(i) && depth[i] >= 3) innerCount++;
+    const minDepth = innerCount > coreCount * 0.2 ? 3 : 1;
+    const bled = new Uint8Array(OW * OH);
+    queue = [];
+    for (let i = 0; i < OW * OH; i++) if (isCore(i) && depth[i] >= minDepth) { bled[i] = 1; queue.push(i); }
+    for (let q = 0; q < queue.length; q++) {
+      const i = queue[q], qx = i % OW, qy = (i / OW) | 0;
+      for (const [nx, ny] of [[qx - 1, qy], [qx + 1, qy], [qx, qy - 1], [qx, qy + 1]]) {
+        if (nx < 0 || ny < 0 || nx >= OW || ny >= OH) continue;
+        const n = ny * OW + nx;
+        if (bled[n]) continue;
+        bled[n] = 1;
+        od[n * 4] = od[i * 4];
+        od[n * 4 + 1] = od[i * 4 + 1];
+        od[n * 4 + 2] = od[i * 4 + 2];
+        queue.push(n);
+      }
+    }
+    octx.putImageData(o, 0, 0);
     // Für den Umriss um 2 Pixel geweitet: dünne Stiele und Zweige halten so alle Blätter
     // einer Blattebene zusammen, und der Umriss umfasst die ganze Ebene.
     const grown = new Uint8Array(OW * OH);
@@ -216,6 +264,23 @@ export function installLeafTools(): void {
       if (count > bestSize) { bestSize = count; best = start; }
     }
     for (let i = 0; i < W * H; i++) d[i * 4 + 3] = label[i] === best ? 255 : 0;
+
+    // Heller Saum: deckende Randpixel, die noch fast Hintergrundfarbe tragen
+    // (beim Freistellen überlebte Mischpixel), Schicht für Schicht abtragen.
+    const nearBg = (i: number) =>
+      Math.hypot(d[i * 4] - bg[0], d[i * 4 + 1] - bg[1], d[i * 4 + 2] - bg[2]) < tolerance * 1.5;
+    for (let pass = 0; pass < 3; pass++) {
+      const strip: number[] = [];
+      for (let i = 0; i < W * H; i++) {
+        if (!d[i * 4 + 3]) continue;
+        const x = i % W;
+        const open = (x > 0 && !d[(i - 1) * 4 + 3]) || (x < W - 1 && !d[(i + 1) * 4 + 3])
+          || (i >= W && !d[(i - W) * 4 + 3]) || (i < W * (H - 1) && !d[(i + W) * 4 + 3]);
+        if (open && nearBg(i)) strip.push(i);
+      }
+      if (!strip.length) break;
+      for (const i of strip) d[i * 4 + 3] = 0;
+    }
     sctx.putImageData(px, 0, 0);
 
     // Drehen, bis der Stiel unten ist.
