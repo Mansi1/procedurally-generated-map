@@ -15,7 +15,6 @@ import {
   BUILDINGS,
   BUILDING_ORDER,
   CROP_ORDER,
-  CROPS,
   RESOURCE_LABEL,
   type ResourceKind,
   player,
@@ -28,6 +27,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
 import { hoverDescription, type HoverTarget } from './game/hoverInfo';
@@ -36,7 +36,6 @@ import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
 import { selectionView } from './game/selectionView';
-import type { UnitProducer } from './world/building';
 import { ResourceBar } from './components/ResourceBar';
 import { BuildMenu } from './components/BuildMenu';
 import { mountGame } from './components/Hud';
@@ -384,65 +383,8 @@ function faceDirection(dir: string) {
 /** Was ausgewählt ist: Dorfbewohner, Gebäude oder ein Vorkommen (game/Selection.ts). */
 const selection = new Selection(world);
 
-/** Doppelklick: alle gleichartigen Gebäude in diesem Umkreis (Tiles). */
-const SAME_TYPE_RADIUS = 15;
-
 function clearSelection() {
   selection.clear();
-  updateSelectionUI();
-}
-
-/**
- * Linksklick ohne Ziehen: Dorfbewohner, sonst Gebäude, sonst Vorkommen, sonst
- * nichts. Mit Umschalt (`add`) kommt es zur Auswahl dazu oder fällt heraus;
- * ein Doppelklick (`same`) auf ein Gebäude wählt alle gleichartigen in der Nähe.
- */
-function clickSelect(px: number, py: number, add: boolean, same = false) {
-  const villager = picker.villager(px, py);
-  selection.resource = null;
-  if (villager) {
-    selection.clearBuildings();
-    if (!add) selection.villagers.clear();
-    if (add && selection.villagers.has(villager.id)) selection.villagers.delete(villager.id);
-    else selection.villagers.add(villager.id);
-  } else {
-    const { x, y } = picker.target(px, py);
-    const building = world.at(x, y);
-    selection.villagers.clear();
-    if (building) {
-      const anchor = world.anchorOf(building);
-      if (same) {
-        // Felder: das ganze zusammenhängende Feld, sonst gleichartige in der Nähe.
-        const near = building.isFarm() ? world.farmGroup(building) : [...world.allBuildings()].filter((b) => b.type === building.type
-          && Math.hypot(b.x - building.x, b.y - building.y) <= SAME_TYPE_RADIUS);
-        selection.selectBuildings([...(add ? selection.buildings : []), ...near.map((b) => world.anchorOf(b))], anchor);
-      } else if (add) {
-        const set = new Set(selection.buildings);
-        if (set.has(anchor)) set.delete(anchor);
-        else set.add(anchor);
-        selection.selectBuildings(set, set.has(anchor) ? anchor : selection.focusedBuilding);
-      } else {
-        selection.selectBuildings([anchor], anchor);
-      }
-    } else if (!add) {
-      selection.clearBuildings();
-      if (world.resourceInfo(x, y)) selection.resource = { x, y };
-    }
-  }
-  updateSelectionUI();
-}
-
-/** Aufziehen eines Rechtecks: alle Dorfbewohner darin. */
-function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean) {
-  const [left, right] = x0 < x1 ? [x0, x1] : [x1, x0];
-  const [top, bottom] = y0 < y1 ? [y0, y1] : [y1, y0];
-  if (!add) selection.villagers.clear();
-  selection.clearBuildings();
-  selection.resource = null;
-  for (const v of world.villagers) {
-    const s = picker.villagerScreen(v);
-    if (s.x >= left && s.x <= right && s.y >= top && s.y <= bottom) selection.villagers.add(v.id);
-  }
   updateSelectionUI();
 }
 
@@ -450,22 +392,6 @@ function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean)
 const DRAG_THRESHOLD = 5;
 let drag: { x: number; y: number; active: boolean } | null = null;
 /** Felder werden Tile für Tile markiert - mit gedrückter Taste auch im Ziehen. */
-
-/** Im Baumodus ein Gebäude bzw. Feldstück setzen; false, wenn es nicht ging. */
-function placeHere(x: number, y: number, quiet = false): boolean {
-  if (!placement.isActive) return false;
-  const reason = placement.place(x, y);
-  if (reason) {
-    if (!quiet) hint(reason);
-    return false;
-  }
-  sound.play('place');
-  updateResourceUI();
-  // Reicht der Vorrat nicht für ein weiteres, zurück in den Ansichtsmodus -
-  // sonst klickt man ins Leere und bekommt nur Fehlermeldungen.
-  if (!placement.canAffordAnother()) select(null);
-  return true;
-}
 
 function canvasPoint(e: MouseEvent) {
   const rect = canvas.getBoundingClientRect();
@@ -479,7 +405,7 @@ canvas.addEventListener('mousedown', (e) => {
   if (placement.placingType) {
     const { x, y } = picker.tile(p.x, p.y);
     placement.sowing = placement.placingType === 'farm';
-    placeHere(x, y);
+    actions.placeAt(x, y);
     return;
   }
   drag = { x: p.x, y: p.y, active: false };
@@ -503,9 +429,9 @@ window.addEventListener('mouseup', (e) => {
   if (e.button === 0) placement.sowing = false;
   if (e.button !== 0 || !drag) return;
   const p = canvasPoint(e);
-  if (drag.active) boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
+  if (drag.active) actions.boxSelect(drag.x, drag.y, p.x, p.y, e.shiftKey);
   // e.detail zählt die Klicks kurz hintereinander - 2 ist ein Doppelklick.
-  else clickSelect(p.x, p.y, e.shiftKey, e.detail >= 2);
+  else actions.clickSelect(p.x, p.y, e.shiftKey, e.detail >= 2);
   drag = null;
   boxEl.hidden = true;
 });
@@ -545,115 +471,8 @@ window.addEventListener('mouseup', (e) => {
     updateCursor();
     return;
   }
-  if (e.target === canvas) rightClick(canvasPoint(e));
+  if (e.target === canvas) actions.rightClick(canvasPoint(e));
 });
-
-/** Rechtsklick: im Baumodus abbrechen, mit Dorfbewohnern ein Befehl. */
-function rightClick(p: { x: number; y: number }) {
-  if (placement.placingType) {
-    select(null);
-    return;
-  }
-  // Auf das Objekt gezielt (Baumkrone, Fels) zählt dessen Feld.
-  const { x, y } = picker.target(p.x, p.y);
-
-  // Ausbildende Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt - bei
-  // mehreren für alle.
-  const trainers = selection.chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
-  if (trainers.length > 0) {
-    let reason: string | null = null;
-    for (const t of trainers) reason = world.setRally(t, x, y) ?? reason;
-    if (reason) hint(reason);
-    else sound.play('click');
-    updateSelectionUI();
-    return;
-  }
-
-  if (selection.villagers.size === 0) return;
-  // Auf ein Tier (lebend oder erlegt): jagen bzw. zerlegen.
-  const at = picker.point(p.x, p.y);
-  const prey = world.animalNear(at.x, at.y, 0.6);
-  if (prey) {
-    world.hunt(selection.villagers, prey);
-    sound.play('click', 0.7);
-    updateSelectionUI();
-    return;
-  }
-  const reason = world.command(selection.villagers, x, y);
-  if (reason) hint(reason);
-  else sound.play('click', 0.7);
-  updateSelectionUI();
-}
-
-/** Einen Dorfbewohner ausbilden: im ausgewählten Hauptgebäude, sonst im nächstgelegenen. */
-/** Dorfbewohner einreihen - `count` auf einmal (Umschalt: 5, wie in AoE2). */
-function trainVillager(count = 1) {
-  // Ausgewählte Hauptgebäude, sonst das nächstgelegene. Bei mehreren kommt
-  // jeder Dorfbewohner in die kürzeste Warteschlange.
-  const selectedTrainers = selection.chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
-  const nearest = world.nearestTownCenter(camera.x, camera.y);
-  const trainers = selectedTrainers.length > 0 ? selectedTrainers : nearest ? [nearest] : [];
-  if (trainers.length === 0) {
-    hint('Baue zuerst ein Hauptgebäude');
-    return;
-  }
-  let reason: string | null = null;
-  let queued = 0;
-  for (let i = 0; i < count; i++) {
-    const open = trainers.filter((b) => !b.isQueueFull);
-    const building = (open.length > 0 ? open : trainers).reduce((a, b) => (b.queuedUnits < a.queuedUnits ? b : a));
-    reason = world.train(building);
-    if (reason) break;
-    queued++;
-  }
-  // Ein Teil ging: kein Fehler, nur wenn gar keiner in die Schlange kam.
-  if (queued === 0 && reason) hint(reason);
-  else sound.play('click', 0.5);
-  updateResourceUI();
-}
-
-/**
- * Taste H: zum Hauptgebäude springen und es auswählen - bei mehreren reihum,
- * beginnend nach dem gerade ausgewählten.
- */
-/**
- * Untätige Dorfbewohner auswählen und zu ihnen springen. Normal alle auf
- * einmal - dann genügt ein Rechtsklick, um sie an die Arbeit zu schicken.
- * Mit `all = false` nur einen, bei wiederholtem Aufruf reihum.
- */
-function selectIdleVillager(all = true) {
-  const idle = world.villagers.filter((v) => v.task.kind === 'idle');
-  if (idle.length === 0) {
-    hint('Kein Dorfbewohner ist untätig');
-    return;
-  }
-  selection.clearBuildings();
-  selection.resource = null;
-  let target: { x: number; y: number };
-  if (all) {
-    selection.villagers.clear();
-    for (const v of idle) selection.villagers.add(v.id);
-    // Zur Mitte der Gruppe - verteilt über die Karte zum ersten.
-    const mx = idle.reduce((sum, v) => sum + v.x, 0) / idle.length;
-    const my = idle.reduce((sum, v) => sum + v.y, 0) / idle.length;
-    const spread = Math.max(...idle.map((v) => Math.hypot(v.x - mx, v.y - my)));
-    target = spread < 40 ? { x: mx, y: my } : idle[0];
-  } else {
-    // Nach dem gerade ausgewählten weitermachen, damit wiederholtes Klicken
-    // alle der Reihe nach durchgeht.
-    const current = selection.villagers.size === 1 ? [...selection.villagers][0] : -1;
-    const index = idle.findIndex((v) => v.id === current);
-    const next = idle[(index + 1) % idle.length];
-    target = next;
-    selection.villagers.clear();
-    selection.villagers.add(next.id);
-  }
-  camera.centerOn(target.x, target.y, ground.heightAt(target.x, target.y));
-  if (mousePixelX !== undefined && mousePixelY !== undefined) {
-    updateHoveredTile(mousePixelX, mousePixelY);
-  }
-  updateSelectionUI();
-}
 
 // Die Knöpfe entstehen bei jeder Aktualisierung neu - darum Delegation, und
 // mousedown statt click, damit ein Neuzeichnen zwischen Drücken und Loslassen
@@ -665,40 +484,8 @@ for (const panel of [stockEl]) {
     // Kein Fokus auf dem Knopf - sonst bleibt ein Fokusrahmen stehen.
     e.preventDefault();
     e.stopPropagation();
-    selectIdleVillager(!e.shiftKey);
+    actions.selectIdle(!e.shiftKey);
   });
-}
-
-function cycleTownCenter() {
-  const centers = world.townCenters();
-  if (centers.length === 0) {
-    hint('Baue zuerst ein Hauptgebäude');
-    return;
-  }
-  const current = centers.findIndex((b) => world.anchorOf(b) === selection.focusedBuilding);
-  const next = centers[(current + 1) % centers.length];
-
-  selection.villagers.clear();
-  selection.resource = null;
-  selection.selectBuildings([world.anchorOf(next)], world.anchorOf(next));
-  // Mitte des Gebäudes in die Bildmitte - mit seiner Geländehöhe, sonst
-  // säße es auf einem Hügel ein gutes Stück über der Mitte.
-  const x = next.x + 0.5;
-  const y = next.y + 0.5;
-  camera.centerOn(x, y, ground.heightAt(x, y));
-  if (mousePixelX !== undefined && mousePixelY !== undefined) {
-    updateHoveredTile(mousePixelX, mousePixelY);
-  }
-  updateSelectionUI();
-}
-
-function demolishSelected() {
-  const buildings = selection.chosenBuildings();
-  if (buildings.length === 0) return;
-  for (const b of buildings) world.remove(b);
-  selection.clearBuildings();
-  placement.invalidate();
-  updateResourceUI();
 }
 
 /**
@@ -710,16 +497,11 @@ function demolishSelected() {
 actionsEl.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const action = (e.target as HTMLElement).closest('button')?.dataset.action;
-  if (action === 'train') trainVillager(e.shiftKey ? 5 : 1);
-  if (action === 'demolish') demolishSelected();
+  if (action === 'train') actions.trainVillagers(e.shiftKey ? 5 : 1);
+  if (action === 'demolish') actions.demolishSelected();
   if (action === 'crop') {
     const crop = (e.target as HTMLElement).closest('button')?.dataset.crop as CropType | undefined;
-    if (!crop || !CROPS[crop]) return;
-    // Für das ganze Feld - darauf wird gemeinsam gesät.
-    const fields = new Set(selection.chosenBuildings().flatMap((b) => world.farmGroup(b)));
-    for (const b of fields) world.setCrop(b, crop);
-    sound.play('click');
-    updateSelectionUI();
+    if (crop) actions.setFieldCrop(crop);
   }
 });
 
@@ -756,6 +538,17 @@ world.groundAt = (x, y) => ground.groundAt(x, y);
 
 /** Was unter dem Zeiger liegt: Welt-Punkt, Tile, Dorfbewohner, Vorkommen (game/Picker.ts). */
 const picker = new Picker(world, resources, camera, ground, () => tickAccumulator / TICK);
+
+/** Was der Spieler tut: auswählen, Befehle, bauen, ausbilden, abreißen (game/actions.ts). */
+const actions = new PlayerActions({ world, camera, selection, placement, picker, ground, sound }, {
+  hint,
+  refreshSelection: updateSelectionUI,
+  refreshResources: updateResourceUI,
+  refreshPointer: () => {
+    if (mousePixelX !== undefined && mousePixelY !== undefined) updateHoveredTile(mousePixelX, mousePixelY);
+  },
+  setPlacing: select,
+});
 
 window.addEventListener('resize', resize);
 
@@ -823,15 +616,15 @@ window.addEventListener('keydown', (e) => {
     } else if (placement.placingType) select(null);
     else clearSelection();
   }
-  if (e.key === 'Delete' || e.key === 'Backspace') demolishSelected();
+  if (e.key === 'Delete' || e.key === 'Backspace') actions.demolishSelected();
   // H wie in AoE2 - "Home".
-  if (e.key.toLowerCase() === 'h') cycleTownCenter();
+  if (e.key.toLowerCase() === 'h') actions.cycleTownCenter();
   if (e.key.toLowerCase() === 'm') toggleSound();
   // I: Tastenhilfe (Info), P: Entwickler-Infos (Programmierer).
   if (e.key.toLowerCase() === 'i') setPanels({ showHelp: !settings.showHelp });
   if (e.key.toLowerCase() === 'p') setPanels({ showDebug: !settings.showDebug });
   // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
-  if (e.key === '.' || e.key === ':') selectIdleVillager(!e.shiftKey);
+  if (e.key === '.' || e.key === ':') actions.selectIdle(!e.shiftKey);
   if (e.key === ' ') {
     // Leertaste gedrückt halten legt das Gelände flach (siehe loop). Sonst
     // scrollt die Seite oder ein fokussierter Knopf wird ausgelöst - bei
@@ -839,7 +632,7 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur();
   }
-  if (e.key.toLowerCase() === VILLAGER.key) trainVillager(e.shiftKey ? 5 : 1);
+  if (e.key.toLowerCase() === VILLAGER.key) actions.trainVillagers(e.shiftKey ? 5 : 1);
 
   // Im Untermenü der Felder wählen 1, 2, ... die Frucht.
   if (buildMenu.farmsOpen) {
@@ -968,7 +761,7 @@ canvas.addEventListener('mousemove', (e) => {
   // Felder markieren: jedes überstrichene Tile, auf dem gesät werden kann.
   if (placement.sowing && placement.placingType === 'farm' && (e.buttons & 1) && mouseTileX !== undefined && mouseTileY !== undefined
       && (mouseTileX !== before || mouseTileY !== beforeY) && world.sowable(mouseTileX, mouseTileY)) {
-    placeHere(mouseTileX, mouseTileY, true);
+    actions.placeAt(mouseTileX, mouseTileY, true);
   }
 });
 
