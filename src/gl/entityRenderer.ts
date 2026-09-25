@@ -719,20 +719,22 @@ void main() {
           lift = sin(cyc * 3.1415927);
           pull = 0.4;
         }
-        hipL = 0.14;
-        hipR = -0.1;
-        kneeL = -0.24 - 0.1 * pull;
-        kneeR = -0.2 - 0.1 * pull;
-        shL = 1.0 - 0.5 * pull + 0.35 * lift;
+        // Tief über den Stab gebeugt, die Hände auf Stabhöhe (gut 0.9 m):
+        // vorn fast gestreckt, beim Zug mit angewinkelten Ellbogen am Bauch.
+        hipL = 0.18;
+        hipR = -0.12;
+        kneeL = -0.32 - 0.1 * pull;
+        kneeR = -0.26 - 0.1 * pull;
+        shL = 0.25 - 0.35 * pull + 0.5 * lift;
         shR = shL;
-        elL = 0.3 + 0.9 * pull + 0.35 * lift;
+        elL = 0.15 + 0.95 * pull + 0.4 * lift;
         elR = elL;
         inL = 0.22;
         inR = 0.22;
-        lean = 0.36 - 0.16 * pull - 0.2 * lift;
+        lean = 0.52 - 0.15 * pull - 0.3 * lift;
         // Mal etwas weiter links, mal rechts am Stab.
         twist = 0.06 * sin(k * 1.7);
-        bob = -0.02 - 0.02 * pull;
+        bob = -0.04 - 0.02 * pull;
         // Kopf gesenkt, beim Prüfen hebt er ihn.
         if (part == P_HEAD) p = swingAround(p, uShoulder + 0.03, 0.4 - 0.3 * lift);
       } else {

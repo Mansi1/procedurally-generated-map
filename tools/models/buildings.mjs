@@ -1023,14 +1023,14 @@ function bowyer() {
   box('Bench.Rail', 'Wood', [BX0 + 0.1, BX1 - 0.1], [0.3, 0.36], [(BZ0 + BZ1) / 2 - 0.03, (BZ0 + BZ1) / 2 + 0.03]);
   box('Bench.Vise', 'WoodDark', [BX0 + 0.05, BX0 + 0.2], [BY, BY + 0.12], [BZ0 + 0.1, BZ1 - 0.1]);
   // Stave: a gentle arc along the bench, thicker in the middle.
-  const staveAt = (t) => [BX0 - 0.25 + t * (BX1 - BX0 + 0.5), BY + 0.05 + 0.05 * (1 - (2 * t - 1) ** 2), (BZ0 + BZ1) / 2 - 0.05];
+  // Der Stab liegt längs, im Bankhaken (Vise) am linken Ende eingespannt; am
+  // rechten Ende steht der Bogner und zieht das Zugmesser in Faserrichtung.
+  const staveAt = (t) => [BX0 - 0.25 + t * (BX1 - BX0 + 0.3), BY + 0.05 + 0.05 * (1 - (2 * t - 1) ** 2), (BZ0 + BZ1) / 2];
   for (let i = 0; i < 6; i++) {
     const t0 = i / 6, t1 = (i + 1) / 6;
     const w = (t) => 0.03 + 0.03 * (1 - Math.abs(2 * t - 1));
     beam('Stave.Work', 'WoodLight', staveAt(t0), staveAt(t1), w(t0), { w1: w(t1) });
   }
-  box('Drawknife.Blade', 'Iron', [1.0, 1.3], [BY, BY + 0.02], [BZ1 - 0.12, BZ1 - 0.06]);
-  for (const x of [0.95, 1.35]) box('Drawknife.Handle', 'WoodDark', [x - 0.05, x + 0.05], [BY, BY + 0.04], [BZ1 - 0.13, BZ1 - 0.05], { axis: 'x', n: 6 });
   for (let i = 0; i < 14; i++) {
     const a = i * 2.3, r = 0.2 + (i % 5) * 0.12;
     const x = 0.85 + Math.cos(a) * r * 1.3, z = 1.0 + Math.sin(a) * r * 0.8;
@@ -1051,11 +1051,13 @@ function bowyer() {
     beam('Arrow.Fletch', 'Feather', [p1[0] - tilt * 0.09, p1[1] - 0.02, p1[2] - 0.15], p1, 0.05, { w1: 0.02 });
   }
 
-  // Barrel of arrows by the lean-to.
-  barrel(m, 1.95, 0.65, 0.75, 0.24);
+  // Barrel of arrows at the front, by the target - the right end of the
+  // bench is where the bowyer stands.
+  const [AX, AZ] = [-0.5, 1.65];
+  barrel(m, AX, AZ, 0.75, 0.24);
   for (let i = 0; i < 9; i++) {
     const a = i * 2.4, r = 0.03 + (i % 3) * 0.05;
-    const x = 1.95 + Math.cos(a) * r, z = 0.65 + Math.sin(a) * r;
+    const x = AX + Math.cos(a) * r, z = AZ + Math.sin(a) * r;
     const p1 = [x + Math.cos(a) * 0.06, 1.25 + (i % 2) * 0.05, z + Math.sin(a) * 0.06];
     beam('Arrow', 'WoodLight', [x, 0.5, z], p1, 0.02);
     beam('Arrow.Fletch', 'Feather', [p1[0], p1[1] - 0.14, p1[2]], p1, 0.05, { w1: 0.02 });
@@ -1066,8 +1068,9 @@ function bowyer() {
   // Markers read by the game, not drawn: the door (bows are carried in), where
   // the bowyer stands at the bench and what he faces.
   box('Entry', 'Soot', [dx - 0.03, dx + 0.03], [0, 0.05], [ZF + 0.5, ZF + 0.55]);
-  box('Work.Stand', 'Soot', [0.82, 0.88], [0, 0.05], [0.42, 0.47]);
-  box('Work.Aim', 'Soot', [0.82, 0.88], [0, 0.05], [1.0, 1.05]);
+  // Am rechten Ende der Bank, den Blick längs über den Stab zum Bankhaken.
+  box('Work.Stand', 'Soot', [BX1 + 0.42, BX1 + 0.48], [0, 0.05], [0.97, 1.03]);
+  box('Work.Aim', 'Soot', [BX0 + 0.1, BX0 + 0.16], [0, 0.05], [0.97, 1.03]);
   write(dir, 'bowyer', header('bowyer', 'Bognerei', '# Material Paint (Band, Wappen, Zielscheibe) bekommt die Gebaeudefarbe aus dem Spiel.\n# Die Objekte Entry und Work.* markieren Eingang und Werkbank und werden nicht gezeichnet.\n'), m, '0.420 0.300 0.180');
 }
 
