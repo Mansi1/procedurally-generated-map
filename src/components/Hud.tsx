@@ -6,10 +6,9 @@
 // die Teile dann über ihre IDs; was sich ändert, setzt es gezielt (Texte,
 // hidden, Klassen) oder rendert die jeweilige Komponente hinein.
 
-import { render } from 'defuss';
+import { render, type Props } from 'defuss';
 import './Hud.css';
 import { TILE_TYPE_COLOR, TILE_TYPE_LABEL } from '../map';
-import woodBar from '../icons/wood-bar.png';
 import type { TileType } from '../noise';
 import { MenuButton } from './MenuButton';
 import { SaveButton } from './SaveButton';
@@ -113,6 +112,20 @@ function Compass() {
   );
 }
 
+/**
+ * Platz für einen Knopf außen am Reif - `deg` im Uhrzeigersinn ab rechts,
+ * die Mitte des Knopfs liegt dort (Hud.css, .ring-slot).
+ */
+function RingSlot({ deg, id, children }: Props & { deg: number; id?: string }) {
+  const a = (deg * Math.PI) / 180;
+  const r = 143;
+  return (
+    <div class="ring-slot" id={id} style={`left:${166 + Math.cos(a) * r}px;top:${166 + Math.sin(a) * r}px`}>
+      {children}
+    </div>
+  );
+}
+
 /** Pfeil im Halbkreis - `flip` spiegelt ihn für die Drehung im Uhrzeigersinn. */
 function TurnIcon({ flip }: { flip?: boolean }) {
   return (
@@ -125,9 +138,10 @@ function TurnIcon({ flip }: { flip?: boolean }) {
 }
 
 /**
- * Minimap wie in AoE4, aber aus Holz wie die Rohstoffleiste: die Karte füllt
- * eine runde, eingelassene Scheibe mit Holzreif und Nägeln, alles auf Planken. In den Ecken runde Holzknöpfe: oben Speichern und
- * Menü (mountMinimapMenu), unten links der Ton, unten rechts das Drehen.
+ * Minimap wie in AoE4, ohne Kasten: die runde Karte in einem Holzreif mit
+ * Nägeln, drumherum die Windrose - frei über dem Spielfeld. Außen am Reif
+ * hängen kleine runde Holzknöpfe auf den Diagonalen: oben Speichern und Menü
+ * (mountMinimapMenu), unten links der Ton, unten rechts das Drehen.
  */
 function Minimap() {
   // Maße wie in Hud.css: Rahmen 332 px, Karte 244 px, Mitte bei 166. Außen
@@ -140,7 +154,7 @@ function Minimap() {
     return { x: c + Math.cos(a) * ring, y: c + Math.sin(a) * ring };
   });
   return (
-    <div id="minimap-frame" style={`background-image:url(${woodBar})`}>
+    <div id="minimap-frame">
       <svg class="minimap-ring" viewBox="0 0 332 332" width="332" height="332">
         <defs>
           <radialGradient id="minimap-disc" cx="50%" cy="45%" r="55%">
@@ -167,12 +181,15 @@ function Minimap() {
       {/* Schatten des Reifs auf der Karte - sie liegt eingelassen darunter. */}
       <div class="minimap-shade" />
       <Compass />
-      <div id="minimap-menu" />
-      <SoundButton />
-      <div class="minimap-turn">
+      <RingSlot deg={225} id="minimap-save" />
+      <RingSlot deg={315} id="minimap-menu" />
+      <RingSlot deg={135}><SoundButton /></RingSlot>
+      <RingSlot deg={55}>
         <button type="button" id="turn-left" title="Ansicht gegen den Uhrzeigersinn drehen"><TurnIcon /></button>
+      </RingSlot>
+      <RingSlot deg={35}>
         <button type="button" id="turn-right" title="Ansicht im Uhrzeigersinn drehen"><TurnIcon flip /></button>
-      </div>
+      </RingSlot>
     </div>
   );
 }
@@ -200,15 +217,10 @@ function Hud() {
   );
 }
 
-/** Speichern und Menü in die oberen Ecken des Minimap-Rahmens - game/ui.ts kennt die Aktionen. */
+/** Speichern und Menü oben links und rechts am Reif der Minimap - game/ui.ts kennt die Aktionen. */
 export function mountMinimapMenu(onSave: () => void, onMenu: () => void) {
-  render(
-    <>
-      <SaveButton onClick={onSave} />
-      <MenuButton onClick={onMenu} />
-    </>,
-    document.getElementById('minimap-menu')!,
-  );
+  render(<SaveButton onClick={onSave} />, document.getElementById('minimap-save')!);
+  render(<MenuButton onClick={onMenu} />, document.getElementById('minimap-menu')!);
 }
 
 /** Rendert Spielfeld-Canvas und Grundgerüst in `root` - einmal, bevor main.ts seine Teile sucht. */
