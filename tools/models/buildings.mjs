@@ -1175,8 +1175,8 @@ function bowItem() {
   const a = Math.PI / 4;
   const up = [-Math.cos(a), Math.sin(a), 0], back = [Math.sin(a), Math.cos(a), 0];
   const c = [0, 0.7, 0];
-  // Kräftig: als Symbol ist er klein, dünne Linien verschwänden.
-  bow(m, c, up, back, 1.6, 0.3, 'Bow', 2);
+  // Kräftig und hell: als Symbol ist er klein und steht auf dunklem Holz.
+  bow(m, c, up, back, 1.6, 0.3, 'Bow', 2, 'WoodLight');
   // Arrow nocked on the string (the middle of which is `c`), past the grip.
   const at = (d) => c.map((v, i) => v + back[i] * d);
   m.beam('Arrow', 'WoodLight', at(0), at(0.8), 0.055);

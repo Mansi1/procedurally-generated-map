@@ -210,7 +210,7 @@ function Building({ v }: { v: Extract<SelectionView, { kind: 'building' }> }) {
           {v.workshop ? <WorkshopDetails workshop={v.workshop} /> : null}
           {v.weapons ? (
             <div class="sel-stock">
-              <img src={stockIcon('bows')} alt="" width="30" height="30" draggable={false} />
+              <span class="sel-stock-icon"><img src={stockIcon('bows')} alt="" width="34" height="34" draggable={false} /></span>
               Bögen: <b>{v.weapons.bows} / {v.weapons.capacity}</b>
               {v.weapons.bows >= v.weapons.capacity
                 ? <> - <span class="muted">voll</span></>
