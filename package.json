@@ -5,11 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "npm run gen:models && npm run gen:anim",
     "build": "tsc && vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview",
-    "gen:models": "node tools/blender/models.mjs",
-    "check:models": "node tools/blender/check-models.mjs",
+    "check:models": "node tools/models/check-models.mjs",
     "test": "node --test tests/",
     "test:update-ids": "node tests/update-ids.mjs",
     "gen:ui": "node tools/ui/icons.mjs && node tools/ui/wood-bar.mjs",

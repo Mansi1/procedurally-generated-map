@@ -16,11 +16,11 @@
 //
 // Aufruf: node tools/export/props.mjs   (schreibt tools/export/out/mill.glb, flag.glb)
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { GltfBuilder, parseMtl, parseObj, qAxis } from './gltf.mjs';
+import { readModel } from '../models/glb.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
-const read = (file) => readFileSync(`${root}src/models/${file}`, 'utf8');
 const out = `${root}tools/export/out`;
 /** Spielerfarbe wie in der Galerie - für Paint. */
 const PLAYER = [64 / 255, 160 / 255, 72 / 255];
@@ -46,8 +46,9 @@ function sidecar(name, fps, height, clips) {
 // --- Mühle ------------------------------------------------------------------
 
 {
-  const tris = parseObj(read('mill.obj')).filter((t) => !t.object.startsWith('Entry'));
-  const colors = parseMtl(read('mill.mtl'));
+  const mill = readModel('mill');
+  const tris = parseObj(mill.obj).filter((t) => !t.object.startsWith('Entry'));
+  const colors = parseMtl(mill.mtl);
   colors.set('Paint', PLAYER);
   const sails = tris.filter((t) => t.object.startsWith('Sails')).flatMap((t) => t.points);
   const hub = [mid(range(sails, 0)), mid(range(sails, 1)), mid(range(sails, 2))];
@@ -79,8 +80,9 @@ function sidecar(name, fps, height, clips) {
 // --- Fahne am Sammelpunkt ---------------------------------------------------
 
 {
-  const tris = parseObj(read('rally_flag.obj'));
-  const colors = parseMtl(read('rally_flag.mtl'));
+  const flag = readModel('rally_flag');
+  const tris = parseObj(flag.obj);
+  const colors = parseMtl(flag.mtl);
   colors.set('Paint', PLAYER);
   const all = tris.flatMap((t) => t.points);
   const [minY, maxY] = range(all, 1);

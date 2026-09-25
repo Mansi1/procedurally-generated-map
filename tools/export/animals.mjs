@@ -16,17 +16,18 @@
 // Aufruf: node tools/export/animals.mjs [Ausgabedatei]
 //   Standard: tools/export/out/quadruped.glb
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { GltfBuilder, parseMtl, parseObj } from './gltf.mjs';
 import { ANIMAL_CLIPS, REFERENCE, animalBones, animalPart, animalPose, measureAnimal } from './animal-poses.mjs';
+import { readModel } from '../models/glb.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const outFile = process.argv.slice(2).find((a) => a.endsWith('.glb')) ?? `${root}tools/export/out/quadruped.glb`;
 const FPS = 30;
-const read = (file) => readFileSync(`${root}src/models/${file}`, 'utf8');
 
-const tris = parseObj(read(`${REFERENCE}.obj`));
-const colors = parseMtl(read(`${REFERENCE}.mtl`));
+const reference = readModel(REFERENCE);
+const tris = parseObj(reference.obj);
+const colors = parseMtl(reference.mtl);
 const j = measureAnimal(tris);
 const { H, minY } = j;
 /** Modell-Koordinaten (x vorn, y links, z oben, Höhe 1) -> Datei (x links, y oben, z vorn, Meter). */

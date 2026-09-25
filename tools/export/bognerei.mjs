@@ -17,9 +17,10 @@
 // Aufruf: node tools/export/bognerei.mjs [frau] [Ausgabedatei]
 //   Standard: Bogner (Mann), tools/export/out/bognerei.glb
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { CLIPS, boneRotations, pose, qAxis, strikeTimes } from './poses.mjs';
+import { readModel } from '../models/glb.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const female = process.argv.includes('frau');
@@ -67,7 +68,6 @@ function parseMtl(source) {
   return colors;
 }
 
-const read = (file) => readFileSync(`${root}src/models/${file}`, 'utf8');
 
 // --- Figur: Teile und Gelenke wie loadModel() ------------------------------
 
@@ -83,8 +83,9 @@ const partOf = (object) => {
   return hit ? hit[1] : 'torso';
 };
 
-const figureTris = parseObj(read(female ? 'villager_female.obj' : 'villager_male.obj'));
-const figureColors = parseMtl(read('villager.mtl'));
+const figure = readModel(female ? 'villager_female' : 'villager_male');
+const figureTris = parseObj(figure.obj);
+const figureColors = parseMtl(figure.mtl);
 figureColors.set('Tunic', PLAYER);
 
 // Gelenke in Metern (Datei-Koordinaten: x links, y oben, z vorn).
@@ -225,8 +226,9 @@ const addNode = (node) => nodes.push(node) - 1;
 
 // Bognerei: alles außer den Markierungen und dem Werkstück; die drei Stufen
 // des Werkstücks als eigene Objekte.
-const shopTris = parseObj(read('bowyer.obj'));
-const shopColors = parseMtl(read('bowyer.mtl'));
+const shop = readModel('bowyer');
+const shopTris = parseObj(shop.obj);
+const shopColors = parseMtl(shop.mtl);
 shopColors.set('Paint', PLAYER);
 const isMarker = (o) => o.startsWith('Entry') || o.startsWith('Work.');
 meshes.push(mesh('Bognerei', shopTris.filter((t) => !isMarker(t.object) && !t.object.startsWith('Craft')), shopColors));

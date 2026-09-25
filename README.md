@@ -26,7 +26,6 @@ wird. Auch der Standard-Seed der Welt heißt `Soliva`.
 
 ```bash
 npm install
-npm run gen:models && npm run gen:anim   # einmalig: Modelle aus Blender erzeugen (siehe Modelle)
 npm run dev
 ```
 
@@ -34,12 +33,12 @@ Danach läuft das Spiel unter der Adresse, die Vite ausgibt (z. B.
 `http://localhost:5173`).
 
 ```bash
-npm run build     # erzeugt erst die Modelle neu (prebuild), dann Typprüfung und Build nach dist/
+npm run build     # Typprüfung und Build nach dist/
 npm run preview   # den Build lokal ansehen
 ```
 
-Die Hintergrundmusik (`assets/music/*.mp3`) und die Blender-Dateien
-(`assets/blender/`) liegen in **Git LFS**. Vor dem Klonen `git lfs install`
+Die Hintergrundmusik (`assets/music/*.mp3`) und die Clip-Bibliotheken
+(`assets/blender/clips/*.blend`) liegen in **Git LFS**. Vor dem Klonen `git lfs install`
 ausführen – sonst kommen statt der Dateien nur kleine Zeiger-Dateien an
 (nachholen mit `git lfs pull`). Beim Hosten auf Vercel muss unter
 *Settings → Git* „Git Large File Storage (LFS)“ eingeschaltet sein.
@@ -74,22 +73,15 @@ gewählte Welt unter `pgm.seed`.
 
 ## Modelle
 
-Blender ist die Quelle: Jedes Objekt des Spiels ist eine `.blend`-Datei unter
-`assets/blender/models/`, die Bewegungen stecken in Clip-Bibliotheken unter
-`assets/blender/clips/` (docs/BLENDER.md, docs/ANIMATION.md). Die Dateien in
-`src/models/` werden daraus erzeugt und sind **nicht eingecheckt** – nur die
-von Hand gepflegten Posen (`carve_pose.json`, `mow_pose.json`) liegen in Git.
+Jedes Objekt des Spiels ist eine glTF-Datei: `src/models/<name>.glb`. Blender
+öffnet und speichert sie ohne Zusatz – zum Bearbeiten Datei → Import →
+glTF 2.0, danach Export → glTF 2.0 (glTF Binary) über dieselbe Datei. Es gibt
+keinen Export-Schritt, und zum Bauen braucht es kein Blender. Wie das Spiel
+die Dateien liest und welche Objektnamen etwas bedeuten: docs/BLENDER.md.
 
-```bash
-npm run gen:models   # Formen: alle .blend → src/models/<name>.obj + .mtl
-npm run gen:anim     # Bewegungen: Clip-Bibliotheken → src/models/<name>_clips.glb + .json
-```
-
-Vor `npm run build` laufen beide automatisch (`prebuild`). Blender wird über
-die Umgebungsvariable `BLENDER` gefunden, sonst am üblichen Ort auf macOS
-(`/Applications/Blender.app`). Ohne Blender baut das Projekt nicht – das gilt
-auch für Deploys (z. B. Vercel), die die erzeugten Dateien anders bekommen
-müssen.
+Die Bewegungen stecken in Clip-Bibliotheken unter `assets/blender/clips/`
+(docs/ANIMATION.md). Nach einer Änderung dort `npm run gen:anim` (braucht
+Blender) und die erzeugten `src/models/*_clips.glb` + `.json` einchecken.
 
 Die Felder baut das Spiel beim Start selbst (`tools/models/farmsGen.mjs`) –
 ein Weizenfeld besteht aus Tausenden einzelner Halme.

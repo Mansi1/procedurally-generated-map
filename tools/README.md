@@ -1,21 +1,23 @@
 # tools
 
-Skripte, die die Modelle und Bilder in `src/` erzeugen. Die Modelle kommen aus
-Blender: Quelle sind die `.blend`-Dateien in `assets/blender/` (docs/BLENDER.md).
-Nach einer Änderung neu erzeugen und die Ergebnisse mit einchecken.
+Skripte rund um die Modelle und Bilder in `src/`. Die Modelle sind `.glb`-Dateien
+in `src/models/`, die Blender direkt öffnet und speichert (docs/BLENDER.md) -
+sie brauchen keinen Export. Die Bewegungen kommen aus den `.blend`-Dateien in
+`assets/blender/clips/`; nach einer Änderung neu erzeugen und mit einchecken.
 
 | Befehl | erzeugt |
 | --- | --- |
-| `npm run gen:models` | `src/models/*.obj` und `*.mtl` aus `assets/blender/models/**/*.blend` (Dorfbewohner, Gebäude, Bäume, Sträucher, Stein, Gold, Tiere, Werkzeuge) |
 | `npm run gen:anim` | `src/models/*_clips.glb` + `.json` aus `assets/blender/clips/*.blend` (Bewegungen) |
 | `npm run gen:ui` | `src/icons/*.png`: Symbole der Rohstoffleiste und ihre Holztextur |
 
-- `blender/` - Export aus Blender und der einmalige Umzug der Modelle nach Blender
+- `models/glb.mjs` - liest und schreibt die Modelle (`.glb` ↔ OBJ/MTL-Text), mit den Regeln für
+  Objektnamen; `models/check-models.mjs` prüft die Namen mit Bedeutung (`npm run check:models`)
+- `blender/` - Export der Clip-Bibliotheken aus Blender und ihr Vergleich mit den früheren Formeln
 - `models/primitives.mjs` - Grundformen (für das L-System und die Felder)
 - `models/farmsGen.mjs` - stellt die Felder (Weizen, Mais) aus ihren Teilen aus Blender auf
-  (`src/models/field_*.obj`); `node tools/models/farms.mjs <Ordner>` schreibt sie zum Ansehen als OBJ
-- Die früheren Generatoren (`villagers.mjs`, `buildings.mjs` ...) sind mit dem
-  Umzug nach Blender entfallen; sie stehen in der Git-Geschichte.
+  (`src/models/field_*.glb`); `node tools/models/farms.mjs <Ordner>` schreibt sie zum Ansehen als OBJ
+- Die früheren Generatoren (`villagers.mjs`, `buildings.mjs` ...) und der Export der Modelle
+  aus `.blend` sind entfallen; sie stehen in der Git-Geschichte.
 - `ui/icons.mjs` + `ui/icons.html` - rendert die Spielmodelle als Symbole
 - `ui/wood-bar.mjs` - Holzplanken für die Rohstoffleiste
 - `ui/smoke.mjs` - Rauchtest im Browser (`npm run smoke`, bei laufendem `npm run dev`):
@@ -25,7 +27,7 @@ Nach einer Änderung neu erzeugen und die Ergebnisse mit einchecken.
 
 `gen:ui` braucht Google Chrome (über `playwright-core`). Liegt Chrome nicht am
 üblichen Ort unter macOS, den Pfad in der Umgebungsvariable `CHROME` angeben.
-Die Symbole zeigen die Modelle - nach `gen:models` also auch `gen:ui` laufen lassen.
+Die Symbole zeigen die Modelle - nach einer Änderung an einem Modell also `gen:ui` laufen lassen.
 
 ## L-System-Bäume (`lsystem/`)
 

@@ -1,9 +1,9 @@
 # Was noch offen ist
 
-Stand 25.09.2026, Branch `animation-migration`. Alles, was im Spiel eine Form
-hat oder sich bewegt, kommt aus Blender (docs/BLENDER.md, docs/ANIMATION.md):
-59 Modelle in `assets/blender/models/`, 4 Clip-Bibliotheken in
-`assets/blender/clips/`, die Felder aus Pflanzen-Teilen. Die Bewegungsformeln
+Stand 25.09.2026. Alles, was im Spiel eine Form hat oder sich bewegt, kommt
+aus Blender (docs/BLENDER.md, docs/ANIMATION.md): 59 Modelle als `.glb` in
+`src/models/`, 4 Clip-Bibliotheken in `assets/blender/clips/`, die Felder aus
+Pflanzen-Teilen. Die Bewegungsformeln
 im Shader sind gelöscht. `npm test` wacht darüber, dass keine ID verloren
 geht.
 
@@ -11,20 +11,23 @@ Was danach noch zu tun bleibt, grob nach Wichtigkeit.
 
 ## Zuerst
 
-- **Branch in `main` übernehmen.** `animation-migration` ist gepusht, aber
-  noch nicht in `main`. Er enthält auch die Bognerei, die Waffenkammer und die
-  Galerie-Änderungen, die vorher lokal auf `main` lagen.
 - **Mögliche Konflikte beim Übernehmen:** Der L-System-Branch
   (`lsystem-blattebenen`, eigener Worktree unter `.agents/worktree`) ändert
   ebenfalls `tools/README.md`, dessen Anfang hier neu geschrieben wurde.
-- **Vercel:** Die `.blend`-Dateien liegen in Git LFS (63 Dateien, rund 25 MB).
+- **Vercel:** Die Clip-Bibliotheken (`.blend`, 4 Dateien) liegen in Git LFS.
   Das Spiel braucht sie nicht zum Bauen, nur `src/models/`. Prüfen, ob der
-  LFS-Abruf beim Deploy unnötig Zeit oder Kontingent kostet; notfalls die
-  `.blend`-Dateien für den Build ausnehmen.
+  LFS-Abruf beim Deploy unnötig Zeit oder Kontingent kostet.
+- **Clips ebenfalls als `.glb`?** Die Modelle brauchen seit dem Umzug nach
+  `.glb` keinen Export mehr, die Clip-Bibliotheken schon (`npm run gen:anim`,
+  Blender und die Python-Skripte in `tools/blender/`). Die erzeugten
+  `*_clips.glb` sind schon glTF - zu klären, ob Blenders eigener glTF-Export
+  der Aktionen dasselbe ergibt; dann könnten die `.blend`-Dateien und das
+  Python entfallen.
 - **Tests automatisch laufen lassen.** `npm test` und `npm run smoke` laufen
   nur von Hand. Eine CI (z. B. GitHub Actions) würde bei jedem Push prüfen.
-  Die Blender-Tests überspringen sich dort, wenn Blender fehlt. Ohne Blender
-  in der CI prüft nur der lokale Lauf, dass `.blend` und OBJ gleich sind.
+  Der Blender-Test überspringt sich dort, wenn Blender fehlt. Ohne Blender
+  in der CI prüft nur der lokale Lauf, dass die Clip-Bibliotheken und
+  `src/models/*_clips.glb` gleich sind.
 
 ## Prüfen
 

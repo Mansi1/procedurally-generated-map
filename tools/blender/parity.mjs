@@ -17,6 +17,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { pose } from '../export/poses.mjs';
+import { readModel } from '../models/glb.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const without = new Set((process.env.PARITY_OHNE ?? '').split(',').filter(Boolean));
@@ -39,7 +40,7 @@ function figure(file, stride) {
   let hip = -1e9, sh = -1e9, el = -1e9, kn = -1e9, minY = 1e9, maxY = -1e9;
   const fa = [1e9, 0];
   const verts = [];
-  for (const l of readFileSync(`${root}src/models/${file}`, 'utf8').split('\n')) {
+  for (const l of readModel(file.replace(/\.obj$/, '')).obj.split('\n')) {
     if (l.startsWith('o ')) obj = l.slice(2);
     if (!l.startsWith('v ')) continue;
     const [x, y, z] = l.split(' ').slice(1).map(Number);

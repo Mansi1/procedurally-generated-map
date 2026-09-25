@@ -5,15 +5,16 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { readModel } from '../tools/models/glb.mjs';
 
 export const root = new URL('../', import.meta.url).pathname;
 export const modelsDir = join(root, 'src/models');
 export const snapshotFile = join(root, 'tests/ids.snapshot.json');
 
-/** Namen der Objekte eines OBJ - jeder einmal, sortiert. */
-export function objectNames(file) {
+/** Namen der Objekte eines Modells (src/models/<model>.glb) - jeder einmal, sortiert. */
+export function objectNames(model, dir = modelsDir) {
   const names = new Set();
-  for (const line of readFileSync(file, 'utf8').split('\n')) {
+  for (const line of readModel(model, dir).obj.split('\n')) {
     if (line.startsWith('o ') || line.startsWith('g ')) names.add(line.slice(2).trim());
   }
   return [...names].sort();
@@ -33,7 +34,7 @@ function glbNames(file) {
 /** Alle IDs, wie sie jetzt in src/models stehen. */
 export function collectIds(dir = modelsDir) {
   const models = {};
-  for (const f of readdirSync(dir).filter((f) => f.endsWith('.obj')).sort()) models[f.slice(0, -4)] = objectNames(join(dir, f));
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.glb') && !f.endsWith('_clips.glb')).sort()) models[f.slice(0, -4)] = objectNames(f.slice(0, -4), dir);
   const clips = {};
   for (const f of readdirSync(dir).filter((f) => f.endsWith('_clips.glb')).sort()) {
     const name = f.slice(0, -'_clips.glb'.length);

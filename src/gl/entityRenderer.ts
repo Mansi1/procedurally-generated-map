@@ -26,112 +26,67 @@ import {
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
-import villagerMaleObj from '../models/villager_male.obj?raw';
-import villagerFemaleObj from '../models/villager_female.obj?raw';
-import villagerMtl from '../models/villager.mtl?raw';
-import propAxeObj from '../models/prop_axe.obj?raw';
-import propKnifeObj from '../models/prop_knife.obj?raw';
-import propScytheMaleObj from '../models/prop_scythe_male.obj?raw';
-import propScytheFemaleObj from '../models/prop_scythe_female.obj?raw';
-import millObj from '../models/mill.obj?raw';
-import millMtl from '../models/mill.mtl?raw';
-import mill2Obj from '../models/mill_2.obj?raw';
-import mill2Mtl from '../models/mill_2.mtl?raw';
-import mill3Obj from '../models/mill_3.obj?raw';
-import mill3Mtl from '../models/mill_3.mtl?raw';
-import mill4Obj from '../models/mill_4.obj?raw';
-import mill4Mtl from '../models/mill_4.mtl?raw';
-import lumberCampObj from '../models/lumber_camp.obj?raw';
-import lumberCampMtl from '../models/lumber_camp.mtl?raw';
-import lumberCamp2Obj from '../models/lumber_camp_2.obj?raw';
-import lumberCamp2Mtl from '../models/lumber_camp_2.mtl?raw';
-import lumberCamp3Obj from '../models/lumber_camp_3.obj?raw';
-import lumberCamp3Mtl from '../models/lumber_camp_3.mtl?raw';
-import lumberCamp4Obj from '../models/lumber_camp_4.obj?raw';
-import lumberCamp4Mtl from '../models/lumber_camp_4.mtl?raw';
-import houseObj from '../models/house.obj?raw';
-import houseMtl from '../models/house.mtl?raw';
-import house2Obj from '../models/house_2.obj?raw';
-import house2Mtl from '../models/house_2.mtl?raw';
-import house3Obj from '../models/house_3.obj?raw';
-import house3Mtl from '../models/house_3.mtl?raw';
-import house4Obj from '../models/house_4.obj?raw';
-import house4Mtl from '../models/house_4.mtl?raw';
-import townCenterObj from '../models/town_center.obj?raw';
-import townCenterMtl from '../models/town_center.mtl?raw';
-import miningCampObj from '../models/mining_camp.obj?raw';
-import miningCampMtl from '../models/mining_camp.mtl?raw';
-import treeSpruceObj from '../models/tree_spruce.obj?raw';
-import treeSpruceMtl from '../models/tree_spruce.mtl?raw';
-import treePineObj from '../models/tree_pine.obj?raw';
-import treePineMtl from '../models/tree_pine.mtl?raw';
-import treeOakObj from '../models/tree_oak.obj?raw';
-import treeOakMtl from '../models/tree_oak.mtl?raw';
-import treeBirchObj from '../models/tree_birch.obj?raw';
-import treeBirchMtl from '../models/tree_birch.mtl?raw';
-import treeBirch2Obj from '../models/tree_birch_2.obj?raw';
-import treeBirch2Mtl from '../models/tree_birch_2.mtl?raw';
-import treeBirch3Obj from '../models/tree_birch_3.obj?raw';
-import treeBirch3Mtl from '../models/tree_birch_3.mtl?raw';
-import treePoplarObj from '../models/tree_poplar.obj?raw';
-import treePoplarMtl from '../models/tree_poplar.mtl?raw';
-import treeMapleObj from '../models/tree_maple.obj?raw';
-import treeMapleMtl from '../models/tree_maple.mtl?raw';
-import treeOakOldObj from '../models/tree_oak_old.obj?raw';
-import treeOakOldMtl from '../models/tree_oak_old.mtl?raw';
-import treeOakYoungObj from '../models/tree_oak_young.obj?raw';
-import treeOakYoungMtl from '../models/tree_oak_young.mtl?raw';
-import stone1Obj from '../models/stone_1.obj?raw';
-import stone1Mtl from '../models/stone_1.mtl?raw';
-import stone2Obj from '../models/stone_2.obj?raw';
-import stone2Mtl from '../models/stone_2.mtl?raw';
-import stone3Obj from '../models/stone_3.obj?raw';
-import stone3Mtl from '../models/stone_3.mtl?raw';
-import gold1Obj from '../models/gold_1.obj?raw';
-import gold1Mtl from '../models/gold_1.mtl?raw';
-import gold2Obj from '../models/gold_2.obj?raw';
-import gold2Mtl from '../models/gold_2.mtl?raw';
-import gold3Obj from '../models/gold_3.obj?raw';
-import gold3Mtl from '../models/gold_3.mtl?raw';
-import berryBush1Obj from '../models/berry_bush_1.obj?raw';
-import berryBush1Mtl from '../models/berry_bush_1.mtl?raw';
-import berryBush2Obj from '../models/berry_bush_2.obj?raw';
-import berryBush2Mtl from '../models/berry_bush_2.mtl?raw';
-import berryBush3Obj from '../models/berry_bush_3.obj?raw';
-import berryBush3Mtl from '../models/berry_bush_3.mtl?raw';
-import berryBush4Obj from '../models/berry_bush_4.obj?raw';
-import berryBush4Mtl from '../models/berry_bush_4.mtl?raw';
+import villagerMaleModel from '../models/villager_male.glb?model';
+import villagerFemaleModel from '../models/villager_female.glb?model';
+import propAxeModel from '../models/prop_axe.glb?model';
+import propKnifeModel from '../models/prop_knife.glb?model';
+import propScytheMaleModel from '../models/prop_scythe_male.glb?model';
+import propScytheFemaleModel from '../models/prop_scythe_female.glb?model';
+import millModel from '../models/mill.glb?model';
+import mill2Model from '../models/mill_2.glb?model';
+import mill3Model from '../models/mill_3.glb?model';
+import mill4Model from '../models/mill_4.glb?model';
+import lumberCampModel from '../models/lumber_camp.glb?model';
+import lumberCamp2Model from '../models/lumber_camp_2.glb?model';
+import lumberCamp3Model from '../models/lumber_camp_3.glb?model';
+import lumberCamp4Model from '../models/lumber_camp_4.glb?model';
+import houseModel from '../models/house.glb?model';
+import house2Model from '../models/house_2.glb?model';
+import house3Model from '../models/house_3.glb?model';
+import house4Model from '../models/house_4.glb?model';
+import townCenterModel from '../models/town_center.glb?model';
+import miningCampModel from '../models/mining_camp.glb?model';
+import treeSpruceModel from '../models/tree_spruce.glb?model';
+import treePineModel from '../models/tree_pine.glb?model';
+import treeOakModel from '../models/tree_oak.glb?model';
+import treeBirchModel from '../models/tree_birch.glb?model';
+import treeBirch2Model from '../models/tree_birch_2.glb?model';
+import treeBirch3Model from '../models/tree_birch_3.glb?model';
+import treePoplarModel from '../models/tree_poplar.glb?model';
+import treeMapleModel from '../models/tree_maple.glb?model';
+import treeOakOldModel from '../models/tree_oak_old.glb?model';
+import treeOakYoungModel from '../models/tree_oak_young.glb?model';
+import stone1Model from '../models/stone_1.glb?model';
+import stone2Model from '../models/stone_2.glb?model';
+import stone3Model from '../models/stone_3.glb?model';
+import gold1Model from '../models/gold_1.glb?model';
+import gold2Model from '../models/gold_2.glb?model';
+import gold3Model from '../models/gold_3.glb?model';
+import berryBush1Model from '../models/berry_bush_1.glb?model';
+import berryBush2Model from '../models/berry_bush_2.glb?model';
+import berryBush3Model from '../models/berry_bush_3.glb?model';
+import berryBush4Model from '../models/berry_bush_4.glb?model';
 import { FARM_KINDS, FIELD_PARTS, farmModel } from '../../tools/models/farmsGen.mjs';
 
-/** Teile der Felder aus Blender (assets/blender/models/fields/, docs/BLENDER.md). */
-const FIELD_PART_FILES = import.meta.glob('../models/field_*.{obj,mtl}', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
-const FIELD_PART_MODELS = Object.fromEntries(FIELD_PARTS.map((n) => [n, {
-  obj: FIELD_PART_FILES[`../models/field_${n}.obj`],
-  mtl: FIELD_PART_FILES[`../models/field_${n}.mtl`],
-}]));
-import deerObj from '../models/deer.obj?raw';
-import deerMtl from '../models/deer.mtl?raw';
-import hareObj from '../models/hare.obj?raw';
-import hareMtl from '../models/hare.mtl?raw';
-import cowObj from '../models/cow.obj?raw';
-import cowMtl from '../models/cow.mtl?raw';
-import sheepObj from '../models/sheep.obj?raw';
-import sheepMtl from '../models/sheep.mtl?raw';
-import goatObj from '../models/goat.obj?raw';
-import goatMtl from '../models/goat.mtl?raw';
-import boarObj from '../models/boar.obj?raw';
-import boarMtl from '../models/boar.mtl?raw';
+/** Teile der Felder (src/models/field_*.glb, docs/BLENDER.md). */
+const FIELD_PART_FILES = import.meta.glob('../models/field_*.glb', { eager: true, query: '?model', import: 'default' }) as Record<string, { obj: string; mtl: string }>;
+const FIELD_PART_MODELS = Object.fromEntries(FIELD_PARTS.map((n) => [n, FIELD_PART_FILES[`../models/field_${n}.glb`]]));
+import deerModel from '../models/deer.glb?model';
+import hareModel from '../models/hare.glb?model';
+import cowModel from '../models/cow.glb?model';
+import sheepModel from '../models/sheep.glb?model';
+import goatModel from '../models/goat.glb?model';
+import boarModel from '../models/boar.glb?model';
 import birchLeafUrl from '../textures/birch_leaf.png';
-import rallyFlagObj from '../models/rally_flag.obj?raw';
-import rallyFlagMtl from '../models/rally_flag.mtl?raw';
-import bowyerObj from '../models/bowyer.obj?raw';
-import bowyerMtl from '../models/bowyer.mtl?raw';
-import armoryObj from '../models/armory.obj?raw';
-import armoryMtl from '../models/armory.mtl?raw';
-import markerArrowObj from '../models/marker_arrow.obj?raw';
-import markerArrowMtl from '../models/marker_arrow.mtl?raw';
-import bowObj from '../models/bow.obj?raw';
-import bowMtl from '../models/bow.mtl?raw';
+import rallyFlagModel from '../models/rally_flag.glb?model';
+import bowyerModel from '../models/bowyer.glb?model';
+import armoryModel from '../models/armory.glb?model';
+import markerArrowModel from '../models/marker_arrow.glb?model';
+import bowModel from '../models/bow.glb?model';
+
+/** Materialien der Dorfbewohner und ihrer Werkzeuge - jedes Modell bringt seine mit. */
+const villagerMtl = [villagerMaleModel, villagerFemaleModel, propAxeModel, propKnifeModel, propScytheMaleModel, propScytheFemaleModel]
+  .map((m) => m.mtl).join('\n');
 
 /** Formen für aParams.x - die Zahlen stehen so auch im Shader. */
 export const SHAPE = {
@@ -471,7 +426,7 @@ const FIELD_SOIL_METERS = '0.02';
 
 /**
  * Stufen des Werkstücks auf der Werkbank der Bognerei (Objekte "Craft.0" bis
- * "Craft.2" in assets/blender/models/buildings/bowyer.blend): grob behauen, ausgearbeitet,
+ * "Craft.2" in src/models/bowyer.glb): grob behauen, ausgearbeitet,
  * gespannter Bogen.
  */
 export const CRAFT_STAGES = 3;
@@ -2270,74 +2225,74 @@ function natural(shape: number, obj: string, mtl: string, meters: number) {
  * Formen, die aus Modell-Dateien kommen. `scale`: Tiles je Einheit der
  * Instanzgröße - eine Figur der Größe 0.55 ist 0.55 * 1.7 Tiles hoch.
  */
-const PROP_AXE = loadModel(propAxeObj, villagerMtl, 'meters');
-const PROP_KNIFE = loadModel(propKnifeObj, villagerMtl, 'meters');
+const PROP_AXE = loadModel(propAxeModel.obj, villagerMtl, 'meters');
+const PROP_KNIFE = loadModel(propKnifeModel.obj, villagerMtl, 'meters');
 
 const MODELS: {
   shape: number; model: Model; scale: number; stride?: number;
   /** Anhang: der Körper, dessen Gelenke, Clips und Hand es beim Zeichnen nutzt. */
   body?: number;
 }[] = [
-  { shape: SHAPE.villager, model: loadModel(villagerMaleObj, villagerMtl, 'height'), scale: 1.7 },
+  { shape: SHAPE.villager, model: loadModel(villagerMaleModel.obj, villagerMtl, 'height'), scale: 1.7 },
   // Kürzere Schritte, sonst treten die Beine hinten aus dem langen Rock.
-  { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleObj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
+  { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleModel.obj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
   // Werkzeuge als Anhänge: Beil und Zugmesser einmal für beide Körper, die
   // Sense je Körper (ihr Stiel liegt in der Mäh-Haltung in beiden Händen).
   { shape: SHAPE.propAxe, model: PROP_AXE, scale: 1.7, body: SHAPE.villager },
   { shape: SHAPE.propAxeFemale, model: PROP_AXE, scale: 1.7, body: SHAPE.villagerFemale },
   { shape: SHAPE.propKnife, model: PROP_KNIFE, scale: 1.7, body: SHAPE.villager },
   { shape: SHAPE.propKnifeFemale, model: PROP_KNIFE, scale: 1.7, body: SHAPE.villagerFemale },
-  { shape: SHAPE.propScythe, model: loadModel(propScytheMaleObj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villager },
-  { shape: SHAPE.propScytheFemale, model: loadModel(propScytheFemaleObj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villagerFemale },
-  { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
-  { shape: SHAPE.mill2, model: loadModel(mill2Obj, mill2Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.mill3, model: loadModel(mill3Obj, mill3Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.mill4, model: loadModel(mill4Obj, mill4Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.lumberCamp, model: loadModel(lumberCampObj, lumberCampMtl, 'width'), scale: 1 },
-  { shape: SHAPE.lumberCamp2, model: loadModel(lumberCamp2Obj, lumberCamp2Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.lumberCamp3, model: loadModel(lumberCamp3Obj, lumberCamp3Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.lumberCamp4, model: loadModel(lumberCamp4Obj, lumberCamp4Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.house, model: loadModel(houseObj, houseMtl, 'width'), scale: 1 },
-  { shape: SHAPE.house2, model: loadModel(house2Obj, house2Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.house3, model: loadModel(house3Obj, house3Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.house4, model: loadModel(house4Obj, house4Mtl, 'width'), scale: 1 },
-  { shape: SHAPE.townCenter, model: loadModel(townCenterObj, townCenterMtl, 'width'), scale: 1 },
-  { shape: SHAPE.miningCamp, model: loadModel(miningCampObj, miningCampMtl, 'width'), scale: 1 },
-  { shape: SHAPE.bowyer, model: loadModel(bowyerObj, bowyerMtl, 'width'), scale: 1 },
-  { shape: SHAPE.bow, model: loadModel(bowObj, bowMtl, 'height'), scale: 1 },
-  { shape: SHAPE.armory, model: loadModel(armoryObj, armoryMtl, 'width'), scale: 1 },
-  { shape: SHAPE.markerArrow, model: loadModel(markerArrowObj, markerArrowMtl, 'height'), scale: 1 },
+  { shape: SHAPE.propScythe, model: loadModel(propScytheMaleModel.obj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propScytheFemale, model: loadModel(propScytheFemaleModel.obj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villagerFemale },
+  { shape: SHAPE.mill, model: loadModel(millModel.obj, millModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.mill2, model: loadModel(mill2Model.obj, mill2Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.mill3, model: loadModel(mill3Model.obj, mill3Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.mill4, model: loadModel(mill4Model.obj, mill4Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp, model: loadModel(lumberCampModel.obj, lumberCampModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp2, model: loadModel(lumberCamp2Model.obj, lumberCamp2Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp3, model: loadModel(lumberCamp3Model.obj, lumberCamp3Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.lumberCamp4, model: loadModel(lumberCamp4Model.obj, lumberCamp4Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.house, model: loadModel(houseModel.obj, houseModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.house2, model: loadModel(house2Model.obj, house2Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.house3, model: loadModel(house3Model.obj, house3Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.house4, model: loadModel(house4Model.obj, house4Model.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.townCenter, model: loadModel(townCenterModel.obj, townCenterModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.miningCamp, model: loadModel(miningCampModel.obj, miningCampModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.bowyer, model: loadModel(bowyerModel.obj, bowyerModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.bow, model: loadModel(bowModel.obj, bowModel.mtl, 'height'), scale: 1 },
+  { shape: SHAPE.armory, model: loadModel(armoryModel.obj, armoryModel.mtl, 'width'), scale: 1 },
+  { shape: SHAPE.markerArrow, model: loadModel(markerArrowModel.obj, markerArrowModel.mtl, 'height'), scale: 1 },
   ...FARM_KINDS.flatMap((kind, i) => fieldModels(kind, FIELD_BASES[i])),
-  ...natural(SHAPE.tree, treeSpruceObj, treeSpruceMtl, TREE_METERS),
-  ...natural(SHAPE.treePine, treePineObj, treePineMtl, TREE_METERS),
-  ...natural(SHAPE.treeOak, treeOakObj, treeOakMtl, TREE_METERS),
-  ...natural(SHAPE.treeBirch, treeBirchObj, treeBirchMtl, TREE_METERS),
-  ...natural(SHAPE.treeBirch2, treeBirch2Obj, treeBirch2Mtl, TREE_METERS),
-  ...natural(SHAPE.treeBirch3, treeBirch3Obj, treeBirch3Mtl, TREE_METERS),
-  ...natural(SHAPE.treePoplar, treePoplarObj, treePoplarMtl, TREE_METERS),
-  ...natural(SHAPE.treeMaple, treeMapleObj, treeMapleMtl, TREE_METERS),
-  ...natural(SHAPE.treeOakOld, treeOakOldObj, treeOakOldMtl, TREE_METERS),
-  ...natural(SHAPE.treeOakYoung, treeOakYoungObj, treeOakYoungMtl, TREE_METERS),
-  ...natural(SHAPE.stoneRock, stone1Obj, stone1Mtl, STONE_METERS),
-  ...natural(SHAPE.stoneRock2, stone2Obj, stone2Mtl, STONE_METERS),
-  ...natural(SHAPE.stoneRock3, stone3Obj, stone3Mtl, STONE_METERS),
-  ...natural(SHAPE.goldRock, gold1Obj, gold1Mtl, GOLD_METERS),
-  ...natural(SHAPE.goldRock2, gold2Obj, gold2Mtl, GOLD_METERS),
-  ...natural(SHAPE.goldRock3, gold3Obj, gold3Mtl, GOLD_METERS),
-  ...natural(SHAPE.berryBush, berryBush1Obj, berryBush1Mtl, BUSH_METERS),
-  ...natural(SHAPE.berryBush2, berryBush2Obj, berryBush2Mtl, BUSH_METERS),
-  ...natural(SHAPE.berryBush3, berryBush3Obj, berryBush3Mtl, BUSH_METERS),
-  ...natural(SHAPE.berryBush4, berryBush4Obj, berryBush4Mtl, BUSH_METERS),
+  ...natural(SHAPE.tree, treeSpruceModel.obj, treeSpruceModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treePine, treePineModel.obj, treePineModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treeOak, treeOakModel.obj, treeOakModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treeBirch, treeBirchModel.obj, treeBirchModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treeBirch2, treeBirch2Model.obj, treeBirch2Model.mtl, TREE_METERS),
+  ...natural(SHAPE.treeBirch3, treeBirch3Model.obj, treeBirch3Model.mtl, TREE_METERS),
+  ...natural(SHAPE.treePoplar, treePoplarModel.obj, treePoplarModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treeMaple, treeMapleModel.obj, treeMapleModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treeOakOld, treeOakOldModel.obj, treeOakOldModel.mtl, TREE_METERS),
+  ...natural(SHAPE.treeOakYoung, treeOakYoungModel.obj, treeOakYoungModel.mtl, TREE_METERS),
+  ...natural(SHAPE.stoneRock, stone1Model.obj, stone1Model.mtl, STONE_METERS),
+  ...natural(SHAPE.stoneRock2, stone2Model.obj, stone2Model.mtl, STONE_METERS),
+  ...natural(SHAPE.stoneRock3, stone3Model.obj, stone3Model.mtl, STONE_METERS),
+  ...natural(SHAPE.goldRock, gold1Model.obj, gold1Model.mtl, GOLD_METERS),
+  ...natural(SHAPE.goldRock2, gold2Model.obj, gold2Model.mtl, GOLD_METERS),
+  ...natural(SHAPE.goldRock3, gold3Model.obj, gold3Model.mtl, GOLD_METERS),
+  ...natural(SHAPE.berryBush, berryBush1Model.obj, berryBush1Model.mtl, BUSH_METERS),
+  ...natural(SHAPE.berryBush2, berryBush2Model.obj, berryBush2Model.mtl, BUSH_METERS),
+  ...natural(SHAPE.berryBush3, berryBush3Model.obj, berryBush3Model.mtl, BUSH_METERS),
+  ...natural(SHAPE.berryBush4, berryBush4Model.obj, berryBush4Model.mtl, BUSH_METERS),
   // Nach Höhe gemessen: das Tuch bewegt sich und zählt nicht zur Breite,
   // der Mast allein wäre als Maßstab viel zu schmal.
-  { shape: SHAPE.rallyFlag, model: loadModel(rallyFlagObj, rallyFlagMtl, 'height'), scale: 1 },
+  { shape: SHAPE.rallyFlag, model: loadModel(rallyFlagModel.obj, rallyFlagModel.mtl, 'height'), scale: 1 },
   // Tiere: auf Höhe 1 gebracht - die Instanzgröße ist ihre Höhe in Tiles.
-  { shape: SHAPE.deer, model: loadModel(deerObj, deerMtl, 'height'), scale: 1 },
-  { shape: SHAPE.hare, model: loadModel(hareObj, hareMtl, 'height'), scale: 1 },
-  { shape: SHAPE.cow, model: loadModel(cowObj, cowMtl, 'height'), scale: 1 },
-  { shape: SHAPE.sheep, model: loadModel(sheepObj, sheepMtl, 'height'), scale: 1 },
-  { shape: SHAPE.goat, model: loadModel(goatObj, goatMtl, 'height'), scale: 1 },
-  { shape: SHAPE.boar, model: loadModel(boarObj, boarMtl, 'height'), scale: 1 },
+  { shape: SHAPE.deer, model: loadModel(deerModel.obj, deerModel.mtl, 'height'), scale: 1 },
+  { shape: SHAPE.hare, model: loadModel(hareModel.obj, hareModel.mtl, 'height'), scale: 1 },
+  { shape: SHAPE.cow, model: loadModel(cowModel.obj, cowModel.mtl, 'height'), scale: 1 },
+  { shape: SHAPE.sheep, model: loadModel(sheepModel.obj, sheepModel.mtl, 'height'), scale: 1 },
+  { shape: SHAPE.goat, model: loadModel(goatModel.obj, goatModel.mtl, 'height'), scale: 1 },
+  { shape: SHAPE.boar, model: loadModel(boarModel.obj, boarModel.mtl, 'height'), scale: 1 },
 ];
 
 /**

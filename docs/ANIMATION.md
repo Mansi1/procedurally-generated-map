@@ -46,7 +46,7 @@ Phase 0 und Phase 1 sind fertig. Von Phase 2 ist der erste Teil fertig:
 
 **Werkzeuge sind Anhänge:** Beil, Sense und Zugmesser stecken nicht mehr in
 den Körpern, sondern sind eigene Modelle an der rechten Hand
-(`src/models/prop_*.obj`). Sie erscheinen je nach den `props` des Clips, den
+(`src/models/prop_*.glb`). Sie erscheinen je nach den `props` des Clips, den
 die Figur gerade spielt. Das Bild ist Pixel für Pixel wie vorher (alle Posen
 von Mann und Frau). Die eine Ausnahme ist das Zugmesser der Frau: Es war
 bisher für ihren Handabstand eigens gebaut und wird jetzt aus dem des Mannes
@@ -123,10 +123,9 @@ Aus Phase 1:
 Die Migration läuft auf dem Branch `animation-migration`.
 
 ```
- 1. KÖRPER (aus Blender, docs/BLENDER.md)
-    assets/blender/models/villagers/villager_male.blend ──► src/models/villager_male.obj
-    assets/blender/models/villagers/villager_female.blend ──► src/models/villager_female.obj
-                                   (npm run gen:models; Teilnamen wie Arm.L.Lower + Materialnamen)
+ 1. KÖRPER (in Blender bearbeitet, docs/BLENDER.md)
+    src/models/villager_male.glb, src/models/villager_female.glb
+                                   (Import/Export glTF; Teilnamen wie Arm.L.Lower + Materialnamen)
 
  2. EINMALIGE EINRICHTUNG (erledigt)
     tools/export/bognerei.mjs ──► tools/export/out/bognerei.glb
@@ -157,9 +156,9 @@ Die Migration läuft auf dem Branch `animation-migration`.
 | Art | Dateien | Bearbeiten? |
 |---|---|---|
 | Quelle: Bewegung | `assets/blender/clips/*.blend` (Git LFS) | ja, in Blender |
-| Quelle: Körperform | `assets/blender/models/villagers/*.blend` (Git LFS) | ja, in Blender |
+| Quelle: Körperform | `src/models/villager_*.glb` | ja, in Blender (Import/Export glTF) |
 | Quelle: Spiel-Logik | `src/gl/clips.ts`, `src/gl/entityRenderer.ts` | ja, als Code |
-| Erzeugt | `src/models/*_clips.glb` + `.json`, `src/models/*.obj` | nein, neu erzeugen |
+| Erzeugt | `src/models/*_clips.glb` + `.json` | nein, neu erzeugen |
 | Werkzeuge | `tools/blender/*` (Export), `tools/export/*` (Einrichtung, glTF-Vorschau) | nur für die Pipeline |
 
 **Was wo geändert wird:**
@@ -171,8 +170,8 @@ Die Migration läuft auf dem Branch `animation-migration`.
 | einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
 | festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
 | einen Clip nur für bestimmte Tiere | Custom Property `species` der Action (z. B. `hare`) | `npm run gen:anim` |
-| die Form eines Körpers ändern | `assets/blender/models/villagers/villager_*.blend` | `npm run gen:models` |
-| ein Werkzeug ändern oder neu anhängen | `assets/blender/models/props/prop_*.blend`, `FIGURE_PROPS` in `entityRenderer.ts` | `npm run gen:models`, siehe „Werkzeuge anhängen“ |
+| die Form eines Körpers ändern | `src/models/villager_*.glb` in Blender | – (Export über die Datei) |
+| ein Werkzeug ändern oder neu anhängen | `src/models/prop_*.glb` in Blender, `FIGURE_PROPS` in `entityRenderer.ts` | siehe „Werkzeuge anhängen“ |
 | einen Clip ansehen | Galerie → „Clips aus Blender“ | – |
 
 **Drei Regeln halten es zusammen:**
@@ -187,7 +186,7 @@ Die Migration läuft auf dem Branch `animation-migration`.
 
 ## Werkzeuge anhängen
 
-Ein Werkzeug ist ein eigenes kleines Modell (`src/models/prop_<name>.obj`),
+Ein Werkzeug ist ein eigenes kleines Modell (`src/models/prop_<name>.glb`),
 in Metern, mit dem Ursprung in der Mitte der rechten Hand in Ruhelage (Arm
 hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
 
@@ -207,10 +206,9 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
 
 **Ein neues Werkzeug (z. B. den Bogen):**
 
-1. In Blender bauen: eine Kopie von `assets/blender/models/props/prop_axe.blend`
-   als `prop_<name>.blend`. Der Ursprung ist die Mitte der rechten Hand, die
-   Objekte heißen `Arm.R.Lower.Tool…` (Custom Property `obj_name`).
-   `npm run gen:models` schreibt `src/models/prop_<name>.obj`.
+1. In Blender bauen: `src/models/prop_axe.glb` importieren, ändern und als
+   `src/models/prop_<name>.glb` exportieren. Der Ursprung ist die Mitte der
+   rechten Hand, die Objekte heißen `Arm.R.Lower.Tool…`.
 2. In `entityRenderer.ts`: je Körper eine Form in `SHAPE`, ein Eintrag in
    `MODELS` mit `body`, ein Bit in `PROP_BITS` (`clips.ts`) und ein Eintrag
    in `FIGURE_PROPS`. Die Teile heißen wie beim Beil (`Arm.R.Lower.Tool…`),
@@ -393,7 +391,7 @@ Ziel **Clip** heißt: Skelett und Keyframes aus Blender. **Zustand** heißt:
 bleibt im Shader und wird vom Spiel gesteuert. **Ereignis** heißt: bleibt
 prozedural, weil Richtung, Zufall oder Physik erst zur Laufzeit feststehen.
 
-### Dorfbewohner und Dorfbewohnerin (`villager_male/female.obj`)
+### Dorfbewohner und Dorfbewohnerin (`villager_male/female.glb`)
 
 | Bewegung | Heute | Ziel | Phase |
 |---|---|---|---|
@@ -458,7 +456,7 @@ Anzeigen, keine Animationen.
 - **Takt-Marken:** Wann ein Hieb trifft (für den Ton), steht als
   Custom Property `strike` (Zeiten in Sekunden) an der Action. Heute rechnet
   `VillagerWork.swing()` das aus der Formel.
-- **Quellen:** `.blend`-Dateien liegen in `assets/blender/clips/` (Clips) und `assets/blender/models/` (Modelle), über Git LFS wie
+- **Quellen:** `.blend`-Dateien liegen in `assets/blender/clips/` (Clips), über Git LFS wie
   die MP3s. Dafür kommt ein Eintrag in `.gitattributes`.
 - **Export:** Ein Skript ruft Blender ohne Oberfläche auf
   (`blender -b datei.blend --python tools/blender/export.py`) und schreibt
@@ -475,8 +473,8 @@ Umgesetzt wie unten beschrieben, mit diesen Abweichungen:
   Wie Blender Knochen intern ausrichtet, spielt deshalb keine Rolle, und ein
   Clip passt auf jeden Körper mit denselben Knochennamen: Mann 1,76 m, Frau
   1,72 m.
-- **Körper:** Die Körper kommen als OBJ aus Blender
-  (`assets/blender/models/villagers/`). Gewichte trägt das OBJ nicht. Der Shader leitet je Eckpunkt
+- **Körper:** Die Körper sind `.glb` aus Blender
+  (`src/models/villager_*.glb`). Gewichte liest das Spiel daraus nicht. Der Shader leitet je Eckpunkt
   den Knochen aus der Teilnummer ab (`boneOf()`). Das Zugmesser verteilt er
   wie bisher auf beide Unterarme. Weiche Gewichte aus Blender folgen in
   Phase 2.
