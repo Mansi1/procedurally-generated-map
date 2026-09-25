@@ -4,12 +4,74 @@
   "fps": 30.0,
   "clips": [
     {
+      "name": "stand",
+      "frames": 1021,
+      "duration": 34.0,
+      "props": [
+        "axe"
+      ],
+      "kneel": false,
+      "pose": 0,
+      "phase_period": 34.0,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "walk",
+      "frames": 61,
+      "duration": 2.0,
+      "props": [
+        "axe"
+      ],
+      "kneel": false,
+      "pose": 1,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "chop",
+      "frames": 32,
+      "duration": 1.0333333333333334,
+      "props": [
+        "axe"
+      ],
+      "kneel": false,
+      "pose": 2,
+      "phase_period": 6.283185307179586,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "pick",
+      "frames": 106,
+      "duration": 3.5,
+      "props": [],
+      "kneel": true,
+      "pose": 3,
+      "phase_period": 20.943951023931955,
+      "phase_shift": 0.0
+    },
+    {
+      "name": "mow",
+      "frames": 53,
+      "duration": 1.7333333333333334,
+      "props": [
+        "scythe"
+      ],
+      "kneel": false,
+      "pose": 4,
+      "phase_period": 10.471975511965978,
+      "phase_shift": 0.0
+    },
+    {
       "name": "carve",
       "frames": 786,
       "duration": 26.166666666666668,
       "props": [
         "knife"
-      ]
+      ],
+      "kneel": false,
+      "pose": 5,
+      "phase_period": 157.07963267948966,
+      "phase_shift": 7.853981666666667
     }
   ]
 }

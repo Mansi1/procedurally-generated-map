@@ -11,7 +11,8 @@
     "gen:ui": "node tools/ui/icons.mjs && node tools/ui/wood-bar.mjs",
     "smoke": "node tools/ui/smoke.mjs",
     "export:bognerei": "node tools/export/bognerei.mjs && node tools/export/bognerei.mjs frau",
-    "gen:anim": "node tools/blender/export-all.mjs"
+    "gen:anim": "node tools/blender/export-all.mjs",
+    "check:anim": "node tools/blender/parity.mjs"
   },
   "devDependencies": {
     "defuss-vite": "^1.2.1",

@@ -9,7 +9,36 @@ aber feste, in Blender pflegbare Namensregeln.
 
 ## Stand
 
-Phase 0 und Phase 1 sind fertig: Das Schnitzen kommt als Clip aus Blender.
+Phase 0 und Phase 1 sind fertig. Von Phase 2 ist der erste Teil fertig:
+**Alle sechs Bewegungen der Dorfbewohner kommen als Clips aus Blender**
+(`stand`, `walk`, `chop`, `pick`, `mow`, `carve`), für Mann und Frau.
+
+- **Gleichstand:** Alle Clips stimmen auf den Bildern mit den Formeln
+  überein, bei Mann und Frau auf 0,00 cm genau (Hände, Füße, Kopf, unterer
+  Rumpf; `npm run check:anim`). Die Ausnahme ist `stand`: Das Atmen
+  (Oberkörper streckt sich) kann kein Knochen tragen und fällt weg, am
+  Scheitel sind das bis 1,4 cm. Die Gewichtsverlagerung ist als Rollen der
+  Wurzel nachgebildet, bis 0,6 cm. Zwischen den Bildern weicht `carve` dort
+  ab, wo die Formel selbst springt (Ende eines Zugs, Prüfen), bis 7,8 cm.
+- **Je Körper gebacken:** Die Frau schreitet beim Gehen kürzer
+  (`uStride` 0,6 auf die Oberschenkel). Beim Knien liegt ihr Knie mit ihrer
+  eigenen Kniehöhe auf dem Boden.
+- **Was im Shader nachgebildet wird, weil Knochen es nicht tragen:**
+  - Der Rock schwingt mit der Drehung der Schultern (`clipTwist`, gelesen
+    aus der Matrix des Oberkörpers).
+  - Beim Knien staucht sich der Rock (`kneel`).
+- **Textur:** Die Bilder aller Clips liegen in Spalten zu 1024 Bildern.
+  Mann und Frau brauchen zusammen 4118 Bilder, das passt auf jede
+  WebGL2-Grafik.
+- **Größe:** `humanoid_clips.glb` hat 1,2 MB, vor allem durch `stand`
+  (34 s Schleife).
+
+Offen in Phase 2: IK für die Hände in Blender, Werkzeuge als Anhänge,
+Schichten (`walk` + `carry`), Takt-Marken (`strike`) und das Löschen der
+Formeln. Solange es die Formeln gibt, sind sie der Rückfall, falls die
+Clip-Bibliothek fehlt.
+
+Aus Phase 1:
 
 - **Gleichstand:** Der Clip entspricht der alten Formel exakt. Die rechte
   Hand weicht über alle 786 Bilder um 0,00 cm ab.
@@ -90,10 +119,19 @@ Die Migration läuft auf dem Branch `animation-migration`.
 
 1. `assets/blender/humanoid.blend` in Blender öffnen. Es enthält das
    Skelett `humanoid` und dazu die Bognerei mit Werkbank als Vorlage.
-2. Den Clip bearbeiten. Das ist die Action mit demselben Namen wie im Spiel,
-   heute `carve`. Neue Clips sind neue Actions am Skelett `humanoid`.
-   Als Custom Property der Action trägt `props` die Werkzeuge in der Hand,
-   z. B. `knife`, `axe`, `scythe` (durch Komma getrennt).
+2. Den Clip bearbeiten. Das ist die Action mit demselben Namen wie im Spiel:
+   `stand`, `walk`, `chop`, `pick`, `mow` oder `carve`. Neue Clips sind neue
+   Actions am Skelett `humanoid`. Custom Properties der Action:
+   - `props`: die Werkzeuge in der Hand, durch Komma getrennt (`axe`,
+     `scythe`, `knife`)
+   - `pose`: welche Pose des Spiels der Clip ersetzt (0 stehen, 1 gehen,
+     2 hacken, 3 pflücken, 4 mähen, 5 schnitzen)
+   - `phase_period`, `phase_shift`: welcher Bereich der Spiel-Phase eine
+     Schleife ist. Die Clip-Zeit ist (Phase − shift) × Dauer / period.
+   - `kneel`: 1, wenn der Rock beim Knien gestaucht wird
+   
+   Mit `npm run check:anim` lässt sich prüfen, wie weit ein Clip von der
+   alten Formel abweicht.
 3. `npm run gen:anim` exportiert alle `.blend`-Dateien in `assets/blender/`
    nach `src/models/<name>_clips.glb` + `.json`. Blender wird über die
    Umgebungsvariable `BLENDER` gefunden, sonst am üblichen Ort auf macOS.

@@ -15,7 +15,7 @@ import MOW from '../models/mow_pose.json';
 import CARVE from '../models/carve_pose.json';
 import humanoidClipsGlb from '../models/humanoid_clips.glb?inline';
 import humanoidClipsManifest from '../models/humanoid_clips.json';
-import { BONE, HUMANOID_BONES, TEXELS_PER_BONE, bakeClip, loadClips, type Clip } from './clips';
+import { BONE, HUMANOID_BONES, KNEEL_BIT, TEXELS_PER_BONE, bakeClip, loadClips, type Clip } from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
@@ -296,17 +296,14 @@ export const CLIPS: Clip[] = (() => {
 })();
 /** Höchstens so viele Clips je Figur (Uniform-Arrays im Shader). */
 const MAX_CLIPS = 8;
-
 /**
- * Posen, die ein Clip aus Blender ersetzt. Die Phase (motion[1]) wird zur
- * Clip-Zeit: (Phase - shift) * rate. Schnitzen: Phase = Arbeitszeit *
- * WORK_TEMPO (6, world.ts); der Clip beginnt mit einem Zug, also dort, wo die
- * Formel ihren Zug beginnt (phase * 0.6 = 4.712389) - so kommt der Ton
- * (VillagerWork.swing) weiter im Takt.
+ * Bilder je Spalte der Clip-Textur. Alle Clips aller Figuren ergeben mehr
+ * Bilder, als eine Textur hoch sein darf (WebGL2 garantiert nur 2048) - sie
+ * liegen darum in Spalten nebeneinander: Bild g in Spalte g / CLIP_COLUMN_ROWS,
+ * Zeile g % CLIP_COLUMN_ROWS.
  */
-const POSE_CLIPS: { pose: number; clip: string; rate: number; shift: number }[] = [
-  { pose: 5, clip: 'carve', rate: 1 / 6, shift: 4.712389 / 0.6 },
-];
+const CLIP_COLUMN_ROWS = 1024;
+
 /**
  * Pose (motion[2]) >= CLIP_POSE: spielt Clip Nummer pose - CLIP_POSE ab, die
  * Phase (motion[1]) ist dann die Clip-Zeit in Sekunden - für die Galerie.
@@ -515,7 +512,8 @@ uniform float uTime;
 // Clips aus Blender (clips.ts): je Bild eine Zeile, je Knochen drei Texel
 // (Zeilen einer 3x4-Matrix). uClipRow: erste Zeile des Clips für diese Figur,
 // -1 = nicht gebacken. uPoseClip: welcher Clip eine Pose ersetzt (-1 = die
-// Formel), Clip-Zeit = (Phase - uPoseShift) * uPoseRate.
+// Formel), Clip-Zeit = (Phase - uPoseShift) * uPoseRate. uClipProps: Bits
+// Beil 1, Sense 2, Zugmesser 4 (PROP_BITS), kniend ${KNEEL_BIT} (KNEEL_BIT).
 uniform highp sampler2D uClipTex;
 uniform int   uClipRow[${MAX_CLIPS}];
 uniform int   uClipFrames[${MAX_CLIPS}];
@@ -656,13 +654,29 @@ int boneOf(int part, float z) {
   return z > uHip ? ${BONE.upperBody} : ${BONE.lowerBody};
 }
 
-// Punkt p mit der Matrix eines Knochens in Bild "row" (eine Zeile der Textur).
+// Texel "i" (0..2: Zeile der 3x4-Matrix) eines Knochens in Bild "row" - die
+// Bilder liegen in Spalten zu ${CLIP_COLUMN_ROWS} (CLIP_COLUMN_ROWS).
+vec4 clipTexel(int row, int bone, int i) {
+  int column = row / ${CLIP_COLUMN_ROWS};
+  int x = column * ${HUMANOID_BONES.length * TEXELS_PER_BONE} + bone * ${TEXELS_PER_BONE} + i;
+  return texelFetch(uClipTex, ivec2(x, row - column * ${CLIP_COLUMN_ROWS}), 0);
+}
+
+// Punkt p mit der Matrix eines Knochens in Bild "row".
 vec3 clipBone(vec3 p, int row, int bone) {
-  int x = bone * ${TEXELS_PER_BONE};
   vec4 h = vec4(p, 1.0);
-  return vec3(dot(texelFetch(uClipTex, ivec2(x, row), 0), h),
-              dot(texelFetch(uClipTex, ivec2(x + 1, row), 0), h),
-              dot(texelFetch(uClipTex, ivec2(x + 2, row), 0), h));
+  return vec3(dot(clipTexel(row, bone, 0), h), dot(clipTexel(row, bone, 1), h), dot(clipTexel(row, bone, 2), h));
+}
+
+// Drehung der Schultern gegen die Hüfte (Radiant) zur Zeit "time": aus der
+// Matrix des Oberkörpers, dessen Vorwärts-Achse sie zur Seite dreht (Zeile 1,
+// Spalte 0 = sin). Der Rock schwingt damit mit, wie bei den Formeln.
+float clipTwist(int clip, float time) {
+  int frames = uClipFrames[clip];
+  float f = mod(time * uClipFps[clip], float(frames - 1));
+  int row = uClipRow[clip] + int(floor(f));
+  float s = mix(clipTexel(row, ${BONE.upperBody}, 1).x, clipTexel(row + 1, ${BONE.upperBody}, 1).x, fract(f));
+  return asin(clamp(s, -1.0, 1.0));
 }
 
 // Punkt p mit einem Knochen des Clips zur Zeit "time" (Sekunden, Schleife),
@@ -736,6 +750,18 @@ void main() {
         } else {
           // Die Last waechst mit der Ladung aus dem Ruecken heraus.
           if (part == P_LOAD) p = uLoadAnchor + (p - uLoadAnchor) * aMotion.w;
+          // Rock und Hosenboden schwingen etwas mit, wenn sich die Schultern
+          // gegen die Hüfte drehen - wie bei den Formeln, vor dem Stauchen.
+          if (part == P_TORSO && p.z <= uHip) p.y += clipTwist(clip, time) * 0.25 * (uHip - p.z);
+          if ((props & ${KNEEL_BIT}) != 0 && part == P_TORSO && p.z <= uHip) {
+            // Kniend: der Rock staucht sich bis zum Boden und legt sich vorn
+            // über das aufgestellte Knie - wie bei der Formel für Pose 3, mit
+            // deren Absenkung (bob = -(uKnee - 0.04)); die Knochen senken ihn danach.
+            float kneelBob = -(uKnee - 0.04);
+            float below = (uHip - p.z) / uHip;
+            p.z = uHip - (uHip - p.z) * (uHip + kneelBob) / (uHip - 0.02);
+            p.x += below * 0.14;
+          }
           if (part == P_KNIFE) {
             // Zweihändig: nach der Lage zwischen den Händen auf beide Unterarme verteilt.
             float k = clamp((p.y + uArm) / (2.0 * uArm), 0.0, 1.0);
@@ -2516,27 +2542,33 @@ export class EntityRenderer {
       const starts = new Int32Array(MAX_CLIPS).fill(-1);
       clips.forEach((clip, i) => {
         starts[i] = rows;
-        blocks.push(bakeClip(clip, m.model));
+        blocks.push(bakeClip(clip, m.model, { stride: m.stride }));
         rows += clip.frames;
       });
       this.clipRows.set(m.shape, starts);
     }
-    if (rows > gl.getParameter(gl.MAX_TEXTURE_SIZE)) {
-      console.warn(`Clips: ${rows} Zeilen passen nicht in eine Textur - Figuren laufen über die Formeln`);
+    // Bilder in Spalten zu CLIP_COLUMN_ROWS nebeneinander (siehe clipTexel im Shader).
+    const columns = Math.max(1, Math.ceil(rows / CLIP_COLUMN_ROWS));
+    const height = Math.max(1, Math.min(rows, CLIP_COLUMN_ROWS));
+    if (columns * width > gl.getParameter(gl.MAX_TEXTURE_SIZE)) {
+      console.warn(`Clips: ${rows} Bilder passen nicht in eine Textur - Figuren laufen über die Formeln`);
       this.clipRows.clear();
       rows = 0;
     }
-    const data = new Float32Array(Math.max(1, rows) * width * 4);
-    let offset = 0;
-    for (const block of blocks) {
-      if (offset + block.length > data.length) break;
-      data.set(block, offset);
-      offset += block.length;
+    const data = new Float32Array(columns * width * height * 4);
+    let frame = 0;
+    for (const block of rows > 0 ? blocks : []) {
+      const perFrame = width * 4;
+      for (let f = 0; f < block.length / perFrame; f++, frame++) {
+        const column = Math.floor(frame / CLIP_COLUMN_ROWS);
+        const row = frame % CLIP_COLUMN_ROWS;
+        data.set(block.subarray(f * perFrame, (f + 1) * perFrame), (row * columns * width + column * width) * 4);
+      }
     }
     const texture = gl.createTexture()!;
     gl.activeTexture(gl.TEXTURE0 + CLIP_TEXTURE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, Math.max(1, rows), 0, gl.RGBA, gl.FLOAT, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, columns * width, height, 0, gl.RGBA, gl.FLOAT, data);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.activeTexture(gl.TEXTURE0);
@@ -2545,17 +2577,19 @@ export class EntityRenderer {
     const pad = <T extends number>(values: T[], fill: T) => [...values, ...Array(MAX_CLIPS - values.length).fill(fill)];
     gl.uniform1iv(this.location('uClipFrames'), pad(clips.map((c) => c.frames), 2));
     gl.uniform1fv(this.location('uClipFps'), pad(clips.map((c) => c.fps), 30));
-    gl.uniform1iv(this.location('uClipProps'), pad(clips.map((c) => c.props), 0));
+    gl.uniform1iv(this.location('uClipProps'), pad(clips.map((c) => c.props | (c.kneel ? KNEEL_BIT : 0)), 0));
+    // Welche Pose ein Clip ersetzt, steht im Clip selbst (Custom Property
+    // "pose" der Action in Blender). Die Phase (motion[1]) wird zur Clip-Zeit:
+    // (Phase - phaseShift) * phaseRate.
     const poseClip = new Int32Array(8).fill(-1);
     const poseRate = new Float32Array(8);
     const poseShift = new Float32Array(8);
-    for (const { pose, clip, rate, shift } of POSE_CLIPS) {
-      const i = clips.findIndex((c) => c.name === clip);
-      if (i < 0 || rows === 0) continue;
-      poseClip[pose] = i;
-      poseRate[pose] = rate;
-      poseShift[pose] = shift;
-    }
+    clips.forEach((clip, i) => {
+      if (clip.pose === null || clip.pose < 0 || clip.pose >= 8 || rows === 0) return;
+      poseClip[clip.pose] = i;
+      poseRate[clip.pose] = clip.phaseRate;
+      poseShift[clip.pose] = clip.phaseShift;
+    });
     gl.uniform1iv(this.location('uPoseClip'), poseClip);
     gl.uniform1fv(this.location('uPoseRate'), poseRate);
     gl.uniform1fv(this.location('uPoseShift'), poseShift);

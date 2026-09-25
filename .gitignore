@@ -29,3 +29,6 @@ tools/lsystem/leaves/.cache
 
 # Blender-Export der Bognerei (tools/export/bognerei.mjs)
 tools/export/out
+
+# Sicherungen, die Blender beim Speichern anlegt
+*.blend1

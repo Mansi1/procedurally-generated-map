@@ -25,6 +25,11 @@ export const BONE = Object.fromEntries(HUMANOID_BONES.map(([name], i) => [name, 
 
 /** Was ein Clip in der Hand braucht - Bits wie im Shader (uClipProps). */
 export const PROP_BITS: Record<string, number> = { axe: 1, scythe: 2, knife: 4 };
+/**
+ * Bit in uClipProps: der Clip kniet - der Rock wird wie bei der Formel für
+ * Pose 3 bis zum Boden gestaucht (Knochen allein können das nicht).
+ */
+export const KNEEL_BIT = 8;
 
 type Vec3 = [number, number, number];
 type Quat = [number, number, number, number];
@@ -37,6 +42,17 @@ export interface Clip {
   duration: number;
   /** Bits aus PROP_BITS. */
   props: number;
+  /** Welche Pose (motion[2]) der Clip im Spiel ersetzt - null: keine. */
+  pose: number | null;
+  /**
+   * Clip-Zeit = (Phase - phaseShift) * phaseRate. phaseRate = Länge des Clips
+   * durch die Phase einer Schleife (phase_period) - so läuft die Schleife genau
+   * so lang wie die Formel, und der Ton bleibt im Takt.
+   */
+  phaseRate: number;
+  phaseShift: number;
+  /** Kniend: der Rock wird gestaucht (KNEEL_BIT). */
+  kneel: boolean;
   /** frames * Knochen * 4: Drehung (Quaternion) in Modell-Achsen, je Knochen im Weltsinn. */
   rotations: Float32Array;
   /** frames * 3: Verschiebung der Wurzel in Modell-Achsen und Körperhöhen. */
@@ -46,7 +62,11 @@ export interface Clip {
 interface Manifest {
   height: number;
   fps: number;
-  clips: { name: string; frames: number; duration: number; props: string[] }[];
+  clips: {
+    name: string; frames: number; duration: number; props?: string[];
+    /** Aus den Custom Properties der Action (tools/blender/export_clips.py) - können fehlen. */
+    pose?: number; phase_period?: number; phase_shift?: number; kneel?: boolean;
+  }[];
 }
 
 // --- Quaternionen und Matrizen ---------------------------------------------
@@ -214,9 +234,16 @@ export function loadClips(glbDataUrl: string, manifest: Manifest): Clip[] {
       const move = toModel([now[0] - rest[0]!.p[0], now[1] - rest[0]!.p[1], now[2] - rest[0]!.p[2]]);
       root.set(move.map((v) => v / manifest.height), f * 3);
     }
+    const pose = meta.pose ?? null;
+    const period = meta.phase_period;
     return [{
       name: meta.name, fps: manifest.fps, frames: meta.frames, duration: meta.duration,
-      props: meta.props.reduce((bits, p) => bits | (PROP_BITS[p] ?? 0), 0), rotations, root,
+      props: (meta.props ?? []).reduce((bits, p) => bits | (PROP_BITS[p] ?? 0), 0),
+      pose: pose !== null && period ? pose : null,
+      phaseRate: period ? meta.duration / period : 1,
+      phaseShift: meta.phase_shift ?? 0,
+      kneel: meta.kneel === true,
+      rotations, root,
     }];
   });
 }
@@ -247,23 +274,62 @@ function pivots(j: Joints): Vec3[] {
 /** Texel je Knochen: drei Zeilen einer 3x4-Matrix. */
 export const TEXELS_PER_BONE = 3;
 
+/** Was je Körper anders gebacken wird als im Clip gespeichert. */
+export interface BakeOptions {
+  /**
+   * Schrittweite des Körpers (uStride, 1 = voller Schritt): die Drehung der
+   * Oberschenkel gegenüber dem Unterkörper wird damit skaliert - die Frau
+   * schreitet im langen Rock kürzer. Nur für das Gehen (pose 1).
+   */
+  stride?: number;
+}
+
+/** Drehung auf `share` ihres Winkels verkürzt, um dieselbe Achse. */
+function qScale([x, y, z, w]: Quat, share: number): Quat {
+  const sign = w < 0 ? -1 : 1;
+  const angle = 2 * Math.acos(Math.min(1, Math.abs(w)));
+  const s = Math.sin(angle / 2);
+  if (s < 1e-9) return [0, 0, 0, 1];
+  const half = (angle * share) / 2;
+  const k = (Math.sin(half) / s) * sign;
+  return [x * k, y * k, z * k, Math.cos(half)];
+}
+
 /**
  * Backt einen Clip für eine Figur: je Bild eine Zeile mit den Skinning-
- * Matrizen aller Knochen (Modell-Koordinaten), als RGBA-Texel.
+ * Matrizen aller Knochen (Modell-Koordinaten), als RGBA-Texel. Was vom
+ * Körper abhängt: die Drehpunkte (Gelenke), beim Knien die Höhe (die Knie
+ * auf dem Boden - aus dem eigenen Knie), beim Gehen die Schrittweite.
  */
-export function bakeClip(clip: Clip, joints: Joints): Float32Array {
+export function bakeClip(clip: Clip, joints: Joints, options: BakeOptions = {}): Float32Array {
   const bones = HUMANOID_BONES.length;
   const p = pivots(joints);
   const out = new Float32Array(clip.frames * bones * TEXELS_PER_BONE * 4);
   const parentIndex = HUMANOID_BONES.map(([, parent]) => (parent === null ? -1 : BONE[parent]));
+  const stride = clip.pose === 1 ? options.stride ?? 1 : 1;
   for (let f = 0; f < clip.frames; f++) {
-    const w = (b: number) => Array.from(clip.rotations.subarray((f * bones + b) * 4, (f * bones + b) * 4 + 4)) as Quat;
+    const stored = (b: number) => Array.from(clip.rotations.subarray((f * bones + b) * 4, (f * bones + b) * 4 + 4)) as Quat;
+    const rot: Quat[] = HUMANOID_BONES.map((_, b) => stored(b));
+    if (stride !== 1) {
+      // Oberschenkel: ihre eigene Drehung (gegenüber dem Unterkörper)
+      // verkürzen; der Unterschenkel behält seine gegenüber dem Oberschenkel.
+      for (const [thigh, shin] of [['thigh.L', 'shin.L'], ['thigh.R', 'shin.R']]) {
+        const t = BONE[thigh], s = BONE[shin], parent = parentIndex[t];
+        const own = qMul(qInv(stored(parent)), stored(t));
+        rot[t] = qMul(rot[parent], qScale(own, stride));
+        rot[s] = qMul(rot[t], qMul(qInv(stored(t)), stored(s)));
+      }
+    }
+    const w = (b: number) => rot[b];
     // Weltlage je Knochen: Drehung (Weltsinn) und wohin sein Drehpunkt kommt.
     const where: Vec3[] = [];
     for (let b = 0; b < bones; b++) {
       const parent = parentIndex[b];
       if (parent < 0) {
-        where.push([clip.root[f * 3], clip.root[f * 3 + 1], clip.root[f * 3 + 2]]);
+        // Kniend: so tief, dass das Knie dieses Körpers den Boden berührt
+        // (wie die Formel: bob = -(uKnee - 0.04)).
+        const z = clip.kneel ? -(joints.knee - 0.04) : clip.root[f * 3 + 2];
+        where.push([clip.root[f * 3], clip.root[f * 3 + 1], z]);
         continue;
       }
       // Der Drehpunkt hängt am Eltern: dessen Drehung, um dessen Drehpunkt.

@@ -1,7 +1,8 @@
 # Exportiert die Clips einer .blend-Datei fürs Spiel (docs/ANIMATION.md):
 #   <out>.glb   nur das Skelett, mit allen seinen Actions als Animationen
 #   <out>.json  je Clip, was glTF nicht trägt: Länge, Werkzeuge (props),
-#               dazu die Körperhöhe des Skeletts
+#               welche Pose er ersetzt (pose, phase_period, phase_shift),
+#               kniend (kneel), dazu die Körperhöhe des Skeletts
 # Das Spiel (src/gl/clips.ts) liest beides und backt die Clips für jede Figur
 # mit passenden Knochennamen.
 #
@@ -61,16 +62,27 @@ def listed(value):
         return [v.strip() for v in value.split(',') if v.strip()]
     return list(value)
 
+def clip_entry(a):
+    entry = {
+        'name': a.name,
+        'frames': int(a.frame_range[1] - a.frame_range[0]) + 1,
+        # Das letzte Bild gleicht dem ersten: die Schleife dauert (Bilder - 1) / fps.
+        'duration': (a.frame_range[1] - a.frame_range[0]) / fps,
+        'props': listed(a.get('props')),
+        'kneel': bool(a.get('kneel', 0)),
+    }
+    # Ersetzt der Clip eine Pose des Spiels: welche, und welcher Phasenbereich.
+    if 'pose' in a:
+        entry['pose'] = int(a['pose'])
+        entry['phase_period'] = float(a['phase_period'])
+        entry['phase_shift'] = float(a.get('phase_shift', 0.0))
+    return entry
+
 manifest = {
     'rig': rig.name,
     'height': float(rig.get('height', 1.7)),
     'fps': fps,
-    'clips': [{
-        'name': a.name,
-        'frames': int(a.frame_range[1] - a.frame_range[0]) + 1,
-        'duration': (a.frame_range[1] - a.frame_range[0]) / fps,
-        'props': listed(a.get('props')),
-    } for a in clips],
+    'clips': [clip_entry(a) for a in sorted(clips, key=lambda a: int(a.get('pose', 99)))],
 }
 with open(out + '.json', 'w') as f:
     json.dump(manifest, f, indent=2, ensure_ascii=False)
