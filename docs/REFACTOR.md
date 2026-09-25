@@ -179,7 +179,7 @@ src/
 - [x] 0.2a Gebäude-Kennungen `lumber_camp`, `mining_camp`, `mill` (alte werden beim Laden umgeschrieben), Namen im Gebäude-Code (`definition`, `housing`, `storedResources`, `UnitProducer`, `queuedUnits`, `rallyPoint`, `nextFarmCrop`)
 - [x] 0.2b `buildings.ts` → `catalog.ts`, `TileProbe` → `Terrain`
 - [x] 0.2c Vorrat `berries` → `food`: `ResourceKind`/`Resources` (Vorrat) getrennt von `DepositType` (Vorkommen auf der Karte), `YIELD` verbindet sie; alte Stände (`stock.berries`, Ladung `berries`) werden umgeschrieben
-- [ ] 0.2d Namen in `main.ts` (`selected` → `placingType`, `selectedBuilding` → `focusedBuilding`, …) - zusammen mit Phase 3
+- [x] 0.2d Namen in `main.ts`: `selected` → `placingType`, `selectedBuilding` → `focusedBuilding`, `camX`/`camY` → `camera.x`/`camera.y`
 - [ ] 0.2e (alt) Übrige Umbenennungen mit Spielstand-Migration in `save.ts` (alte Kennungen
   und `berries` → `food` beim Laden umschreiben), dazu ein Test mit alten Ständen
 
@@ -218,13 +218,14 @@ src/
 - [x] 2.5 `render.ts`: Instanzen für den Renderer (Gebäude, Felder, Figuren, Tiere, Einsturz); `ruin.ts` für einstürzende Gebäude
 - [x] 2.6 `Villager` und `Animal` als Klassen (unit/), `Task` bei `Villager`
 
-### Phase 3: `main.ts` aufteilen (B8)
+### Phase 3: `main.ts` aufteilen (B8) - läuft: 1778 → 1134 Zeilen
 
-- [ ] 3.1 `game/camera.ts` und `game/input.ts`
-- [ ] 3.2 `game/selection.ts` und `game/placement.ts`
-- [ ] 3.3 `game/overlay.ts` und `game/minimap.ts`
-- [ ] 3.4 `game/ui.ts`: Leisten, Menüs, Hauptmenü verdrahten
-- [ ] 3.5 `main.ts` baut nur noch zusammen und startet die Schleife
+- [x] 3.1 Zustand als Klassen: `game/Selection.ts` (Auswahl, `focusedBuilding`), `game/Camera.ts` (Bildmitte, Zoomstufen, `panPixels`, `centerOn`), `game/Placement.ts` (Baumodus, `placingType`)
+- [x] 3.2 Reine Teile: `game/selectionView.ts` (Daten fürs Panel), `game/overlay.ts` (Auswahl, Bauvorschau, Minimap-Punkte), `game/hoverInfo.ts`, `game/worldSounds.ts`
+- [x] 3.3 `game/Ground.ts` (Geländehöhe - eine Formel statt zwei - und Shader-Abgleich), `game/Picker.ts` (Klick-Erkennung), `game/Compass.ts`
+- [ ] 3.4 Spieler-Aktionen (`trainVillager`, `selectIdleVillager`, `cycleTownCenter`, `demolishSelected`, Links-/Rechtsklick, Rahmen) nach `game/actions.ts` - braucht einen gemeinsamen Kontext (`Game`), der Welt, Kamera, Auswahl, Baumodus, Picker und die Oberfläche hält
+- [ ] 3.5 Eingabe (Tastatur, Maus, Mausrad, Minimap) nach `game/input.ts`
+- [ ] 3.6 Menüs und Leisten verdrahten nach `game/ui.ts`; `main.ts` baut nur noch zusammen und startet die Schleife
 
 ### Phase 4: Oberfläche (B9)
 
