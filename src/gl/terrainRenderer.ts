@@ -318,8 +318,6 @@ export class TerrainRenderer {
   hoverTile: { x: number; y: number } | null = null;
   /** Ausschnitt der Hauptansicht in Geräte-Pixeln dieses Canvas - nur für die Minimap. */
   viewRect: { x: number; y: number; width: number; height: number } | null = null;
-  /** Mittelpunktmarke zeichnen - nur für die Minimap. */
-  centerDot = false;
   /** Kantenlänge einer Gitterzelle in Geräte-Pixeln. Flach reicht ein grobes Gitter. */
   cellPixels = 4;
   /**
@@ -626,7 +624,6 @@ export class TerrainRenderer {
     }
     const rect = this.viewRect;
     gl.uniform1f(this.location('uViewRectActive'), rect ? 1 : 0);
-    gl.uniform1f(this.location('uCenterDot'), this.centerDot ? 1 : 0);
     if (rect) {
       gl.uniform4f(this.location('uViewRect'), rect.x, rect.y, rect.width, rect.height);
     }

@@ -1010,7 +1010,6 @@ uniform vec2  uHoverTile;      // markiertes Tile, uHoverActive < 0.5 blendet au
 uniform float uHoverActive;
 uniform vec4  uViewRect;       // Ausschnitt der Hauptansicht (x, y, Breite, Hoehe), Pixel ab links oben
 uniform float uViewRectActive;
-uniform float uCenterDot;      // Mittelpunktmarke der Minimap
 
 // Umgepflügte Äcker (siehe World.fieldSoil): je Tile ein Texel ab uFieldOrigin,
 // rgb = wie weit die drei Furchen des Tiles entlang y gepflügt sind, a = Feld.
@@ -1093,10 +1092,6 @@ void main() {
       if (edge < 1.0) color = mix(color, vec3(1.0), 0.9);
       else if (edge < 3.0) color = mix(color, vec3(0.0), 0.35);
     }
-  }
-
-  if (uCenterDot > 0.5 && all(lessThan(abs(pixel - uResolution * 0.5), vec2(2.0)))) {
-    color = vec3(1.0, 0.867, 0.2);
   }
 
   fragColor = vec4(color, 1.0);

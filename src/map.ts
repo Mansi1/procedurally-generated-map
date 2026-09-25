@@ -397,7 +397,6 @@ export class MiniMap {
   ) {
     this.terrain = new TerrainRenderer(canvas, seed, TERRAIN_PALETTE);
     this.entities = new EntityRenderer(this.terrain.context);
-    this.terrain.centerDot = true;
     // Ohne Relief gibt es nichts zu unterteilen.
     this.terrain.cellPixels = 64;
     // Die Minimap verschiebt sich nur mit der Hauptansicht und viel langsamer.
