@@ -1,6 +1,7 @@
 
 import { MapGenerator } from './noise';
 import {
+  type IsoView,
   visibleWorldRect,
 } from './gl/iso';
 import {
@@ -364,15 +365,28 @@ const keyboard = new Keyboard({
 
 
 
+/**
+ * Die Ansicht, um die sich die Minimap legt: mittig auf der Stelle, die man in
+ * der Bildmitte wirklich sieht - mit ihrer Geländehöhe. camera.x/y ist der
+ * Punkt auf Meereshöhe; auf einem Gebirge liegt der weit hinter dem, was im
+ * Bild ist, und die flache Minimap zeigte dann die falsche Gegend.
+ */
+function minimapView(): IsoView {
+  const seen = picker.point(camera.centerX, camera.centerY);
+  return { ...camera.view(), centerX: seen.x, centerY: seen.y };
+}
+
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view());
-  camera.moveTo(target.x, target.y);
+  const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView());
+  // Die angeklickte Stelle mit ihrer Höhe in die Bildmitte - nicht den Punkt auf Meereshöhe.
+  camera.centerOn(target.x, target.y, ground.heightAt(target.x, target.y));
+  refreshPointer();
 });
 
 minimapCanvas.addEventListener('mousemove', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  devPanel.showMinimapPointer(minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view()));
+  devPanel.showMinimapPointer(minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView()));
 });
 minimapCanvas.addEventListener('mouseleave', () => devPanel.showMinimapPointer());
 
@@ -476,9 +490,9 @@ function loop(now: number) {
   renderer.setPlayerColor(player.color.toRGB());
   renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
 
-  const current = camera.view();
-  minimapDots(world, minimap, current, minimapOverlay);
-  minimap.render(current, minimapOverlay);
+  const seen = minimapView();
+  minimapDots(world, minimap, seen, minimapOverlay);
+  minimap.render(seen, minimapOverlay);
 
   devPanel.frame(now, camera);
 
