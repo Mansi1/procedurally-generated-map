@@ -2,8 +2,6 @@
 import { flatten, type FlatZone } from './world/flatten';
 import { MapGenerator, reliefZ } from './noise';
 import {
-  centerFor,
-  panDelta,
   pickWorld,
   setViewRotation,
   visibleWorldRect,
@@ -39,6 +37,7 @@ import {
 import { World, type Villager } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
+import { Camera } from './game/Camera';
 import { selectionView } from './game/selectionView';
 import type { UnitProducer } from './world/building';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
@@ -78,40 +77,34 @@ const selectionEl = document.getElementById('selection')!;
 const actionsEl = document.getElementById('actions')!;
 const boxEl = document.getElementById('select-box')!;
 
-/**
- * Sichtfläche in CSS-Pixeln. tileSize und Mauskoordinaten rechnen durchgehend
- * in dieser Einheit; der Canvas-Speicher ist um pixelRatio größer.
- */
-let viewWidth = 0;
-let viewHeight = 0;
-let pixelRatio = 1;
+/** Zoom beim Start: CSS-Pixel je Tile. */
+const DEFAULT_ZOOM = 32;
+/** Kamera: Bildmitte, Zoomstufe, Sichtfläche (game/Camera.ts). */
+const camera = new Camera(DEFAULT_ZOOM);
 
 function applyCanvasSize() {
-  pixelRatio = window.devicePixelRatio || 1;
-  viewWidth = window.innerWidth;
-  viewHeight = window.innerHeight;
+  camera.fitWindow();
 
   // Gezeichnet wird in echten Bildschirmpixeln, angezeigt in CSS-Pixeln.
   // Sonst rendert der Browser das Canvas klein und skaliert es hoch.
-  canvas.width = Math.round(viewWidth * pixelRatio);
-  canvas.height = Math.round(viewHeight * pixelRatio);
-  canvas.style.width = `${viewWidth}px`;
-  canvas.style.height = `${viewHeight}px`;
+  canvas.width = Math.round(camera.width * camera.pixelRatio);
+  canvas.height = Math.round(camera.height * camera.pixelRatio);
+  canvas.style.width = `${camera.width}px`;
+  canvas.style.height = `${camera.height}px`;
 }
 
 function resize() {
   // Die Kamera beschreibt die Bildmitte - die bleibt beim Größenwechsel stehen.
   applyCanvasSize();
 
-  renderer.pixelRatio = pixelRatio;
-  minimap.setPixelRatio(pixelRatio);
+  renderer.pixelRatio = camera.pixelRatio;
+  minimap.setPixelRatio(camera.pixelRatio);
 }
 
 applyCanvasSize();
 
 /** Wo es in der Standardwelt losgeht - dort liegt ein guter Platz fürs erste Dorf. */
 const DEFAULT_START = { x: 88, y: -59 };
-const DEFAULT_ZOOM = 32;
 
 // Die Adresse bleibt "/": Welt und Stelle stehen nicht mehr darin. Alte Links
 // (/<seed>/<x>-<y>?zoom=) werden aufgeräumt; die Welt wählt man im Hauptmenü.
@@ -154,7 +147,7 @@ const { x: startX, y: startY } = startPoint();
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 // Mit derselben Feinheit wie das Geländegitter der jetzigen Zoomstufe (wie zAt).
-world.groundAt = (x, y) => flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))), flatZones);
+world.groundAt = (x, y) => flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (camera.tileSize * camera.pixelRatio))), flatZones);
 const resources = new ResourceField(terrain, mapGen);
 const sound = new Sound();
 /** Hintergrundmusik aus assets/music/ - der Ton-Schalter (M) gilt auch für sie. */
@@ -307,8 +300,7 @@ function startNewGame() {
 /** Kamera zurück an den Start - im Hauptmenü ist sie weitergezogen. */
 function goToStart() {
   const home = startPoint();
-  camX = home.x;
-  camY = home.y;
+  camera.moveTo(home.x, home.y);
 }
 
 /** Hauptmenü beim Öffnen der Seite; bis man spielt, steht die Welt. */
@@ -381,12 +373,12 @@ const GATHER_SOUND: Record<DepositType, SoundName> = {
  * herausgezoomt ist alles leiser, sonst klingt ein ganzes Dorf wie eines.
  */
 world.onEvent = (event) => {
-  const s = worldToScreen(view(), event.x, event.y, zAt(event.x, event.y));
-  const nx = (s.x - viewWidth / 2) / (viewWidth / 2);
-  const ny = (s.y - viewHeight / 2) / (viewHeight / 2);
+  const s = worldToScreen(camera.view(), event.x, event.y, zAt(event.x, event.y));
+  const nx = (s.x - camera.width / 2) / (camera.width / 2);
+  const ny = (s.y - camera.height / 2) / (camera.height / 2);
   const offscreen = Math.abs(nx) > 1.15 || Math.abs(ny) > 1.15;
   const distance = Math.min(1, Math.hypot(nx, ny) / 1.4);
-  const zoom = Math.min(1, tileSize / 8);
+  const zoom = Math.min(1, camera.tileSize / 8);
   const volume = (1 - distance * 0.7) * (0.35 + 0.65 * zoom);
 
   switch (event.kind) {
@@ -449,15 +441,13 @@ function faceDirection(dir: string) {
   // Gedreht wird um die Stelle, die man in der Bildmitte sieht - mit ihrer
   // Geländehöhe. Um den Punkt auf Meereshöhe gedreht, wanderte ein Dorf auf
   // einem Hügel beim Drehen aus dem Bild.
-  const pivot = pick(viewWidth / 2, viewHeight / 2);
+  const pivot = pick(camera.width / 2, camera.height / 2);
   for (let k = 0; k < 4; k++) {
     setViewRotation(k);
     const g = worldToGround(dx, dy);
     if (g.v < 0 && Math.abs(g.u) < 1e-9) break;
   }
-  const center = centerFor(view(), pivot.x, pivot.y, pivot.z, viewWidth / 2, viewHeight / 2);
-  camX = center.x;
-  camY = center.y;
+  camera.centerOn(pivot.x, pivot.y, pivot.z);
   updateCompass();
   // Die Blickrichtung bleibt beim Neuladen.
   settings.facing = dir;
@@ -492,13 +482,13 @@ function clearSelection() {
 /** Bildschirmposition (CSS-Pixel) der Figurmitte - die Stelle, auf die man klickt. */
 function villagerScreen(v: Villager) {
   const p = v.positionAt(tickAccumulator / TICK);
-  return worldToScreen(view(), p.x, p.y, zAt(p.x, p.y) + VILLAGER.size * 0.8);
+  return worldToScreen(camera.view(), p.x, p.y, zAt(p.x, p.y) + VILLAGER.size * 0.8);
 }
 
 /** Dorfbewohner unter dem Zeiger - der nächste innerhalb eines Klick-Radius. */
 function villagerAt(px: number, py: number): Villager | undefined {
   // Mindestens ein paar Pixel, damit man die Figur auch herausgezoomt trifft.
-  const radius = Math.max(10, VILLAGER.size * tileSize * 1.2);
+  const radius = Math.max(10, VILLAGER.size * camera.tileSize * 1.2);
   let best: Villager | undefined;
   let bestDistance = radius;
   for (const v of world.villagers) {
@@ -519,8 +509,8 @@ function villagerAt(px: number, py: number): Villager | undefined {
  * Streifen vom Fuß bis zur Spitze; der vorderste Treffer gewinnt.
  */
 function resourceObjectAt(px: number, py: number): { x: number; y: number } | undefined {
-  if (tileSize < RESOURCE_OBJECTS_MIN_ZOOM) return undefined;
-  const v = view();
+  if (camera.tileSize < RESOURCE_OBJECTS_MIN_ZOOM) return undefined;
+  const v = camera.view();
   // Etwas Rand: hohe Bäume unterhalb des Bildes ragen mit der Krone herein.
   const rect = visibleWorldRect(v);
   const margin = 4;
@@ -710,9 +700,7 @@ window.addEventListener('mousemove', (e) => {
   rightDrag.moved = true;
   canvas.style.cursor = 'grabbing';
   // Die Karte folgt der Maus: die Kamera geht in die Gegenrichtung.
-  const d = panDelta(tileSize, -dx, -dy);
-  camX += d.x;
-  camY += d.y;
+  camera.panPixels(-dx, -dy);
   rightDrag.x = e.clientX;
   rightDrag.y = e.clientY;
 });
@@ -771,7 +759,7 @@ function trainVillager(count = 1) {
   // Ausgewählte Hauptgebäude, sonst das nächstgelegene. Bei mehreren kommt
   // jeder Dorfbewohner in die kürzeste Warteschlange.
   const selectedTrainers = selection.chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
-  const nearest = world.nearestTownCenter(camX, camY);
+  const nearest = world.nearestTownCenter(camera.x, camera.y);
   const trainers = selectedTrainers.length > 0 ? selectedTrainers : nearest ? [nearest] : [];
   if (trainers.length === 0) {
     hint('Baue zuerst ein Hauptgebäude');
@@ -828,10 +816,7 @@ function selectIdleVillager(all = true) {
     selection.villagers.clear();
     selection.villagers.add(next.id);
   }
-  const center = centerFor(view(), target.x, target.y, zAt(target.x, target.y),
-      viewWidth / 2, viewHeight / 2);
-  camX = center.x;
-  camY = center.y;
+  camera.centerOn(target.x, target.y, zAt(target.x, target.y));
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
@@ -868,9 +853,7 @@ function cycleTownCenter() {
   // säße es auf einem Hügel ein gutes Stück über der Mitte.
   const x = next.x + 0.5;
   const y = next.y + 0.5;
-  const center = centerFor(view(), x, y, zAt(x, y), viewWidth / 2, viewHeight / 2);
-  camX = center.x;
-  camY = center.y;
+  camera.centerOn(x, y, zAt(x, y));
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
@@ -923,36 +906,10 @@ function updateSelectionUI() {
 // Der Speicherstand liegt im localStorage, je Welt einer.
 window.addEventListener('beforeunload', () => world.save());
 
-/**
- * Zoomstufen in CSS-Pixeln je Welt-Tile. Verdopplung je Stufe: die Schrittweite
- * der Abtastung ist damit immer eine Zweierpotenz, und von einem Ende zum
- * anderen sind es sieben Rasten statt Dutzender Ein-Pixel-Schritte. Erst die
- * letzte Stufe (128) zeigt die Dorfbewohner groß genug für ihre Details.
- */
-const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128];
+const renderer = new MapRenderer(canvas, seed, camera.tileSize, camera.pixelRatio);
+const minimap = new MiniMap(minimapCanvas, seed, camera.pixelRatio);
 
-function nearestZoomIndex(pixelsPerTile: number): number {
-  let best = 0;
-  for (let i = 1; i < ZOOM_LEVELS.length; i++) {
-    if (Math.abs(ZOOM_LEVELS[i] - pixelsPerTile) < Math.abs(ZOOM_LEVELS[best] - pixelsPerTile)) {
-      best = i;
-    }
-  }
-  return best;
-}
-
-let zoomIndex = nearestZoomIndex(DEFAULT_ZOOM);
-let tileSize = ZOOM_LEVELS[zoomIndex];
-const renderer = new MapRenderer(canvas, seed, tileSize, pixelRatio);
-const minimap = new MiniMap(minimapCanvas, seed, pixelRatio);
-
-/** Welt-Tile in der Bildmitte. */
-let camX = startX;
-let camY = startY;
-
-function view(): IsoView {
-  return { centerX: camX, centerY: camY, tileSize, width: viewWidth, height: viewHeight };
-}
+camera.moveTo(startX, startY);
 
 /**
  * Geländehöhe in Tiles für die Mausabfrage. Abgetastet so grob wie das
@@ -977,8 +934,8 @@ let lastAnimalCheck = 0;
 
 function updateFields(now: number) {
   const snap = 32;
-  const x = Math.floor((camX - FIELD_WINDOW / 2) / snap) * snap;
-  const y = Math.floor((camY - FIELD_WINDOW / 2) / snap) * snap;
+  const x = Math.floor((camera.x - FIELD_WINDOW / 2) / snap) * snap;
+  const y = Math.floor((camera.y - FIELD_WINDOW / 2) / snap) * snap;
   if (x === fieldOrigin.x && y === fieldOrigin.y && now - lastFieldUpdate < 250) return;
   fieldOrigin = { x, y };
   lastFieldUpdate = now;
@@ -1008,7 +965,7 @@ function updateFlatZones() {
     zones.push({ x: b.x + 0.5, y: b.y + 0.5, half: fp / 2 + 0.1, z });
   }
   // Der Shader nimmt nur die der Bildmitte nächsten.
-  zones.sort((a, b) => Math.hypot(a.x - camX, a.y - camY) - Math.hypot(b.x - camX, b.y - camY));
+  zones.sort((a, b) => Math.hypot(a.x - camera.x, a.y - camera.y) - Math.hypot(b.x - camera.x, b.y - camera.y));
   flatZones = zones;
   renderer.setFlatZones(zones);
 }
@@ -1016,12 +973,12 @@ function updateFlatZones() {
 function zAt(x: number, y: number): number {
   // Mit der aktuellen Reliefstärke - flachgelegt trifft der Klick sonst
   // die Stelle, an der der Berg stünde.
-  return flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))), flatZones) * renderer.relief;
+  return flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (camera.tileSize * camera.pixelRatio))), flatZones) * renderer.relief;
 }
 
 /** Welt-Punkt unter einer Canvas-Position (CSS-Pixel), mit Relief. */
 function pick(px: number, py: number) {
-  return pickWorld(view(), px, py, zAt);
+  return pickWorld(camera.view(), px, py, zAt);
 }
 
 function tileAt(px: number, py: number) {
@@ -1044,28 +1001,19 @@ const keys: Record<string, boolean> = {};
  * Anker ist der Mauszeiger, solange er über der Karte ist, sonst die Bildmitte.
  */
 function setZoom(index: number, anchorX?: number, anchorY?: number) {
-  const clamped = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index));
-  if (clamped === zoomIndex) return;
-
-  const ax = anchorX ?? mousePixelX ?? viewWidth / 2;
-  const ay = anchorY ?? mousePixelY ?? viewHeight / 2;
-
+  const ax = anchorX ?? mousePixelX ?? camera.centerX;
+  const ay = anchorY ?? mousePixelY ?? camera.centerY;
   // Welt-Punkt unter dem Anker vor dem Zoom ...
   const anchor = pick(ax, ay);
-
-  zoomIndex = clamped;
-  tileSize = ZOOM_LEVELS[zoomIndex];
-  renderer.tileSize = tileSize;
-
-  // ... und danach wieder genau unter den Anker legen
-  const center = centerFor(view(), anchor.x, anchor.y, anchor.z, ax, ay);
-  camX = center.x;
-  camY = center.y;
+  if (!camera.setZoomIndex(index)) return;
+  renderer.tileSize = camera.tileSize;
+  // ... und danach wieder genau unter den Anker legen.
+  camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
 
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
-  zoomEl.textContent = `${tileSize}px`;
+  zoomEl.textContent = `${camera.tileSize}px`;
 }
 
 window.addEventListener('keydown', (e) => {
@@ -1095,8 +1043,8 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   keys[e.key.toLowerCase()] = true;
-  if (e.key === 'e') setZoom(zoomIndex + 1);
-  if (e.key === 'q') setZoom(zoomIndex - 1);
+  if (e.key === 'e') setZoom(camera.zoomIndex + 1);
+  if (e.key === 'q') setZoom(camera.zoomIndex - 1);
   if (e.key === 'Escape') {
     if (buildMenu.farmsOpen) {
       buildMenu.showFarms(false);
@@ -1164,7 +1112,7 @@ canvas.addEventListener('wheel', (e) => {
   wheelSum += delta;
   if (Math.abs(wheelSum) < WHEEL_STEP) return;
   const rect = canvas.getBoundingClientRect();
-  setZoom(zoomIndex + (wheelSum < 0 ? 1 : -1), e.clientX - rect.left, e.clientY - rect.top);
+  setZoom(camera.zoomIndex + (wheelSum < 0 ? 1 : -1), e.clientX - rect.left, e.clientY - rect.top);
   wheelSum = 0;
   wheelLocked = now + WHEEL_PAUSE;
 }, { passive: false });
@@ -1175,14 +1123,13 @@ window.addEventListener('keyup', (e) => {
 
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, view());
-  camX = target.x;
-  camY = target.y;
+  const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view());
+  camera.moveTo(target.x, target.y);
 });
 
 minimapCanvas.addEventListener('mousemove', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  const world = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, view());
+  const world = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view());
 
   hoverCoordsEl.textContent = `${Math.floor(world.x)}, ${Math.floor(world.y)}`;
 });
@@ -1373,9 +1320,9 @@ function minimapDots(current: IsoView) {
 /** Gebäude, erschöpfte Felder und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
-  const visible = visibleWorldRect(view());
-  if (tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
-    resources.update(visible, camX, camY);
+  const visible = visibleWorldRect(camera.view());
+  if (camera.tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
+    resources.update(visible, camera.x, camera.y);
     resources.instances(visible, world, overlay, selection.resource, blend);
   }
   worldInstances(world, visible, overlay, blend, selection);
@@ -1496,7 +1443,7 @@ function loop(now: number) {
   // gleich, aber auf 3200 Pixel je Sekunde gedeckelt: ganz nah heran zoomt
   // man, um genau hinzusehen - dort flöge die Karte sonst in einem
   // Zehntel einer Sekunde vorbei.
-  const speed = Math.min(400 * (tileSize / 4), 3200) * dt * settings.scroll;
+  const speed = Math.min(400 * (camera.tileSize / 4), 3200) * dt * settings.scroll;
   let dx = 0;
   let dy = 0;
   if (keys['w'] || keys['arrowup']) dy -= speed;
@@ -1515,9 +1462,7 @@ function loop(now: number) {
   const reliefChanged = renderer.relief !== reliefBefore;
 
   if (dx !== 0 || dy !== 0 || reliefChanged) {
-    const d = panDelta(tileSize, dx, dy);
-    camX += d.x;
-    camY += d.y;
+    camera.panPixels(dx, dy);
     // Unter dem stehenden Zeiger zieht jetzt anderes Gelände durch.
     if (mousePixelX !== undefined && mousePixelY !== undefined) {
       updateHoveredTile(mousePixelX, mousePixelY);
@@ -1537,20 +1482,20 @@ function loop(now: number) {
   // Wild rund um die Kamera - neue Stücke nur ab und zu prüfen.
   if (now - lastAnimalCheck > 500) {
     lastAnimalCheck = now;
-    world.ensureAnimals(camX, camY);
+    world.ensureAnimals(camera.x, camera.y);
   }
   collectOverlay(tickAccumulator / TICK);
   renderer.setPlayerColor(player.color.toRGB());
-  renderer.render(camX, camY, mouseTileX, mouseTileY, overlay);
+  renderer.render(camera.x, camera.y, mouseTileX, mouseTileY, overlay);
 
-  const current = view();
+  const current = camera.view();
   minimapDots(current);
   minimap.render(current, minimapOverlay);
 
-  const camCenterTileX = Math.round(camX);
-  const camCenterTileY = Math.round(camY);
+  const camCenterTileX = Math.round(camera.x);
+  const camCenterTileY = Math.round(camera.y);
   posEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
-  sampleEl.textContent = (1 / (tileSize * pixelRatio)).toFixed(4);
+  sampleEl.textContent = (1 / (camera.tileSize * camera.pixelRatio)).toFixed(4);
   camCoordsEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
 
   // Der Vorrat wächst kontinuierlich, aber fünfmal je Sekunde abzulesen reicht -
@@ -1568,7 +1513,7 @@ function loop(now: number) {
   requestAnimationFrame(loop);
 }
 
-zoomEl.textContent = `${tileSize}px`;
+zoomEl.textContent = `${camera.tileSize}px`;
 // Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
 // Feld aus der Adresse - gedreht wird nur die Ansicht.
 if (settings.facing in COMPASS) {
