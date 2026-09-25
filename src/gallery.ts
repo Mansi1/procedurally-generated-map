@@ -5,10 +5,11 @@
 // und dreht die Ansicht. "Alle auf einmal" zeigt alle Modelle und
 // Animationen nebeneinander. Ohne Gelände, auf ruhigem Hintergrund,
 // gezeichnet mit demselben EntityRenderer wie im Spiel; die Bewegungen
-// laufen in Schleifen. Ziehen verschiebt, das Mausrad zoomt.
+// laufen in Schleifen. Ziehen dreht das gewählte Modell (Q/E auch), rechts
+// ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, millMotion, modelWorkSpot, type EntityInstance,
+  ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot, type EntityInstance,
 } from './gl/entityRenderer';
 import {
   groundToWorld, setViewRotation, snapCamera, viewRotation, worldToGround, worldToScreen, type IsoView,
@@ -395,8 +396,11 @@ const LIST_WIDTH = 224;
 
 /** Modell `i` (-1 = Übersicht) mit Animation `a` zeigen, bei einem Wechsel die Kamera darauf, Adresse merken. */
 function choose(i: number, a: number, reframe = i !== current) {
-  // Ein anderes Modell beginnt ohne Abriss.
-  if (i !== current) demolishing = false;
+  // Ein anderes Modell beginnt ohne Abriss und ungedreht.
+  if (i !== current) {
+    demolishing = false;
+    spin = 0;
+  }
   current = Math.max(-1, Math.min(SHOWCASE.length - 1, i));
   animation = current < 0 ? 0 : Math.max(0, Math.min(SHOWCASE[current].exhibits.length - 1, a));
   if (reframe) frame0();
@@ -479,17 +483,32 @@ function fit() {
   if (clipped) fitPasses = Math.max(fitPasses, 1);
 }
 
-let dragging: { x: number; y: number } | null = null;
+/**
+ * Ziehen mit der linken Maustaste dreht das gewählte Modell um sich selbst,
+ * mit der rechten (und in der Übersicht auch mit der linken) verschiebt es
+ * die Ansicht.
+ */
+/** Drehung des gewählten Modells um sich selbst (Radiant). */
+let spin = 0;
+
+let dragging: { x: number; y: number; turn: boolean } | null = null;
 canvas.addEventListener('mousedown', (e) => {
-  dragging = { x: e.clientX, y: e.clientY };
+  dragging = { x: e.clientX, y: e.clientY, turn: e.button === 0 && current >= 0 };
   canvas.style.cursor = 'grabbing';
 });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('mouseup', () => {
   dragging = null;
   canvas.style.cursor = 'grab';
 });
 window.addEventListener('mousemove', (e) => {
   if (!dragging) return;
+  if (dragging.turn) {
+    // Nach rechts ziehen dreht rechts herum - eine Bildschirmbreite etwa zweimal.
+    spin -= (e.clientX - dragging.x) * 0.01;
+    dragging = { ...dragging, x: e.clientX, y: e.clientY };
+    return;
+  }
   // Verschieben auf dem Bildschirm = in Boden-Koordinaten (u, v).
   const du = -(e.clientX - dragging.x) / zoom;
   const dv = -(e.clientY - dragging.y) / zoom;
@@ -497,15 +516,17 @@ window.addEventListener('mousemove', (e) => {
   const o = groundToWorld(0, 0);
   camX += a.x - o.x;
   camY += a.y - o.y;
-  dragging = { x: e.clientX, y: e.clientY };
+  dragging = { ...dragging, x: e.clientX, y: e.clientY };
 });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   zoom = Math.min(900, Math.max(12, zoom * Math.exp(-e.deltaY * 0.0015)));
 }, { passive: false });
-// Pfeiltasten: hoch/runter das Modell, links/rechts die Animation.
+// Pfeiltasten: hoch/runter das Modell, links/rechts die Animation; Q/E drehen.
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+  if (e.key === 'q' || e.key === 'e') {
+    spin += (e.key === 'q' ? 1 : -1) * (Math.PI / 12);
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     choose(current + (e.key === 'ArrowDown' ? 1 : -1), 0);
   } else if (current >= 0 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
@@ -530,6 +551,24 @@ if (params.has('zoom')) zoom = Number(params.get('zoom'));
 const instances: EntityInstance[] = [];
 const start = performance.now();
 
+/**
+ * Das gewählte Stück um seine Mitte (0, 0) gedreht: jede Instanz rückt auf
+ * dem Kreis weiter und schaut um so viel weiter. Felder nicht - bei ihnen ist
+ * motion[0] die Furche, und sie liegen fest auf ihren Tiles.
+ */
+function spinAll(out: EntityInstance[], angle: number) {
+  if (angle === 0) return;
+  const [c, s] = [Math.cos(angle), Math.sin(angle)];
+  for (const e of out) {
+    if (e.shape >= SHAPE.farmWheat && e.shape < SHAPE.farmCorn + FIELD_ROWS) continue;
+    const [x, y] = [e.x + 0.5, e.y + 0.5];
+    e.x = x * c - y * s - 0.5;
+    e.y = x * s + y * c - 0.5;
+    const m = e.motion ?? [buildingHeading(e.shape), 0, 0, 0];
+    e.motion = [m[0] + angle, m[1], m[2], m[3]];
+  }
+}
+
 function frame(now: number) {
   const t = (now - start) / 1000;
   instances.length = 0;
@@ -537,6 +576,7 @@ function frame(now: number) {
   else {
     const s = SHOWCASE[current];
     (demolishing && s.demolish ? s.demolish[animation] : s.exhibits[animation]).draw(t, 0, 0, instances);
+    spinAll(instances, spin);
   }
 
   gl.viewport(0, 0, canvas.width, canvas.height);
