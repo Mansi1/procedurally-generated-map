@@ -15,12 +15,10 @@ import type { EntityInstance } from './gl/entityRenderer';
 import { TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
-  ANIMALS,
   BUILDING_ORDER,
   CROP_ORDER,
   CROPS,
   RESOURCE_LABEL,
-  YIELD,
   type ResourceKind,
   player,
   PLAYER_COLORS,
@@ -32,6 +30,7 @@ import { World, type Villager } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { hoverDescription, type HoverTarget } from './game/hoverInfo';
 import { Compass, isDirection, rotateToFace } from './game/Compass';
 import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
@@ -1032,53 +1031,22 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
 }
 
 /**
- * Was unter dem Zeiger steht, in den Entwickler-Infos - in dieser Reihenfolge:
- * ein Dorfbewohner (Name, Leben, was er tut), ein Tier (Leben, erlegt: die
- * Nahrung am Kadaver), ein Gebäude mit seinen Trefferpunkten, sonst eine
- * Ressource - Art (Baum- oder Strauchart, z. B. "Heidelbeere") und wie viel
- * Nahrung, Holz, Stein oder Gold noch da ist. Läuft auch getaktet mit, weil
- * sich Figuren bewegen und Sammler leeren, während der Zeiger stillsteht.
+ * Was unter dem Zeiger steht, in den Entwickler-Infos (game/hoverInfo.ts).
+ * Läuft auch getaktet mit, weil sich Figuren bewegen und Sammler leeren,
+ * während der Zeiger stillsteht.
  */
 function updateHoverInfo() {
   const hovered = mouseTileX !== undefined && mouseTileY !== undefined
     && mousePixelX !== undefined && mousePixelY !== undefined;
-  const villager = hovered ? villagerAt(mousePixelX!, mousePixelY!) : undefined;
-  if (villager) {
-    const role = villager.female ? 'Dorfbewohnerin' : VILLAGER.label;
-    setText(objectLabelEl, 'Einheit');
-    setText(resourceInfoEl,
-      `${villager.name} (${role}) | Leben ${Math.ceil(villager.hp)}/${VILLAGER.hp} | ${world.describe(villager)}`);
-    return;
+  let target: HoverTarget = {};
+  if (hovered) {
+    const villager = villagerAt(mousePixelX!, mousePixelY!);
+    const at = pick(mousePixelX!, mousePixelY!);
+    target = villager ? { villager } : { animal: world.animalNear(at.x, at.y, 0.6), tile: { x: mouseTileX!, y: mouseTileY! } };
   }
-  const at = hovered ? pick(mousePixelX!, mousePixelY!) : undefined;
-  const animal = at ? world.animalNear(at.x, at.y, 0.6) : undefined;
-  if (animal) {
-    const def = ANIMALS[animal.kind];
-    setText(objectLabelEl, 'Tier');
-    setText(resourceInfoEl, animal.state === 'dead'
-      ? `${def.label} (erlegt) | Nahrung ${Math.ceil(animal.food)}/${def.food}`
-      : `${def.label} | Leben ${Math.ceil(animal.hp)}/${def.hp}`);
-    return;
-  }
-  const building = hovered ? world.at(mouseTileX!, mouseTileY!) : undefined;
-  if (building) {
-    const def = building.definition;
-    setText(objectLabelEl, 'Gebäude');
-    setText(resourceInfoEl, `${def.label} | Leben ${Math.ceil(building.hp)}/${def.hp}`);
-    return;
-  }
-  setText(objectLabelEl, 'Ressource');
-  const found = hovered ? world.resourceInfo(mouseTileX!, mouseTileY!) : null;
-  if (!found) {
-    setText(resourceInfoEl, '-');
-    return;
-  }
-  // Was man davon bekommt: Beeren sind Nahrung, sonst Holz, Stein oder Gold.
-  const yields = RESOURCE_LABEL[YIELD[found.type]];
-  const amount = `${yields} ${Math.ceil(found.remaining)}/${found.total}`;
-  // Baum- und Straucharten mit Namen davor; Stein und Gold heißen wie ihr Ertrag.
-  const kind = resources.kindAt(mouseTileX!, mouseTileY!);
-  setText(resourceInfoEl, kind ? `${kind} | ${amount}` : amount);
+  const { label, text } = hoverDescription(world, resources, target);
+  setText(objectLabelEl, label);
+  setText(resourceInfoEl, text);
 }
 
 /** Text nur setzen, wenn er sich ändert - getaktet sonst unnötige Layouts. */
