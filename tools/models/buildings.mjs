@@ -1198,6 +1198,17 @@ function bowItem() {
   write(dir, 'bow', header('bow', 'Bogen'), m, '0.420 0.300 0.180');
 }
 
+// --- Marker: arrow pointing down, floats over a workshop that has no worker.
+// Material Paint gets the marker colour from the game. ------------------------
+function markerArrow() {
+  const m = model();
+  m.box('Arrow.Head', 'Paint', [-0.01, 0.01], [0, 0.5], [-0.01, 0.01], { n: 8, x: [-0.34, 0.34], z: [-0.34, 0.34] });
+  m.box('Arrow.Rim', 'Soot', [-0.36, 0.36], [0.5, 0.56], [-0.36, 0.36], { n: 8 });
+  m.box('Arrow.Shaft', 'Paint', [-0.14, 0.14], [0.56, 1.25], [-0.14, 0.14], { n: 8 });
+  m.box('Arrow.Cap', 'Soot', [-0.16, 0.16], [1.25, 1.3], [-0.16, 0.16], { n: 8 });
+  write(dir, 'marker_arrow', header('marker_arrow', 'Hinweispfeil', '# Material Paint bekommt die Farbe des Hinweises aus dem Spiel.\n'), m, '1.000 0.820 0.160');
+}
+
 house({ file: 'house' });
 house({ file: 'house_2', stone: true, mirror: true });
 // Halbe Drehungen: eine Vierteldrehung vertauschte Breite und Tiefe, und das
@@ -1217,3 +1228,4 @@ miningCamp();
 bowyer();
 armory();
 bowItem();
+markerArrow();

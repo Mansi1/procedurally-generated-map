@@ -5,7 +5,7 @@
 // gelesen.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelStockSlots, type EntityInstance,
+  ANIMAL_POSE, BUILDING_HEADING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelSize, modelStockSlots, type EntityInstance,
 } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_COLORS } from '../map';
 import { reliefZ } from '../noise';
@@ -15,6 +15,12 @@ import {
   RUIN_COLLAPSE, RUIN_COLLAPSE_START, RUIN_DURATION, RUIN_FADE_START, RUIN_FLIGHT, RUIN_SHAKE,
 } from './ruin';
 import { STRIDE_LENGTH, WORK_TEMPO, type ViewRect, type World } from './world';
+
+/** Farbe des Hinweispfeils über einem Gebäude ohne Arbeiter. */
+const MARKER_COLOR: [number, number, number] = [255, 205, 40];
+/** Höhe des Hinweispfeils in Tiles (1.5 m) und sein Abstand über dem Dach. */
+const MARKER_SIZE = 0.3;
+const MARKER_GAP = 0.12;
 
 /** Farbe von Staub und Schutt beim Einsturz. */
 const DUST_COLOR: [number, number, number] = [214, 200, 172];
@@ -52,9 +58,14 @@ export function worldInstances(
   // Bognereien: wie weit der Bogen auf der Werkbank ist - nur solange der
   // Bogner daran arbeitet (sein Holz liegt auf der Bank), sonst ist sie leer.
   const crafting = new Map<string, number>();
+  // Werkstätten mit Arbeiter - über den anderen steht ein Hinweispfeil.
+  const staffed = new Set<string>();
   for (const v of world.villagers) {
-    if (v.task.kind === 'craft' && v.task.step === 'carve' && v.carryType !== 'wood') crafting.set(v.task.building, v.task.progress);
+    if (v.task.kind !== 'craft') continue;
+    staffed.add(v.task.building);
+    if (v.task.step === 'carve' && v.carryType !== 'wood') crafting.set(v.task.building, v.task.progress);
   }
+  const now = world.timeAt(blend);
 
   for (const building of world.allBuildings()) {
     if (building.x < x0 || building.x > x1 || building.y < y0 || building.y > y1) continue;
@@ -95,6 +106,14 @@ export function worldInstances(
         : undefined,
       health: selection?.buildings.has(building.anchor) ? building.health : undefined,
     });
+    // Arbeiter fehlt: ein Pfeil nach unten über dem Dach, der sich langsam dreht.
+    if (building.isWorkshop() && !staffed.has(building.anchor)) {
+      const top = (modelSize(building.model)?.height ?? 1) * def.size;
+      out.push({
+        x: building.x, y: building.y, size: MARKER_SIZE, color: MARKER_COLOR, shape: SHAPE.markerArrow, alpha: 1,
+        motion: [now * 1.5, top + MARKER_GAP, 0, 0],
+      });
+    }
   }
 
   for (const v of world.villagers) {

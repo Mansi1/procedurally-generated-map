@@ -107,6 +107,8 @@ import bowyerObj from '../models/bowyer.obj?raw';
 import bowyerMtl from '../models/bowyer.mtl?raw';
 import armoryObj from '../models/armory.obj?raw';
 import armoryMtl from '../models/armory.mtl?raw';
+import markerArrowObj from '../models/marker_arrow.obj?raw';
+import markerArrowMtl from '../models/marker_arrow.mtl?raw';
 import bowObj from '../models/bow.obj?raw';
 import bowMtl from '../models/bow.mtl?raw';
 
@@ -220,6 +222,12 @@ export const SHAPE = {
   bow: 99,
   /** Waffenkammer: Steinhaus mit Waffengestell, Schilden und Pfeilfässern (models/armory.obj). */
   armory: 100,
+  /**
+   * Hinweispfeil nach unten über einem Gebäude, dem ein Arbeiter fehlt
+   * (models/marker_arrow.obj). motion[1] hebt ihn in Tiles übers Dach, im
+   * Shader wippt er.
+   */
+  markerArrow: 101,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -1012,6 +1020,9 @@ void main() {
       // Der Haufen sackt schief zusammen.
       p.z += c * 0.12 * (p.x - 0.4 * p.y);
     }
+
+    // Hinweispfeil: aMotion.y Tiles über dem Boden (übers Dach), wippt.
+    if (shape == ${SHAPE.markerArrow}) p.z += (aMotion.y + 0.05 * sin(uTime * 3.0)) / scale;
 
     // Felder liegen auf ihren Tiles; aMotion.x ist bei ihnen die Furche.
     float heading = field ? 0.0 : aMotion.x;
@@ -2210,6 +2221,7 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.bowyer, model: loadModel(bowyerObj, bowyerMtl, 'width'), scale: 1 },
   { shape: SHAPE.bow, model: loadModel(bowObj, bowMtl, 'height'), scale: 1 },
   { shape: SHAPE.armory, model: loadModel(armoryObj, armoryMtl, 'width'), scale: 1 },
+  { shape: SHAPE.markerArrow, model: loadModel(markerArrowObj, markerArrowMtl, 'height'), scale: 1 },
   ...FARM_KINDS.flatMap((kind, i) => fieldModels(kind, FIELD_BASES[i])),
   ...natural(SHAPE.tree, treeSpruceObj, treeSpruceMtl, TREE_METERS),
   ...natural(SHAPE.treePine, treePineObj, treePineMtl, TREE_METERS),
