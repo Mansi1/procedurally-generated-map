@@ -15,6 +15,9 @@ direkt in `src/` geschrieben.
 - `models/*.mjs` - je ein Generator; Maße in Metern, 1 Tile = 5 m
 - `ui/icons.mjs` + `ui/icons.html` - rendert die Spielmodelle als Symbole
 - `ui/wood-bar.mjs` - Holzplanken für die Rohstoffleiste
+- `ui/smoke.mjs` - Rauchtest im Browser (`npm run smoke`, bei laufendem `npm run dev`):
+  Hauptmenü, neues Spiel, bauen, ausbilden, Feld, speichern und neu laden, Demo, Galerie.
+  Andere Adresse als Argument: `node tools/ui/smoke.mjs http://localhost:5199`
 
 `gen:ui` braucht Google Chrome (über `playwright-core`). Liegt Chrome nicht am
 üblichen Ort unter macOS, den Pfad in der Umgebungsvariable `CHROME` angeben.

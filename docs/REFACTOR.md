@@ -240,16 +240,16 @@ src/
 - [x] 5.1 `tools/demo/soliva.ts` entfernt - `public/savegame/demo.json` ist ein echter Spielstand, kein erzeugter
 - [x] 5.2 `src/demo.ts` entfernt: die Demo lädt erst, wenn man als neue Welt "Demo"
   eingibt (`installDemo()` in `worlds.ts`), und überschreibt nie die gewählte Welt
-- [ ] 5.3 Browser-Tests als `tools/ui/smoke.mjs` ins Repo: Hauptmenü, neues
+- [x] 5.3 Browser-Tests als `tools/ui/smoke.mjs` ins Repo: Hauptmenü, neues
   Spiel, bauen, ausbilden, Feld mit Untermenü, speichern und neu laden, Galerie
 
 ## Test nach jedem Schritt
 
 1. `npx tsc --noEmit` und `npm run build`
-2. Im Browser: Hauptmenü, Weiterspielen mit `demo.json`, Hauptgebäude
-   auswählen, ausbilden (erscheint nach 6 s), Sammelpunkt setzen, Haus und
-   Feld bauen, speichern und neu laden
-3. Galerie: ein Modell wählen, Animation wechseln, Abriss an und aus
+2. `npm run smoke` bei laufendem `npm run dev` - spielt Hauptmenü, neues
+   Spiel, bauen, ausbilden, Feld, speichern und neu laden, Demo und Galerie durch
+3. Von Hand, was der Rauchtest nicht sieht: Sammelpunkt setzen, Dorfbewohner
+   erscheint nach 6 s, in der Galerie Abriss an und aus
 
 ## Entscheidungen
 
