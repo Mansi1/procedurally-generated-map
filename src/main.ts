@@ -1,6 +1,5 @@
 
-import { flatten, type FlatZone } from './world/flatten';
-import { MapGenerator, reliefZ } from './noise';
+import { MapGenerator } from './noise';
 import {
   pickWorld,
   setViewRotation,
@@ -24,7 +23,6 @@ import {
   CROPS,
   RESOURCE_LABEL,
   YIELD,
-  type DepositType,
   type ResourceKind,
   player,
   PLAYER_COLORS,
@@ -36,10 +34,11 @@ import { World, type Villager } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { Ground } from './game/Ground';
+import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
 import { selectionView } from './game/selectionView';
 import type { UnitProducer } from './world/building';
-import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './components/ResourceBar';
 import { BuildMenu } from './components/BuildMenu';
 import { mountGame } from './components/Hud';
@@ -48,7 +47,7 @@ import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
 import { loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
-import { Sound, type SoundName } from './audio';
+import { Sound } from './audio';
 import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
 import { currentSeed, DEFAULT_SEED, deleteSave, switchWorld, takeStartRequest } from './worlds';
@@ -145,8 +144,6 @@ function startPoint(): { x: number; y: number } {
 const { x: startX, y: startY } = startPoint();
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
-// Mit derselben Feinheit wie das Geländegitter der jetzigen Zoomstufe (wie zAt).
-world.groundAt = (x, y) => flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (camera.tileSize * camera.pixelRatio))), flatZones);
 const resources = new ResourceField(terrain, mapGen);
 const sound = new Sound();
 /** Hintergrundmusik aus assets/music/ - der Ton-Schalter (M) gilt auch für sie. */
@@ -359,46 +356,8 @@ soundButton.addEventListener('click', toggleSound);
 updateSoundButton();
 applySettings();
 
-const GATHER_SOUND: Record<DepositType, SoundName> = {
-  wood: 'chop',
-  stone: 'pick',
-  gold: 'pick',
-  berries: 'rustle',
-};
-
-/**
- * Geräusche aus der Welt: nur, was man sieht - leiser zum Bildrand hin und
- * nach links oder rechts verteilt, je nachdem, wo es passiert. Weit
- * herausgezoomt ist alles leiser, sonst klingt ein ganzes Dorf wie eines.
- */
-world.onEvent = (event) => {
-  const s = worldToScreen(camera.view(), event.x, event.y, zAt(event.x, event.y));
-  const nx = (s.x - camera.width / 2) / (camera.width / 2);
-  const ny = (s.y - camera.height / 2) / (camera.height / 2);
-  const offscreen = Math.abs(nx) > 1.15 || Math.abs(ny) > 1.15;
-  const distance = Math.min(1, Math.hypot(nx, ny) / 1.4);
-  const zoom = Math.min(1, camera.tileSize / 8);
-  const volume = (1 - distance * 0.7) * (0.35 + 0.65 * zoom);
-
-  switch (event.kind) {
-    case 'strike':
-      if (!offscreen) sound.play(GATHER_SOUND[event.resource], volume * 0.55, nx * 0.8);
-      break;
-    case 'treeFall':
-      if (!offscreen) sound.play('treeFall', volume, nx * 0.8);
-      break;
-    case 'deliver':
-      if (!offscreen) sound.play('deliver', volume * 0.6, nx * 0.8);
-      break;
-    case 'collapse':
-      if (!offscreen) sound.play('collapse', volume, nx * 0.8);
-      break;
-    case 'trained':
-      // Wichtige Rückmeldung - auch wenn das Hauptgebäude nicht im Bild ist.
-      sound.play('trained', 0.7);
-      break;
-  }
-};
+// Geräusche aus der Welt - nur, was man sieht (game/worldSounds.ts).
+world.onEvent = worldSounds(sound, camera, (x, y) => ground.heightAt(x, y));
 
 // --- Kompass ---------------------------------------------------------------
 
@@ -481,7 +440,7 @@ function clearSelection() {
 /** Bildschirmposition (CSS-Pixel) der Figurmitte - die Stelle, auf die man klickt. */
 function villagerScreen(v: Villager) {
   const p = v.positionAt(tickAccumulator / TICK);
-  return worldToScreen(camera.view(), p.x, p.y, zAt(p.x, p.y) + VILLAGER.size * 0.8);
+  return worldToScreen(camera.view(), p.x, p.y, ground.heightAt(p.x, p.y) + VILLAGER.size * 0.8);
 }
 
 /** Dorfbewohner unter dem Zeiger - der nächste innerhalb eines Klick-Radius. */
@@ -521,7 +480,7 @@ function resourceObjectAt(px: number, py: number): { x: number; y: number } | un
     if (!world.resourceInfo(x, y)) return undefined;
     const cx = inst.x + 0.5;
     const cy = inst.y + 0.5;
-    const z = zAt(cx, cy);
+    const z = ground.heightAt(cx, cy);
     // Ein gefällter Baum liegt flach.
     const fallen = inst.motion && inst.motion[1] > 0.5;
     const height = fallen ? 0.3 * inst.size : dims.height * inst.size;
@@ -815,7 +774,7 @@ function selectIdleVillager(all = true) {
     selection.villagers.clear();
     selection.villagers.add(next.id);
   }
-  camera.centerOn(target.x, target.y, zAt(target.x, target.y));
+  camera.centerOn(target.x, target.y, ground.heightAt(target.x, target.y));
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
@@ -852,7 +811,7 @@ function cycleTownCenter() {
   // säße es auf einem Hügel ein gutes Stück über der Mitte.
   const x = next.x + 0.5;
   const y = next.y + 0.5;
-  camera.centerOn(x, y, zAt(x, y));
+  camera.centerOn(x, y, ground.heightAt(x, y));
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
@@ -915,69 +874,15 @@ camera.moveTo(startX, startY);
  * Gitter des Gelände-Shaders, damit der Treffer auf derselben Fläche liegt,
  * die man sieht.
  */
-/**
- * Eingeebnete Flächen unter den Gebäuden (siehe world/flatten.ts), je Bild
- * neu zusammengestellt; die Höhe je Gebäude wird nur einmal gemessen.
- */
-let flatZones: FlatZone[] = [];
-
-/**
- * Äcker für den Gelände-Shader: ein Ausschnitt von FIELD_WINDOW Tiles um die
- * Kamera, neu zusammengestellt ein paarmal je Sekunde (gepflügt wird langsam)
- * oder wenn die Kamera aus dem Ausschnitt herausläuft.
- */
-const fieldData = new Uint8Array(FIELD_WINDOW * FIELD_WINDOW * 4);
-let fieldOrigin = { x: NaN, y: NaN };
-let lastFieldUpdate = 0;
 let lastAnimalCheck = 0;
 
-function updateFields(now: number) {
-  const snap = 32;
-  const x = Math.floor((camera.x - FIELD_WINDOW / 2) / snap) * snap;
-  const y = Math.floor((camera.y - FIELD_WINDOW / 2) / snap) * snap;
-  if (x === fieldOrigin.x && y === fieldOrigin.y && now - lastFieldUpdate < 250) return;
-  fieldOrigin = { x, y };
-  lastFieldUpdate = now;
-  renderer.setFields(x, y, world.fieldSoil(x, y, FIELD_WINDOW, fieldData));
-}
-const flatHeights = new Map<string, number>();
-
-function updateFlatZones() {
-  const zones: FlatZone[] = [];
-  for (const b of world.allBuildings()) {
-    // Felder bleiben, wie das Gelände ist - Pflanzen wachsen auch am Hang.
-    if (b.isFarm()) continue;
-    const fp = b.definition.footprint;
-    const k = `${b.type}:${b.x},${b.y}`;
-    let z = flatHeights.get(k);
-    if (z === undefined) {
-      // Mittel über den Grundriss: so wird bergauf etwas abgetragen und
-      // bergab etwas aufgeschüttet.
-      let sum = 0, n = 0;
-      for (let i = 0; i <= 2; i++) for (let j = 0; j <= 2; j++) {
-        sum += reliefZ(mapGen.heightAt(b.x + 0.5 + (i - 1) * fp / 2, b.y + 0.5 + (j - 1) * fp / 2));
-        n++;
-      }
-      z = sum / n;
-      flatHeights.set(k, z);
-    }
-    zones.push({ x: b.x + 0.5, y: b.y + 0.5, half: fp / 2 + 0.1, z });
-  }
-  // Der Shader nimmt nur die der Bildmitte nächsten.
-  zones.sort((a, b) => Math.hypot(a.x - camera.x, a.y - camera.y) - Math.hypot(b.x - camera.x, b.y - camera.y));
-  flatZones = zones;
-  renderer.setFlatZones(zones);
-}
-
-function zAt(x: number, y: number): number {
-  // Mit der aktuellen Reliefstärke - flachgelegt trifft der Klick sonst
-  // die Stelle, an der der Berg stünde.
-  return flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (camera.tileSize * camera.pixelRatio))), flatZones) * renderer.relief;
-}
+/** Gelände, wie man es sieht, und sein Abgleich mit dem Shader (game/Ground.ts). */
+const ground = new Ground(mapGen, world, renderer, camera);
+world.groundAt = (x, y) => ground.groundAt(x, y);
 
 /** Welt-Punkt unter einer Canvas-Position (CSS-Pixel), mit Relief. */
 function pick(px: number, py: number) {
-  return pickWorld(camera.view(), px, py, zAt);
+  return pickWorld(camera.view(), px, py, (x, y) => ground.heightAt(x, y));
 }
 
 function tileAt(px: number, py: number) {
@@ -1356,8 +1261,7 @@ function loop(now: number) {
     tickAccumulator -= TICK;
   }
 
-  updateFlatZones();
-  updateFields(now);
+  ground.update(now);
   // Wild rund um die Kamera - neue Stücke nur ab und zu prüfen.
   if (now - lastAnimalCheck > 500) {
     lastAnimalCheck = now;
