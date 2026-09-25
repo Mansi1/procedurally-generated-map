@@ -73,19 +73,6 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, Color> = {
 } as const;
 
 /**
- * Wie stark ein Tile mit dieser Ressource zu RESOURCE_TYPE_COLORS hin getönt
- * wird (bei voller Menge). Gold, Stein und Beeren stehen ohne Farbfleck im
- * Gras - man sieht nur das Modell.
- */
-export const RESOURCE_TYPE_TINT: Record<ResourceType, number> = {
-  none: 0,
-  wood: 0.3,
-  gold: 0,
-  stone: 0,
-  berries: 0,
-} as const;
-
-/**
  * Eine Regel: auf `biome` entsteht `type`, sobald das Ressourcen-Rauschen über
  * `threshold` liegt und das feinere Häufchen-Rauschen über `cluster`. Das
  * erste legt grob fest, in welcher Gegend etwas vorkommt, das zweite teilt die
@@ -97,10 +84,8 @@ export const RESOURCE_TYPE_TINT: Record<ResourceType, number> = {
  * deshalb vor Stein: beide liegen im Gebirge, Gold nur in der oberen Spitze
  * der Verteilung, der Rest wird Stein.
  *
- * Diese Tabelle ist die einzige Quelle für die Schwellen. Der Shader bekommt
- * sie als Uniforms (TERRAIN_PALETTE.resourceRules), die CPU-Fassung liest sie
- * in resourceFromNoise(). Vorher standen die Zahlen doppelt da - in TypeScript
- * und in GLSL - und mussten von Hand synchron gehalten werden.
+ * Diese Tabelle ist die einzige Quelle für die Schwellen; resourceFromNoise()
+ * liest sie.
  */
 export interface ResourceRule {
   biome: TileType;
@@ -121,21 +106,10 @@ export const RESOURCE_RULES: readonly ResourceRule[] = [
 /**
  * Maßstab des Häufchen-Rauschens: ein Vorkommen misst einige Tiles. Jede
  * Regel liest es an einer eigenen Stelle (RESOURCE_CLUSTER_OFFSET * Index),
- * damit Stein und Gold nicht in denselben Häufchen liegen. Der Shader rechnet
- * genauso (resourceAt in terrainShader.ts).
+ * damit Stein und Gold nicht in denselben Häufchen liegen.
  */
 const RESOURCE_CLUSTER_SCALE = 0.075;
 const RESOURCE_CLUSTER_OFFSET = [40, 68] as const;
-
-/** Position eines Bioms in TILE_TYPE_GRADIENT - entspricht den B_*-Konstanten im Shader. */
-const BIOME_INDEX = Object.fromEntries(
-  (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t, i) => [t, i]),
-) as Record<TileType, number>;
-
-/** Position einer Ressource in RESOURCE_TYPE_COLORS - entspricht uResourceColor[] im Shader. */
-const RESOURCE_INDEX = Object.fromEntries(
-  (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map((t, i) => [t, i]),
-) as Record<ResourceType, number>;
 
 /**
  * Wertet RESOURCE_RULES aus - erste passende Regel gewinnt. `cluster(i)` ist
@@ -254,14 +228,6 @@ export function getTileRGB(tile: MapTile & { resource?: ResourceType; resourceAm
   g *= light;
   bl *= light;
 
-  if (tile.resource && tile.resource !== "none" && (tile.resourceAmount ?? 0) > 0) {
-    const [rr, rg, rb] = RESOURCE_TYPE_COLORS[tile.resource].toRGB();
-    const alpha = Math.min((tile.resourceAmount ?? 0) / 100, 1) * RESOURCE_TYPE_TINT[tile.resource];
-    r = lerp(r, rr, alpha);
-    g = lerp(g, rg, alpha);
-    bl = lerp(bl, rb, alpha);
-  }
-
   return [byte(r), byte(g), byte(bl)];
 }
 
@@ -275,21 +241,6 @@ export const TERRAIN_PALETTE = {
   biomeHi: (Object.keys(TILE_TYPE_GRADIENT) as TileType[]).map((t) => TILE_TYPE_GRADIENT[t][1]),
   waterRamp: WATER_RAMP,
   surf: SURF,
-  resourceColors: (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map(
-      (t) => RESOURCE_TYPE_COLORS[t]),
-  resourceTints: (Object.keys(RESOURCE_TYPE_COLORS) as ResourceType[]).map(
-      (t) => RESOURCE_TYPE_TINT[t]),
-  resourceScale: RESOURCE_SCALE,
-  resourceClusterScale: RESOURCE_CLUSTER_SCALE,
-  resourceClusterOffset: RESOURCE_CLUSTER_OFFSET,
-  // Als Indizes, damit der Shader sie ohne Namenszuordnung vergleichen kann.
-  resourceRules: RESOURCE_RULES.map((rule) => ({
-    biome: BIOME_INDEX[rule.biome],
-    type: RESOURCE_INDEX[rule.type],
-    threshold: rule.threshold,
-    cluster: rule.cluster,
-    yield: rule.yield,
-  })),
 };
 
 /**

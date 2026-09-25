@@ -29,19 +29,7 @@ export interface TerrainPalette {
   biomeHi: Color[];
   waterRamp: [number, number, number][];
   surf: [number, number, number];
-  resourceColors: Color[];
-  /** Tönung je Ressource, gleiche Reihenfolge wie resourceColors (RESOURCE_TYPE_TINT). */
-  resourceTints: number[];
-  resourceScale: number;
-  /** Maßstab und Versatz je Regel für das Häufchen-Rauschen (siehe RESOURCE_RULES). */
-  resourceClusterScale: number;
-  resourceClusterOffset: readonly [number, number];
-  /** Aus RESOURCE_RULES, bereits auf Indizes abgebildet. Erste passende gewinnt. */
-  resourceRules: { biome: number; type: number; threshold: number; cluster: number; yield: number }[];
 }
-
-/** Platz für Ressourcen-Regeln im Shader - muss zu den Array-Längen dort passen. */
-const MAX_RESOURCE_RULES = 8;
 
 function compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -291,29 +279,6 @@ export class TerrainRenderer {
     gl.uniform3fv(this.fillLocation('uBiomeHi[0]'), flat(palette.biomeHi.map((c) => c.toRGB())));
     gl.uniform3fv(this.fillLocation('uWaterRamp[0]'), flat(palette.waterRamp));
     gl.uniform3fv(this.fillLocation('uSurf'), flat([palette.surf]));
-    gl.uniform3fv(this.fillLocation('uResourceColor[0]'),
-        flat(palette.resourceColors.map((c) => c.toRGB())));
-    gl.uniform1fv(this.fillLocation('uResourceTint[0]'), palette.resourceTints);
-    gl.uniform1f(this.fillLocation('uResourceScale'), palette.resourceScale);
-    gl.uniform1f(this.fillLocation('uResourceClusterScale'), palette.resourceClusterScale);
-    gl.uniform2fv(this.fillLocation('uResourceClusterOffset'), palette.resourceClusterOffset);
-
-    const rules = palette.resourceRules;
-    if (rules.length > MAX_RESOURCE_RULES) {
-      throw new Error(
-          `Der Shader fasst ${MAX_RESOURCE_RULES} Ressourcen-Regeln, übergeben wurden ${rules.length}`);
-    }
-    gl.uniform1i(this.fillLocation('uResourceRuleCount'), rules.length);
-    gl.uniform1iv(this.fillLocation('uResourceRuleBiome[0]'),
-        new Int32Array(rules.map((r) => r.biome)));
-    gl.uniform1iv(this.fillLocation('uResourceRuleType[0]'),
-        new Int32Array(rules.map((r) => r.type)));
-    gl.uniform1fv(this.fillLocation('uResourceRuleThreshold[0]'),
-        new Float32Array(rules.map((r) => r.threshold)));
-    gl.uniform1fv(this.fillLocation('uResourceRuleCluster[0]'),
-        new Float32Array(rules.map((r) => r.cluster)));
-    gl.uniform1fv(this.fillLocation('uResourceRuleYield[0]'),
-        new Float32Array(rules.map((r) => r.yield)));
   }
 
   /**
