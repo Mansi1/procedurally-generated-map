@@ -1,8 +1,9 @@
 // Armory.ts
 // Waffenkammer - wie in Stronghold: hier kommen die Waffen hin. Der Bogner
 // trägt jeden fertigen Bogen zur nächsten Waffenkammer; ohne eine, oder wenn
-// alle voll sind, wartet er mit dem Bogen in der Hand. Es passen so viele
-// Bögen hinein, wie das Modell in seinen Gestellen zeigt (Stock.0 bis 23).
+// alle voll sind, wartet er mit dem Bogen in der Hand. Es passen 100 hinein;
+// die 24 Plätze in den Gestellen des Modells (Stock.0 bis 23) zeigen den
+// Füllstand anteilig.
 
 import { Color } from '../../functions/Color';
 import { SHAPE } from '../../gl/entityRenderer';
@@ -19,7 +20,7 @@ export class Armory extends StorageBuilding {
     size: 1,
     cost: { wood: 50, stone: 50 },
     storedResources: ['bows'],
-    weaponCapacity: 24,
+    weaponCapacity: 100,
     hp: 1000,
   });
 }

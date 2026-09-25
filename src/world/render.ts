@@ -83,7 +83,7 @@ export function worldInstances(
       // Jede Mühle dreht in ihrem eigenen Takt; Felder zeigen Wuchs und Rest.
       motion: def.model === SHAPE.mill ? millMotion(building.x, building.y)
         : armory.has(building.anchor) && modelStockSlots(building.model) > 0
-          ? armoryMotion(building.model, armory.get(building.anchor)!,
+          ? armoryMotion(building.model, armory.get(building.anchor)!, def.weaponCapacity,
               building.anchor === hovered || !!selection?.buildings.has(building.anchor))
         : undefined,
       health: selection?.buildings.has(building.anchor) ? building.health : undefined,
@@ -139,8 +139,12 @@ export function worldInstances(
 }
 
 /** Waffenkammer: Füllstand der Gestelle (Anteil der Plätze) und offen, wenn der Zeiger darauf steht oder sie ausgewählt ist. */
-function armoryMotion(shape: number, bows: number, open: boolean): [number, number, number, number] {
-  return [BUILDING_HEADING, Math.min(1, bows / modelStockSlots(shape)), open ? 1 : 0, 0];
+function armoryMotion(shape: number, bows: number, capacity: number, open: boolean): [number, number, number, number] {
+  // Die Plätze im Modell zeigen den Füllstand anteilig - aufgerundet, damit
+  // schon ein einzelner Bogen zu sehen ist.
+  const slots = modelStockSlots(shape);
+  const shown = Math.min(slots, Math.ceil((bows / capacity) * slots));
+  return [BUILDING_HEADING, shown / slots, open ? 1 : 0, 0];
 }
 
 /** Einstürzende Gebäude: Wackeln, Zusammensacken, Staub, fliegender Schutt, Ausblenden. */
