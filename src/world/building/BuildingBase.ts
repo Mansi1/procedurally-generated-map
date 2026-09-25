@@ -4,7 +4,7 @@
 // belegte Tiles, Speichern. Was für alle Gebäude einer Art gilt, steht
 // statisch an der Klasse: `static definition`.
 
-import type { BuildingType, CropType } from '../catalog';
+import type { BuildingType, CropType, ResourceKind } from '../catalog';
 import type { BuildingDefinition } from './definition';
 import type { Farm } from './Farm';
 import type { StorageBuilding } from './StorageBuilding';
@@ -97,8 +97,8 @@ export abstract class BuildingBase {
   }
 
   /** Können Dorfbewohner hier diesen Rohstoff abliefern? */
-  stores(resource: string): boolean {
-    return (this.definition.storedResources as readonly string[]).includes(resource);
+  stores(resource: ResourceKind): boolean {
+    return this.definition.storedResources.includes(resource);
   }
 
   /** Belegte Tiles: das Quadrat des Grundrisses um den Ankerpunkt. */

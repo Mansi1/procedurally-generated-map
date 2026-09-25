@@ -3,13 +3,13 @@
 // Warteschlange, Ausbildung der vordersten Einheit, Sammelpunkt für frisch
 // Ausgebildete. Welche Einheit es ausbildet, sagt die Unterklasse (`unit`).
 
-import { MAX_TRAINING_QUEUE, type Stock } from '../catalog';
+import { MAX_TRAINING_QUEUE, type Resources } from '../catalog';
 import { BuildingBase, type BuildingSave } from './BuildingBase';
 
 /** Was ein UnitProducer über die Einheit wissen muss, die er ausbildet. */
 export interface TrainableUnit {
   label: string;
-  cost: Partial<Stock>;
+  cost: Partial<Resources>;
   /** Ausbildungszeit in Sekunden. */
   trainTime: number;
 }

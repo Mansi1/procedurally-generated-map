@@ -11,7 +11,7 @@ import './SelectionPanel.css';
 import './buttons.css';
 import { formatDuration } from '../format';
 import {
-  CROP_ORDER, CROPS, player, type BuildingType, type CropType, type Stock,
+  CROP_ORDER, CROPS, player, type BuildingType, type CropType, type DepositType,
 } from '../world/catalog';
 import { buildingIcon, resourceIcon, villagerIcon } from './modelIcons';
 import { cropIcon } from './cropIcons';
@@ -73,7 +73,7 @@ export type SelectionView =
     }
   | {
       kind: 'resource';
-      type: keyof Stock;
+      type: DepositType;
       title: string;
       subtitle?: string;
       left: number;

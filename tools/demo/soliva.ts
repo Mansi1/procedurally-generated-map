@@ -20,7 +20,7 @@ const seed = 'Soliva';
 const mapGen = new MapGenerator(seed);
 const terrain = new Terrain(mapGen, seed);
 const world = new World(terrain, seed);
-world.stock = { wood: 99999, stone: 99999, gold: 99999, berries: 99999 };
+world.stock = { food: 99999, wood: 99999, stone: 99999, gold: 99999 };
 
 function spiral(cx: number, cy: number, maxR: number, test: (x: number, y: number) => boolean) {
   for (let r = 0; r <= maxR; r++) {
@@ -101,7 +101,7 @@ if (firstFarm) give(4, firstFarm);
 // Eine Weile arbeiten lassen - Vorrat, Felder, abgebaute Bäume.
 for (let t = 0; t < 150; t += 0.1) world.tick(0.1);
 // Ein Vorrat wie nach einer Weile Spielen.
-world.stock = { wood: 420, stone: 180, gold: 90, berries: 310 };
+world.stock = { food: 310, wood: 420, stone: 180, gold: 90 };
 console.log('Vorrat', world.stock, 'Bevölkerung', world.population());
 (world as any).dirty = true;
 world.save();

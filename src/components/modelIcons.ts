@@ -8,10 +8,10 @@
 
 import { ANIMAL_POSE, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
 import { groundToWorld, snapCamera } from '../gl/iso';
-import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type Stock } from '../world/catalog';
+import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type DepositType, type ResourceKind } from '../world/catalog';
 import { cropIcon } from './cropIcons';
 
-export type IconName = keyof Stock | 'population' | 'idle';
+export type IconName = ResourceKind | 'population' | 'idle';
 
 type RGB = [number, number, number];
 
@@ -44,7 +44,8 @@ function scene(name: IconName, player: RGB): EntityInstance[] {
     [{ x: -0.5, y: -0.5, size, color, shape, alpha: 1, motion: [heading, 0, 0, 1] }];
   switch (name) {
     case 'wood': return one(SHAPE.treeOak, 0.6, [42, 97, 52], 0.4);
-    case 'berries': return one(SHAPE.berryBush, 0.45, [62, 115, 52], 0.7);
+    // Nahrung als Beerenstrauch - wie im Vorrat: Beeren, Ernte und Wild in einem.
+    case 'food': return one(SHAPE.berryBush, 0.45, [62, 115, 52], 0.7);
     case 'gold': return one(SHAPE.goldRock, 0.56, [242, 194, 51], 0.7);
     case 'stone': return one(SHAPE.stoneRock, 0.6, [158, 158, 164], 0.7);
     // Frau und Mann nebeneinander.
@@ -53,7 +54,7 @@ function scene(name: IconName, player: RGB): EntityInstance[] {
   }
 }
 
-const NAMES: IconName[] = ['wood', 'berries', 'gold', 'stone', 'population', 'idle'];
+const NAMES: IconName[] = ['wood', 'food', 'gold', 'stone', 'population', 'idle'];
 
 let stage: { canvas: HTMLCanvasElement; gl: WebGL2RenderingContext; renderer: EntityRenderer } | null = null;
 
@@ -175,6 +176,6 @@ export function animalIcon(kind: AnimalKind, dead = false): string {
 }
 
 /** Vorkommen: Eiche, Beerenstrauch, Gold- oder Steinfels. */
-export function resourceIcon(type: keyof Stock): string {
-  return cached(`resource:${type}`, [0, 0, 0], () => scene(type, [0, 0, 0]));
+export function resourceIcon(type: DepositType): string {
+  return cached(`resource:${type}`, [0, 0, 0], () => scene(type === 'berries' ? 'food' : type, [0, 0, 0]));
 }

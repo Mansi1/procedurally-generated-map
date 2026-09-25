@@ -106,7 +106,7 @@ Konkrete Umbenennungen (mit Migration im Spielstand, wo nötig):
 | `UnitBuilding` | `UnitProducer` | beschreibt, was es tut | – |
 | `queue` / `progress` | `queuedUnits` / `trainingSeconds` | Einheit und Inhalt im Namen | – |
 | `advance(dt, …)` / `share(…)` | `train(dt)` / `trainingProgress()` | Verb bzw. sagt, was zurückkommt | – |
-| `shape` / `shapes` / `SHAPE` | `model` / `models` / `MODEL` | es sind Modell-Kennungen | – |
+| `shape` / `shapes` am Gebäude | `model` / `models` | ein Gebäude zeigt immer ein Modell. `SHAPE` im Renderer **bleibt**: es umfasst auch Overlays (Fläche, Ring, Staub), die keine Modelle sind, und `MODELS[].model` ist dort schon das Gitternetz | – |
 | `world.farmCrop` | `world.nextFarmCrop` | Frucht für das nächste Feld | – |
 | Datei `world/buildings.ts` | `world/catalog.ts` | enthält längst mehr als Gebäude: Dorfbewohner, Früchte, Tiere, Farben | – |
 | `TileProbe` / `probe` | `Terrain` / `terrain` | was es ist, nicht wie es arbeitet | – |
@@ -177,7 +177,10 @@ src/
 
 - [x] 0.1 Domänenmodell, Hierarchie und Namensregeln (oben) abnicken
 - [x] 0.2a Gebäude-Kennungen `lumber_camp`, `mining_camp`, `mill` (alte werden beim Laden umgeschrieben), Namen im Gebäude-Code (`definition`, `housing`, `storedResources`, `UnitProducer`, `queuedUnits`, `rallyPoint`, `nextFarmCrop`)
-- [ ] 0.2b Übrige Umbenennungen mit Spielstand-Migration in `save.ts` (alte Kennungen
+- [x] 0.2b `buildings.ts` → `catalog.ts`, `TileProbe` → `Terrain`
+- [x] 0.2c Vorrat `berries` → `food`: `ResourceKind`/`Resources` (Vorrat) getrennt von `DepositType` (Vorkommen auf der Karte), `YIELD` verbindet sie; alte Stände (`stock.berries`, Ladung `berries`) werden umgeschrieben
+- [ ] 0.2d Namen in `main.ts` (`selected` → `placingType`, `selectedBuilding` → `focusedBuilding`, …) - zusammen mit Phase 3
+- [ ] 0.2e (alt) Übrige Umbenennungen mit Spielstand-Migration in `save.ts` (alte Kennungen
   und `berries` → `food` beim Laden umschreiben), dazu ein Test mit alten Ständen
 
 ### Phase 1: Gebäude (fertig)

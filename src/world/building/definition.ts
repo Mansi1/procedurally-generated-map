@@ -5,7 +5,7 @@
 
 import type { Color } from '../../functions/Color';
 import type { TileType } from '../../noise';
-import type { GatherType, Stock } from '../catalog';
+import type { ResourceKind, Resources } from '../catalog';
 import { BUILDABLE } from './common';
 
 export interface BuildingDefinition<T extends string = string> {
@@ -28,11 +28,11 @@ export interface BuildingDefinition<T extends string = string> {
   footprint: number;
   /** Erlaubte Untergründe. */
   terrain: readonly TileType[];
-  cost: Partial<Stock>;
+  cost: Partial<Resources>;
   /** Wohnraum: so viele Dorfbewohner mehr. */
   housing: number;
   /** Rohstoffe, die Dorfbewohner hier abliefern können. */
-  storedResources: readonly GatherType[];
+  storedResources: readonly ResourceKind[];
   /** Trefferpunkte, wenn es unbeschädigt ist - Werte wie in AoE2. */
   hp: number;
 }

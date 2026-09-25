@@ -1,5 +1,6 @@
 // Mill.ts
-// Mühle: nimmt Beeren an. Vier Modell-Varianten, die Flügel drehen sich.
+// Mühle: nimmt Nahrung an - Beeren, Ernte, Wild. Vier Modell-Varianten, die
+// Flügel drehen sich.
 
 import { Color } from '../../functions/Color';
 import { SHAPE } from '../../gl/entityRenderer';
@@ -16,7 +17,7 @@ export class Mill extends StorageBuilding {
     models: [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4],
     size: 0.86,
     cost: { wood: 40 },
-    storedResources: ['berries'],
+    storedResources: ['food'],
     hp: 600,
   });
 }

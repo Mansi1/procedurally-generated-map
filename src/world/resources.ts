@@ -9,7 +9,7 @@ import type { EntityInstance } from '../gl/entityRenderer';
 import { SHAPE, TREES, modelSize } from '../gl/entityRenderer';
 import type { Terrain } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
-import type { GatherType } from './catalog';
+import type { DepositType } from './catalog';
 import type { ViewRect, World } from './world';
 
 /** Klein genug, dass ein Stück das Zeitbudget eines Bildes nicht sprengt. */
@@ -21,7 +21,7 @@ const MAX_CHUNKS = 6400;
  * Modell und Grundgröße (Tiles) je Ressource. `variants`: stattdessen eine
  * dieser Formen, fest je Tile gewählt - nicht jeder Strauch sieht gleich aus.
  */
-const LOOK: Record<GatherType, { shape: number; size: number; color: [number, number, number]; variants?: number[] }> = {
+const LOOK: Record<DepositType, { shape: number; size: number; color: [number, number, number]; variants?: number[] }> = {
   wood: { shape: SHAPE.tree, size: 0.6, color: [42, 97, 52] },
   stone: {
     shape: SHAPE.stoneRock, size: 0.6, color: [158, 158, 164],
@@ -98,7 +98,7 @@ const KIND_LABEL: Record<number, string> = {
 };
 
 /** Form des Vorkommens auf einem Tile - dieselbe Wahl für Bild und Anzeige. */
-function shapeAt(x: number, y: number, type: GatherType, height: number): number {
+function shapeAt(x: number, y: number, type: DepositType, height: number): number {
   if (type === 'wood') return treeAt(x, y, height);
   const look = LOOK[type];
   return look.variants ? variantAt(x, y, look.variants) : look.shape;
@@ -164,7 +164,7 @@ export class ResourceField {
   kindAt(x: number, y: number): string | undefined {
     const found = this.terrain.resourceAt(x, y);
     if (found.type === 'none') return undefined;
-    return KIND_LABEL[shapeAt(x, y, found.type as GatherType, found.height)];
+    return KIND_LABEL[shapeAt(x, y, found.type as DepositType, found.height)];
   }
 
   /**
@@ -211,14 +211,14 @@ export class ResourceField {
       for (let x = cx * CHUNK; x < (cx + 1) * CHUNK; x++) {
         const found = this.terrain.resourceAt(x, y);
         if (found.type === 'none' || found.amount <= 0) continue;
-        const look = LOOK[found.type as GatherType];
+        const look = LOOK[found.type as DepositType];
         // Etwas Streuung, damit ein Wald nicht aus lauter gleichen Bäumen
         // besteht: Größe, Drehung, Farbton und Lage im Tile.
         const size = look.size * (0.8 + 0.4 * hash(x, y, 1));
         const shade = 0.82 + 0.3 * hash(x, y, 2);
         const ox = x + (hash(x, y, 3) - 0.5) * 0.35;
         const oy = y + (hash(x, y, 4) - 0.5) * 0.35;
-        const shape = shapeAt(x, y, found.type as GatherType, found.height);
+        const shape = shapeAt(x, y, found.type as DepositType, found.height);
         nodes.push({
           x,
           y,

@@ -9,14 +9,30 @@
 
 import { Color } from '../functions/Color';
 import { SHAPE } from '../gl/entityRenderer';
-import { GATHER_TYPES } from './building/common';
+import { RESOURCE_KINDS } from './building/common';
 import type { ResourceType } from '../map';
 
-export type Stock = Record<Exclude<ResourceType, 'none'>, number>;
+/**
+ * Was im Vorrat liegt. Nahrung kommt aus Beeren, Feldern und der Jagd - im
+ * Vorrat ist sie eins.
+ */
+export type ResourceKind = 'food' | 'wood' | 'stone' | 'gold';
+/** Eine Menge Rohstoffe: der Vorrat, Kosten, eine Ladung. */
+export type Resources = Record<ResourceKind, number>;
+export { RESOURCE_KINDS };
 
-/** Was ein Dorfbewohner sammeln kann. */
-export type GatherType = keyof Stock;
-export { GATHER_TYPES };
+/** Namen der Rohstoffe für die Oberfläche. */
+export const RESOURCE_LABEL: Record<ResourceKind, string> = {
+  food: 'Nahrung', wood: 'Holz', stone: 'Stein', gold: 'Gold',
+};
+
+/** Was auf der Karte liegt und gesammelt wird: Baum, Fels, Beerenstrauch. */
+export type DepositType = Exclude<ResourceType, 'none'>;
+
+/** Was ein Vorkommen im Vorrat ergibt. */
+export const YIELD: Record<DepositType, ResourceKind> = {
+  wood: 'wood', stone: 'stone', gold: 'gold', berries: 'food',
+};
 
 /**
  * Größter erlaubter Anstieg unter einem Gebäude, in Tiles Höhe je Tile Breite
@@ -71,15 +87,15 @@ export const FARM_RATE = 0.7;
  * Furche eines Tiles 2 Holz (drei Furchen je Tile). Die erste Aussaat ist im
  * Preis des Felds enthalten.
  */
-export const RESEED_COST: Partial<Stock> = { wood: 2 };
+export const RESEED_COST: Partial<Resources> = { wood: 2 };
 
 /**
  * Startvorrat. Reicht für ein Hauptgebäude, eine Handvoll Dorfbewohner und
  * das erste Lager - ohne ihn stünde das Spiel still: Dorfbewohner kosten
  * Nahrung, und Nahrung sammeln nur Dorfbewohner.
  */
-export function initialStock(): Stock {
-  return { wood: 350, stone: 120, gold: 0, berries: 200 };
+export function initialResources(): Resources {
+  return { food: 200, wood: 350, stone: 120, gold: 0 };
 }
 
 /** Spielerfarben zur Auswahl in den Einstellungen - wie in AoE2. */
@@ -105,7 +121,7 @@ export const player = { color: PLAYER_COLORS.green.color };
 export const VILLAGER = {
   label: 'Dorfbewohner',
   key: 'v',
-  cost: { berries: 50 } as Partial<Stock>,
+  cost: { food: 50 } as Partial<Resources>,
   /** Ausbildungszeit in Sekunden. */
   trainTime: 6,
   /** Trefferpunkte, wenn er unverletzt ist - wie in AoE2. */
@@ -121,7 +137,7 @@ export const VILLAGER = {
    */
   size: 0.2,
   /** Sammeltempo je Sekunde, solange er am Vorkommen steht. */
-  gatherRate: { wood: 0.8, stone: 0.6, gold: 0.5, berries: 0.9 } as Record<GatherType, number>,
+  gatherRate: { wood: 0.8, stone: 0.6, gold: 0.5, berries: 0.9 } as Record<DepositType, number>,
   /** Wie weit er nach einem leeren Feld nach dem nächsten derselben Art sucht. */
   searchRadius: 16,
 } as const;

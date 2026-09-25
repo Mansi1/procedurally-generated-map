@@ -18,16 +18,17 @@ import {
   FIELD_ROWS,
   PLOUGH_TIME,
   SOW_TIME,
-  GATHER_TYPES,
+  RESOURCE_KINDS,
+  YIELD,
   HUNT,
   MAX_BUILD_SLOPE,
   MAX_GATHERERS,
   player,
   VILLAGER,
   RESEED_COST,
-  initialStock,
+  initialResources,
 } from './catalog';
-import type { AnimalKind, BuildingType, CropType, GatherType, Stock } from './catalog';
+import type { AnimalKind, BuildingType, CropType, DepositType, ResourceKind, Resources } from './catalog';
 import {
   buildingFromSave, createBuilding, furrowFood, furrowPosition, maskCovers, CENTER_TILE,
   type Building, type BuildingSave, type Farm, type Furrow, type UnitProducer,
@@ -75,7 +76,7 @@ export type Task =
   | { kind: 'idle' }
   | { kind: 'move'; x: number; y: number }
   /** Sammelt am Feld (x, y), bringt volle Ladungen zum nächsten Lager. */
-  | { kind: 'gather'; type: GatherType; x: number; y: number; delivering: boolean }
+  | { kind: 'gather'; type: DepositType; x: number; y: number; delivering: boolean }
   /** Bringt die Ladung zu genau diesem Gebäude, danach untätig. */
   | { kind: 'deliver'; building: string }
   /**
@@ -100,7 +101,7 @@ export interface Villager {
   prevX: number;
   prevY: number;
   carrying: number;
-  carryType: GatherType | null;
+  carryType: ResourceKind | null;
   task: Task;
   /** Warum er untätig ist, falls es einen Grund gibt - für die Anzeige. */
   problem: string | null;
@@ -142,7 +143,7 @@ const WORK_TEMPO = 6;
  */
 export type WorldEvent =
   /** Ein Arbeitsschlag - zeitgleich mit dem Arm in der Animation. */
-  | { kind: 'strike'; resource: GatherType; x: number; y: number }
+  | { kind: 'strike'; resource: DepositType; x: number; y: number }
   | { kind: 'treeFall'; x: number; y: number }
   | { kind: 'deliver'; x: number; y: number }
   | { kind: 'collapse'; x: number; y: number }
@@ -197,6 +198,9 @@ const METERS_PER_TILE = 5;
 
 const key = (x: number, y: number) => `${x},${y}`;
 
+/** Farbe der Ladung auf dem Rücken: wie das Vorkommen, aus dem sie meist stammt. */
+const LOAD_LOOK: Record<ResourceKind, DepositType> = { food: 'berries', wood: 'wood', stone: 'stone', gold: 'gold' };
+
 /**
  * Beerensträucher: nach dem letzten Pflücken BERRY_REST Sekunden Pause, dann
  * wachsen sie in BERRY_REGROW_TIME Sekunden von leer auf voll nach.
@@ -235,10 +239,10 @@ const INSIDE_TIME = 1.2;
 
 interface SaveData {
   version: 3;
-  stock: Stock;
+  stock: Resources;
   buildings: BuildingSave[];
   villagers: {
-    x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number;
+    x: number; y: number; c: number; ct: ResourceKind | null; task: Task; hp?: number;
     /** Name und Geschlecht - fehlen in älteren Speicherständen. */
     n?: string; f?: boolean;
   }[];
@@ -287,7 +291,7 @@ export class World {
   private dirty = false;
   private nextId = 1;
 
-  stock: Stock = initialStock();
+  stock: Resources = initialResources();
   villagers: Villager[] = [];
   /** Wild - lebend und erlegt. */
   animals: Animal[] = [];
@@ -383,12 +387,12 @@ export class World {
    * Dorfbewohner je Ressource - alle mit dem Auftrag, sie zu sammeln, auch
    * wenn sie gerade eine Ladung zum Lager tragen.
    */
-  gatherers(): { counts: Record<GatherType, number>; idle: number } {
-    const counts = Object.fromEntries(GATHER_TYPES.map((t) => [t, 0])) as Record<GatherType, number>;
+  gatherers(): { counts: Record<ResourceKind, number>; idle: number } {
+    const counts = Object.fromEntries(RESOURCE_KINDS.map((r) => [r, 0])) as Record<ResourceKind, number>;
     let idle = 0;
     for (const v of this.villagers) {
-      if (v.task.kind === 'gather') counts[v.task.type]++;
-      else if (v.task.kind === 'farm' || v.task.kind === 'hunt') counts.berries++;
+      if (v.task.kind === 'gather') counts[YIELD[v.task.type]]++;
+      else if (v.task.kind === 'farm' || v.task.kind === 'hunt') counts.food++;
       else if (v.task.kind === 'idle') idle++;
     }
     return { counts, idle };
@@ -419,7 +423,7 @@ export class World {
    * viele Dorfbewohner gerade daran sammeln. null, wenn dort nichts (mehr) ist.
    */
   resourceInfo(x: number, y: number):
-      { type: GatherType; remaining: number; total: number; gatherers: number; regrowIn?: number } | null {
+      { type: DepositType; remaining: number; total: number; gatherers: number; regrowIn?: number } | null {
     const k = key(x, y);
     const bush = this.berryTiles.get(k);
     const bushTotal = bush?.total;
@@ -456,24 +460,24 @@ export class World {
   }
 
   /** Was an einem Feld noch im Boden liegt. */
-  remainingAt(x: number, y: number): { type: GatherType | null; amount: number } {
+  remainingAt(x: number, y: number): { type: DepositType | null; amount: number } {
     const k = key(x, y);
     if (this.exhausted.has(k)) return { type: null, amount: 0 };
     const tile = this.terrain.getTile(x, y);
     if (tile.resource === 'none' || tile.resourceAmount <= 0) return { type: null, amount: 0 };
     return {
-      type: tile.resource as GatherType,
+      type: tile.resource as DepositType,
       amount: tile.resourceAmount - (this.harvested.get(k) ?? 0),
     };
   }
 
-  private canPay(cost: Partial<Stock>): boolean {
-    return (Object.keys(cost) as (keyof Stock)[]).every(
+  private canPay(cost: Partial<Resources>): boolean {
+    return (Object.keys(cost) as ResourceKind[]).every(
         (r) => this.stock[r] >= (cost[r] ?? 0));
   }
 
-  private pay(cost: Partial<Stock>, factor = 1) {
-    for (const [r, amount] of Object.entries(cost) as [keyof Stock, number][]) {
+  private pay(cost: Partial<Resources>, factor = 1) {
+    for (const [r, amount] of Object.entries(cost) as [ResourceKind, number][]) {
       this.stock[r] -= Math.floor(amount * factor);
     }
   }
@@ -960,7 +964,7 @@ export class World {
   }
 
   /** Nächstes Lager, das `type` annimmt. */
-  private nearestDropSite(v: Villager, type: GatherType): Building | undefined {
+  private nearestDropSite(v: Villager, type: ResourceKind): Building | undefined {
     let best: Building | undefined;
     let bestDistance = Infinity;
     for (const b of this.buildings.values()) {
@@ -1024,7 +1028,7 @@ export class World {
    * ist (höchstens MAX_GATHERERS).
    */
   private nextDeposit(
-      type: GatherType, x: number, y: number,
+      type: DepositType, x: number, y: number,
       occupancy: Map<string, number> = this.occupancy(),
   ): { x: number; y: number } | null {
     let best: { x: number; y: number } | null = null;
@@ -1205,7 +1209,7 @@ export class World {
    * Arbeitstakt am Platz: Zeit weiterzählen und bei jedem Schlag bzw. Griff
    * ein Ereignis melden - im Takt der Animation (siehe Shader).
    */
-  private swing(v: Villager, dt: number, resource: GatherType, picking: boolean) {
+  private swing(v: Villager, dt: number, resource: DepositType, picking: boolean) {
     // Der Arm schlägt zu, wenn sin(Phase) sein Minimum durchläuft - genau
     // dann soll man den Hieb hören. Pflücken ist im Shader langsamer
     // (Phase * 0.6), das Rascheln folgt dem Griff.
@@ -1232,7 +1236,7 @@ export class World {
     }
     let building: Farm = found;
     if (task.delivering) {
-      const site = this.nearestDropSite(v, 'berries');
+      const site = this.nearestDropSite(v, 'food');
       if (!site) {
         v.problem = 'Kein Lager für Nahrung - baue eine Mühle';
         return;
@@ -1245,7 +1249,7 @@ export class World {
     const group = this.farmGroup(building);
     let phase = this.farmPhase(building);
     // Die Ernte ist vorbei: wer noch etwas trägt, bringt es erst zum Lager.
-    if (phase !== 'harvest' && v.carrying > 0 && v.carryType === 'berries') {
+    if (phase !== 'harvest' && v.carrying > 0 && v.carryType === 'food') {
       task.delivering = true;
       return;
     }
@@ -1315,9 +1319,9 @@ export class World {
     // Ernten: Weizen mit der Sense, andere Früchte von Hand.
     v.pose = crop.scythe ? POSE.scythe : POSE.pick;
     this.swing(v, dt, 'berries', true);
-    if (v.carryType !== 'berries') {
+    if (v.carryType !== 'food') {
       v.carrying = 0;
-      v.carryType = 'berries';
+      v.carryType = 'food';
     }
     const take = Math.min(FARM_RATE * crop.rate * dt, f.food, VILLAGER.capacity - v.carrying);
     f.food -= take;
@@ -1510,7 +1514,7 @@ export class World {
    */
   private tickHunter(v: Villager, task: Extract<Task, { kind: 'hunt' }>, dt: number) {
     if (task.delivering) {
-      const site = this.nearestDropSite(v, 'berries');
+      const site = this.nearestDropSite(v, 'food');
       if (!site) {
         v.problem = 'Kein Lager für Nahrung - baue eine Mühle';
         return;
@@ -1525,7 +1529,7 @@ export class World {
       if (next) {
         task.animal = next.id;
         a = next;
-      } else if (v.carrying > 0 && v.carryType === 'berries') {
+      } else if (v.carrying > 0 && v.carryType === 'food') {
         task.delivering = true;
         return;
       } else {
@@ -1562,9 +1566,9 @@ export class World {
     v.heading = Math.atan2(a.y - v.y, a.x - v.x);
     v.pose = POSE.pick;
     this.swing(v, dt, 'berries', true);
-    if (v.carryType !== 'berries') {
+    if (v.carryType !== 'food') {
       v.carrying = 0;
-      v.carryType = 'berries';
+      v.carryType = 'food';
     }
     const take = Math.min(HUNT.butcherRate * dt, a.food, VILLAGER.capacity - v.carrying);
     a.food -= take;
@@ -1603,7 +1607,7 @@ export class World {
 
       case 'gather': {
         if (task.delivering) {
-          const site = this.nearestDropSite(v, task.type);
+          const site = this.nearestDropSite(v, YIELD[task.type]);
           if (!site) {
             v.problem = 'Kein Lager für diese Ressource';
             return;
@@ -1625,7 +1629,7 @@ export class World {
             task.x = next.x;
             task.y = next.y;
           } else if (v.carrying > 0) {
-            const site = this.nearestDropSite(v, task.type);
+            const site = this.nearestDropSite(v, YIELD[task.type]);
             v.task = site ? { kind: 'deliver', building: key(site.x, site.y) } : { kind: 'idle' };
             v.problem = site ? null : 'Kein Lager für diese Ressource';
           } else {
@@ -1672,9 +1676,9 @@ export class World {
         this.swing(v, dt, task.type, task.type === 'berries');
 
         // Wechselt er die Ressource, lässt er die alte Ladung fallen - wie in AoE2.
-        if (v.carryType !== task.type) {
+        if (v.carryType !== YIELD[task.type]) {
           v.carrying = 0;
-          v.carryType = task.type;
+          v.carryType = YIELD[task.type];
         }
         const take = Math.min(
             VILLAGER.gatherRate[task.type] * dt,
@@ -1824,7 +1828,7 @@ export class World {
         motion: [v.heading, phase, v.pose, load],
         ground: this.groundAt?.(x, y),
         health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,
-        accent: v.carryType ? RESOURCE_TYPE_COLORS[v.carryType].toRGB() : undefined,
+        accent: v.carryType ? RESOURCE_TYPE_COLORS[LOAD_LOOK[v.carryType]].toRGB() : undefined,
       });
     }
     for (const a of this.animals) {
@@ -1979,7 +1983,10 @@ export class World {
     // Aufträge zeigen auf alte Felder; beides beginnt von vorn.
     const scale = data.version < 3 ? 2 : 1;
 
-    this.stock = { ...initialStock(), ...data.stock };
+    // Bis zur Umbenennung hieß Nahrung im Vorrat "berries".
+    const stock = data.stock as Partial<Resources> & { berries?: number };
+    this.stock = { ...initialResources(), ...stock, food: stock.food ?? stock.berries ?? initialResources().food };
+    delete (this.stock as Partial<Resources> & { berries?: number }).berries;
     // Welche Felder leer sind, steht nicht im Speicherstand - es ergibt sich
     // aus der entnommenen Menge und dem, was der Generator dort hergibt. So
     // bleibt die Datei klein und übersteht eine Änderung an den Vorkommen.
@@ -2020,7 +2027,9 @@ export class World {
         const female = s.f ?? this.nextId % 2 === 1;
         const v = newVillager(this.nextId++, s.x * scale, s.y * scale, s.n ?? this.freeName(female), female);
         v.carrying = s.c;
-        v.carryType = s.ct && GATHER_TYPES.includes(s.ct) ? s.ct : null;
+        // Früher trug er "berries" statt Nahrung.
+        const carried = (s.ct as string) === 'berries' ? 'food' : s.ct;
+        v.carryType = carried && RESOURCE_KINDS.includes(carried) ? carried : null;
         v.task = scale === 1 ? s.task ?? { kind: 'idle' } : { kind: 'idle' };
         v.hp = Math.min(s.hp ?? VILLAGER.hp, VILLAGER.hp);
         this.villagers.push(v);
@@ -2067,7 +2076,7 @@ export class World {
     this.villagers = [];
     this.animals = [];
     this.spawnedChunks.clear();
-    this.stock = initialStock();
+    this.stock = initialResources();
     this.dirty = true;
     this.save();
   }

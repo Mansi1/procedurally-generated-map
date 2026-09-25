@@ -4,7 +4,7 @@
 // arbeiten würden. Die Bilder sind kleine SVGs mit dunklem Rand, damit sie auf
 // hellem wie dunklem Gelände lesbar bleiben.
 
-import type { GatherType } from './world/catalog';
+import type { DepositType } from './world/catalog';
 
 /** CSS-Wert für `cursor`. Der Klickpunkt liegt an der Werkzeugspitze. */
 function svgCursor(body: string, hotX: number, hotY: number): string {
@@ -23,7 +23,7 @@ const pickaxe = (head: string) =>
   '<path d="M2 14 Q5 5 14 2" fill="none" stroke="#111" stroke-width="5.5" stroke-linecap="round"/>' +
   `<path d="M2 14 Q5 5 14 2" fill="none" stroke="${head}" stroke-width="3.5" stroke-linecap="round"/>`;
 
-export const GATHER_CURSOR: Record<GatherType, string> = {
+export const GATHER_CURSOR: Record<DepositType, string> = {
   // Axt: breites Blatt oben links am Stiel
   wood: svgCursor(
       HANDLE +

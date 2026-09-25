@@ -26,6 +26,10 @@ import {
   BUILDING_ORDER,
   CROP_ORDER,
   CROPS,
+  RESOURCE_LABEL,
+  YIELD,
+  type DepositType,
+  type ResourceKind,
   FIELD_ROWS,
   MAX_GATHERERS,
   MAX_TRAINING_QUEUE,
@@ -34,7 +38,6 @@ import {
   VILLAGER,
   type BuildingType,
   type CropType,
-  type Stock,
 } from './world/catalog';
 import { World, type Villager } from './world/world';
 import type { UnitProducer } from './world/building';
@@ -228,7 +231,7 @@ function hint(text: string) {
 }
 
 /** Reihenfolge in der Rohstoffleiste - wie in AoE2: Holz, Nahrung, Gold, Stein. */
-const RESOURCE_BAR_ORDER: (keyof Stock)[] = ['wood', 'berries', 'gold', 'stone'];
+const RESOURCE_BAR_ORDER: ResourceKind[] = ['wood', 'food', 'gold', 'stone'];
 // Das Zahnrad am Ende öffnet das Menü (wie F10).
 const resourceBar = new ResourceBar(stockEl, RESOURCE_BAR_ORDER, player.color.toRGB(), () => world.save(), () => menu.toggle());
 
@@ -331,7 +334,7 @@ function updateResourceUI() {
   resourceBar.update({
     order: RESOURCE_BAR_ORDER,
     stock: world.stock,
-    labels: RESOURCE_TYPE_LABEL,
+    labels: RESOURCE_LABEL,
     gatherers: counts,
     population: pop,
     idle,
@@ -365,7 +368,7 @@ soundButton.addEventListener('click', toggleSound);
 updateSoundButton();
 applySettings();
 
-const GATHER_SOUND: Record<string, SoundName> = {
+const GATHER_SOUND: Record<DepositType, SoundName> = {
   wood: 'chop',
   stone: 'pick',
   gold: 'pick',
@@ -971,7 +974,7 @@ function farmView(building: NonNullable<ReturnType<typeof world.building>>): Far
 function trainView(): TrainView {
   return {
     label: VILLAGER.label,
-    cost: Object.entries(VILLAGER.cost).map(([r, n]) => `${n} ${RESOURCE_TYPE_LABEL[r as keyof Stock]}`).join(', '),
+    cost: Object.entries(VILLAGER.cost).map(([r, n]) => `${n} ${RESOURCE_LABEL[r as ResourceKind]}`).join(', '),
     affordable: world.canAffordVillager(),
   };
 }
@@ -1018,7 +1021,7 @@ function selectionView(): SelectionView {
       label: def.label,
       hp: building.hp,
       maxHp: def.hp,
-      storedResources: def.storedResources.length > 0 ? def.storedResources.map((r) => RESOURCE_TYPE_LABEL[r]).join(', ') : undefined,
+      storedResources: def.storedResources.length > 0 ? def.storedResources.map((r) => RESOURCE_LABEL[r]).join(', ') : undefined,
       housing: def.housing > 0 ? def.housing : undefined,
       farm: building.isFarm() ? { ...farmView(building), plan: building.plan } : undefined,
       trainer: building.isUnitProducer()
@@ -1443,7 +1446,7 @@ function updateHoverInfo() {
     return;
   }
   // Was man davon bekommt: Beeren sind Nahrung, sonst Holz, Stein oder Gold.
-  const yields = found.type === 'berries' ? 'Nahrung' : RESOURCE_TYPE_LABEL[found.type];
+  const yields = RESOURCE_LABEL[YIELD[found.type]];
   const amount = `${yields} ${Math.ceil(found.remaining)}/${found.total}`;
   // Baum- und Straucharten mit Namen davor; Stein und Gold heißen wie ihr Ertrag.
   const kind = resources.kindAt(mouseTileX!, mouseTileY!);

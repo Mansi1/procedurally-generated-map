@@ -2,10 +2,10 @@
 // Was die Gebäudeklassen schon beim Laden ihrer Definition brauchen - ohne
 // Abhängigkeit von catalog.ts, das seinerseits die Klassen lädt.
 
-import type { GatherType } from '../catalog';
+import type { ResourceKind } from '../catalog';
 
-/** Was ein Dorfbewohner sammeln kann. */
-export const GATHER_TYPES: readonly GatherType[] = ['wood', 'stone', 'gold', 'berries'];
+/** Alle Rohstoffe im Vorrat. */
+export const RESOURCE_KINDS: readonly ResourceKind[] = ['food', 'wood', 'stone', 'gold'];
 
 /** Untergründe, auf denen überhaupt gebaut werden kann. */
 export const BUILDABLE = ['beach', 'desert', 'grass', 'forest', 'snow'] as const;

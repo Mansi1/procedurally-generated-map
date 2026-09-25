@@ -10,7 +10,7 @@
 
 import { createRef, render, type Props, type Ref } from 'defuss';
 import './ResourceBar.css';
-import type { Stock } from '../world/catalog';
+import type { ResourceKind, Resources } from '../world/catalog';
 import { MenuButton } from './MenuButton';
 import { SaveButton } from './SaveButton';
 
@@ -18,11 +18,11 @@ import { renderIcons, renderVillagerIcons, type IconName } from './modelIcons';
 import woodBar from '../icons/wood-bar.png';
 
 export interface ResourceBarState {
-  order: (keyof Stock)[];
-  stock: Stock;
-  labels: Record<keyof Stock, string>;
+  order: ResourceKind[];
+  stock: Resources;
+  labels: Record<ResourceKind, string>;
   /** Sammler je Rohstoff. */
-  gatherers: Record<keyof Stock, number>;
+  gatherers: Record<ResourceKind, number>;
   population: { used: number; cap: number; training: number };
   idle: number;
   villagerLabel: string;
@@ -75,7 +75,7 @@ export class ResourceBar {
    * @param onSave Klick auf die Diskette
    * @param onMenu Klick aufs Zahnrad
    */
-  constructor(root: HTMLElement, order: (keyof Stock)[], playerColor: [number, number, number], onSave: () => void, onMenu: () => void) {
+  constructor(root: HTMLElement, order: ResourceKind[], playerColor: [number, number, number], onSave: () => void, onMenu: () => void) {
     root.style.backgroundImage = `url(${woodBar})`;
     for (const key of [...order, 'population']) this.cells.set(key, cellRefs());
     this.playerColor = playerColor;

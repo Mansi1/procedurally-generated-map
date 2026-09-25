@@ -8,28 +8,27 @@
 
 import { createRef, render, type Ref } from 'defuss';
 import './buttons.css';
-import { RESOURCE_TYPE_LABEL } from '../map';
 import { formatDuration } from '../format';
 import {
-  BUILDINGS, BUILDING_ORDER, CROP_ORDER, CROPS, type BuildingType, type CropType, type Stock,
+  BUILDINGS, BUILDING_ORDER, CROP_ORDER, CROPS, type BuildingType, type CropType, type ResourceKind, RESOURCE_LABEL,
 } from '../world/catalog';
 import { buildingIcon } from './modelIcons';
 import { cropIcon } from './cropIcons';
 
 type RGB = [number, number, number];
 
-const COST_ORDER: (keyof Stock)[] = ['wood', 'stone', 'gold', 'berries'];
+const COST_ORDER: ResourceKind[] = ['wood', 'stone', 'gold', 'food'];
 
 /** Kosten und Nutzen eines Gebäudes für den Tooltip. */
 function describe(type: BuildingType): string {
   const def = BUILDINGS[type];
   const cost = COST_ORDER.filter((r) => def.cost[r])
-    .map((r) => `${def.cost[r]} ${RESOURCE_TYPE_LABEL[r]}`)
+    .map((r) => `${def.cost[r]} ${RESOURCE_LABEL[r]}`)
     .join(', ');
   const use = def.housing > 0
     ? `+${def.housing} Platz`
     : def.storedResources.length > 0
-      ? `Lager: ${def.storedResources.map((r) => RESOURCE_TYPE_LABEL[r]).join('/')}`
+      ? `Lager: ${def.storedResources.map((r) => RESOURCE_LABEL[r]).join('/')}`
       : type === 'farm' ? 'Nahrung' : '';
   return [cost || 'kostenlos', use].filter(Boolean).join(' · ');
 }
