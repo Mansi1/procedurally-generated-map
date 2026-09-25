@@ -1,0 +1,14 @@
+// Boar.ts
+// Wildschwein: allein oder zu wenigen, schwer und zäh - hält viele Speerwürfe
+// aus, gibt dafür viel Nahrung.
+
+import { SHAPE } from '../../gl/entityRenderer';
+import { AnimalBase } from './AnimalBase';
+import type { AnimalDefinition } from './definition';
+
+export class Boar extends AnimalBase {
+  static readonly definition: AnimalDefinition<'boar'> = {
+    type: 'boar', label: 'Wildschwein', shape: SHAPE.boar, height: 0.18, hp: 6, food: 220, walk: 0.4, flee: 2.0,
+    fear: 3.5, herd: [1, 3], stride: 0.35,
+  };
+}

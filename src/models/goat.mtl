@@ -1,0 +1,57 @@
+# goat.mtl
+
+newmtl Paint
+Kd 0.251 0.627 0.282
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Eye
+Kd 0.050 0.040 0.040
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl GoatDark
+Kd 0.220 0.160 0.110
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl GoatFur
+Kd 0.520 0.380 0.250
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl GoatLight
+Kd 0.860 0.800 0.700
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Hoof
+Kd 0.160 0.130 0.110
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Horn
+Kd 0.880 0.840 0.740
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Nose
+Kd 0.080 0.070 0.070
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

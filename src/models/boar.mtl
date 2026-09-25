@@ -1,0 +1,50 @@
+# boar.mtl
+
+newmtl Paint
+Kd 0.251 0.627 0.282
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Boar
+Kd 0.380 0.300 0.230
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl BoarDark
+Kd 0.220 0.170 0.130
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Eye
+Kd 0.050 0.040 0.040
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Hoof
+Kd 0.160 0.130 0.110
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Snout
+Kd 0.520 0.400 0.360
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Tusk
+Kd 0.930 0.900 0.820
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

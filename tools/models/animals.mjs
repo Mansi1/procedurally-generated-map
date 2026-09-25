@@ -1,5 +1,6 @@
-// Generates src/models/deer.obj, hare.obj, cow.obj and sheep.obj - game to
-// hunt: a roe buck, a brown hare, a spotted cow and a woolly sheep, facing +z.
+// Generates src/models/deer.obj, hare.obj, cow.obj, sheep.obj, goat.obj and
+// boar.obj - game to hunt: a roe buck, a brown hare, a spotted cow, a woolly
+// sheep, a horned goat and a wild boar, facing +z.
 // Metres, real size (the game scales them by height).
 // Object names drive the animation (see PARTS in src/gl/entityRenderer.ts):
 // "Leg.FL/FR/BL/BR" swing from their top (front/back, left/right), "Head"
@@ -17,6 +18,8 @@ Object.assign(PALETTE, {
   EarTip: '0.120 0.100 0.090',
   CowWhite: '0.920 0.900 0.860', CowBlack: '0.110 0.100 0.100', Udder: '0.900 0.640 0.620',
   CowMuzzle: '0.860 0.620 0.580', Horn: '0.880 0.840 0.740',
+  GoatFur: '0.520 0.380 0.250', GoatLight: '0.860 0.800 0.700', GoatDark: '0.220 0.160 0.110',
+  Boar: '0.380 0.300 0.230', BoarDark: '0.220 0.170 0.130', Snout: '0.520 0.400 0.360', Tusk: '0.930 0.900 0.820',
   Wool: '0.900 0.870 0.800', WoolShade: '0.800 0.770 0.700', SheepFace: '0.180 0.150 0.140',
 });
 
@@ -144,9 +147,65 @@ function sheep() {
   return m;
 }
 
+/** Goat: lean body, light belly and legs, beard, horns sweeping back, tail up. */
+function goat() {
+  const m = model();
+  m.box('Body', 'GoatFur', [-0.13, 0.13], [0.42, 0.72], [-0.42, 0.34], { r: 0.35, z: [-0.38, 0.3] });
+  m.box('Body.Belly', 'GoatLight', [-0.1, 0.1], [0.4, 0.48], [-0.3, 0.24], { r: 0.35 });
+  m.box('Body.Stripe', 'GoatDark', [-0.03, 0.03], [0.71, 0.74], [-0.38, 0.3]);
+  m.beam('Body.Tail', 'GoatDark', [0, 0.68, -0.42], [0, 0.8, -0.47], 0.05, { w1: 0.02 });
+  // Neck and head in one - it dips to graze.
+  m.beam('Head.Neck', 'GoatFur', [0, 0.62, 0.26], [0, 0.84, 0.4], 0.12, { w1: 0.09, n: 6 });
+  m.box('Head.Skull', 'GoatFur', [-0.06, 0.06], [0.8, 0.94], [0.36, 0.52], { r: 0.3, x: [-0.05, 0.05] });
+  m.box('Head.Muzzle', 'GoatLight', [-0.04, 0.04], [0.76, 0.84], [0.5, 0.62], { r: 0.3, x: [-0.03, 0.03] });
+  m.box('Head.Nose', 'Nose', [-0.025, 0.025], [0.79, 0.83], [0.615, 0.63]);
+  m.beam('Head.Beard', 'GoatDark', [0, 0.77, 0.54], [0, 0.66, 0.52], 0.035, { w1: 0.012 });
+  for (const s of [-1, 1]) {
+    m.box('Head.Eye', 'Eye', [s * 0.056 - 0.01, s * 0.056 + 0.01], [0.88, 0.905], [0.47, 0.5]);
+    m.beam('Head.Ear', 'GoatFur', [s * 0.05, 0.9, 0.4], [s * 0.16, 0.86, 0.38], 0.05, { w1: 0.025 });
+    // Horns: up, then back.
+    m.beam('Head.Horn', 'Horn', [s * 0.03, 0.93, 0.44], [s * 0.05, 1.04, 0.38], 0.03, { w1: 0.022 });
+    m.beam('Head.Horn', 'Horn', [s * 0.05, 1.04, 0.38], [s * 0.07, 1.06, 0.27], 0.022, { w1: 0.01 });
+  }
+  for (const [name, x, z] of [['FL', 0.075, 0.24], ['FR', -0.075, 0.24], ['BL', 0.08, -0.32], ['BR', -0.08, -0.32]]) {
+    const back = name[0] === 'B';
+    m.beam(`Leg.${name}`, 'GoatFur', [x, 0.56, z], [x, 0.28, z + (back ? -0.04 : 0.01)], back ? 0.09 : 0.07, { w1: 0.04 });
+    m.beam(`Leg.${name}.Shin`, 'GoatLight', [x, 0.29, z + (back ? -0.04 : 0.01)], [x, 0.04, z], 0.035, { w1: 0.03 });
+    m.box(`Leg.${name}.Hoof`, 'Hoof', [x - 0.022, x + 0.022], [0, 0.045], [z - 0.03, z + 0.035]);
+  }
+  return m;
+}
+
+/** Wild boar: heavy wedge-shaped forequarters, bristly mane, long snout, tusks, short legs. */
+function boar() {
+  const m = model();
+  // Hoch an der Schulter, zum Hinterteil hin schmaler und niedriger.
+  m.box('Body', 'Boar', [-0.2, 0.2], [0.3, 0.8], [-0.62, 0.4], { r: 0.35, z: [-0.55, 0.36], x: [-0.15, 0.15] });
+  m.box('Body.Hind', 'Boar', [-0.17, 0.17], [0.32, 0.66], [-0.66, -0.3], { r: 0.35 });
+  m.box('Body.Mane', 'BoarDark', [-0.05, 0.05], [0.76, 0.9], [-0.25, 0.38], { r: 0.3, z: [-0.15, 0.3] });
+  m.beam('Body.Tail', 'BoarDark', [0, 0.6, -0.67], [0, 0.42, -0.72], 0.03, { w1: 0.02 });
+  // Head: a wedge down to the snout - it dips to root in the ground.
+  m.box('Head.Skull', 'Boar', [-0.15, 0.15], [0.36, 0.72], [0.34, 0.6], { r: 0.3, x: [-0.1, 0.1] });
+  m.box('Head.Face', 'BoarDark', [-0.09, 0.09], [0.34, 0.56], [0.58, 0.8], { r: 0.3, x: [-0.06, 0.06] });
+  m.box('Head.Snout', 'Snout', [-0.06, 0.06], [0.36, 0.46], [0.8, 0.83], { r: 0.4 });
+  for (const s of [-1, 1]) {
+    m.box('Head.Eye', 'Eye', [s * 0.1 - 0.012, s * 0.1 + 0.012], [0.58, 0.605], [0.56, 0.59]);
+    m.beam('Head.Ear', 'BoarDark', [s * 0.09, 0.7, 0.42], [s * 0.15, 0.82, 0.38], 0.07, { w1: 0.02 });
+    m.beam('Head.Tusk', 'Tusk', [s * 0.06, 0.4, 0.74], [s * 0.1, 0.5, 0.78], 0.025, { w1: 0.008 });
+  }
+  for (const [name, x, z] of [['FL', 0.11, 0.26], ['FR', -0.11, 0.26], ['BL', 0.11, -0.5], ['BR', -0.11, -0.5]]) {
+    m.beam(`Leg.${name}`, 'Boar', [x, 0.48, z], [x, 0.18, z], 0.1, { w1: 0.06 });
+    m.beam(`Leg.${name}.Shin`, 'BoarDark', [x, 0.19, z], [x, 0.04, z + 0.01], 0.05, { w1: 0.04 });
+    m.box(`Leg.${name}.Hoof`, 'Hoof', [x - 0.03, x + 0.03], [0, 0.045], [z - 0.03, z + 0.045]);
+  }
+  return m;
+}
+
 const PAINT = '0.251 0.627 0.282';
 write(dir, 'deer', '# deer.obj - Rehbock, Blickrichtung +z (tools/models/animals.mjs)\n', deer(), PAINT);
 write(dir, 'hare', '# hare.obj - Feldhase, Blickrichtung +z (tools/models/animals.mjs)\n', hare(), PAINT);
 write(dir, 'cow', '# cow.obj - Kuh, Blickrichtung +z (tools/models/animals.mjs)\n', cow(), PAINT);
 write(dir, 'sheep', '# sheep.obj - Schaf, Blickrichtung +z (tools/models/animals.mjs)\n', sheep(), PAINT);
-console.log('wrote deer, hare, cow, sheep');
+write(dir, 'goat', '# goat.obj - Ziege, Blickrichtung +z (tools/models/animals.mjs)\n', goat(), PAINT);
+write(dir, 'boar', '# boar.obj - Wildschwein, Blickrichtung +z (tools/models/animals.mjs)\n', boar(), PAINT);
+console.log('wrote deer, hare, cow, sheep, goat, boar');

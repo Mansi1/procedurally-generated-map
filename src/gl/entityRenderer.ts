@@ -94,6 +94,10 @@ import cowObj from '../models/cow.obj?raw';
 import cowMtl from '../models/cow.mtl?raw';
 import sheepObj from '../models/sheep.obj?raw';
 import sheepMtl from '../models/sheep.mtl?raw';
+import goatObj from '../models/goat.obj?raw';
+import goatMtl from '../models/goat.mtl?raw';
+import boarObj from '../models/boar.obj?raw';
+import boarMtl from '../models/boar.mtl?raw';
 import birchLeafUrl from '../textures/birch_leaf.png';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
@@ -189,7 +193,7 @@ export const SHAPE = {
   farmWheat: 50,
   farmCorn: 59,
   /**
-   * Wild zum Jagen (models/deer.obj, hare.obj, cow.obj, sheep.obj): motion = [Blickrichtung,
+   * Wild zum Jagen (models/deer.obj, hare.obj, cow.obj, sheep.obj, goat.obj, boar.obj): motion = [Blickrichtung,
    * Phase, Pose (ANIMAL_POSE), 0] - siehe "beast" im Shader.
    */
   deer: 90,
@@ -200,6 +204,8 @@ export const SHAPE = {
   treeBirch3: 93,
   cow: 94,
   sheep: 95,
+  goat: 96,
+  boar: 97,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -263,7 +269,7 @@ const FOLIAGE_SHAPES: number[] = [
 
 /** Diese Formen sind Vorkommen, keine Gebäude oder Figuren. */
 /** Tiere - Beine und Kopf bewegt der Shader ("beast"). */
-const BEASTS: number[] = [SHAPE.deer, SHAPE.hare, SHAPE.cow, SHAPE.sheep];
+const BEASTS: number[] = [SHAPE.deer, SHAPE.hare, SHAPE.cow, SHAPE.sheep, SHAPE.goat, SHAPE.boar];
 
 export const NATURAL: number[] = [
   ...TREES,
@@ -1974,6 +1980,8 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.hare, model: loadModel(hareObj, hareMtl, 'height'), scale: 1 },
   { shape: SHAPE.cow, model: loadModel(cowObj, cowMtl, 'height'), scale: 1 },
   { shape: SHAPE.sheep, model: loadModel(sheepObj, sheepMtl, 'height'), scale: 1 },
+  { shape: SHAPE.goat, model: loadModel(goatObj, goatMtl, 'height'), scale: 1 },
+  { shape: SHAPE.boar, model: loadModel(boarObj, boarMtl, 'height'), scale: 1 },
 ];
 
 /**
