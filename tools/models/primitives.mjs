@@ -26,6 +26,7 @@ function ring([u0, u1], [v0, v1], o) {
 export function model() {
   const out = [];
   let base = 0;
+  let uvBase = 0;
   const used = new Set();
 
   /** Two outlines of equal length joined by side faces, both capped. */
@@ -85,6 +86,22 @@ export function model() {
     emit(name, mtl, at(p0, w), at(p1, w1));
   }
 
+  /**
+   * Free-form surface: vertices plus faces as index lists into them (0-based).
+   * With `uvs` (one [u, v] per vertex) the faces carry texture coordinates.
+   */
+  function mesh(name, mtl, vertices, faces, uvs) {
+    used.add(mtl);
+    out.push(`o ${name}`);
+    for (const p of vertices) out.push(`v ${p.map((v) => +v.toFixed(3)).join(' ')}`);
+    if (uvs) for (const [u, v] of uvs) out.push(`vt ${+u.toFixed(4)} ${+v.toFixed(4)}`);
+    out.push(`usemtl ${mtl}`, 's off');
+    const ref = (i) => (uvs ? `${base + 1 + i}/${uvBase + 1 + i}` : `${base + 1 + i}`);
+    for (const f of faces) out.push(`f ${f.map(ref).join(' ')}`);
+    base += vertices.length;
+    if (uvs) uvBase += uvs.length;
+  }
+
   /** Mirror in x: '#' in the name becomes L (x > 0) / R. */
   const mx = ([a, b]) => [-b, -a];
   function pair(name, mtl, x, y, z, o = {}) {
@@ -92,6 +109,6 @@ export function model() {
     box(name.replace('#', 'R'), mtl, mx(x), y, z, o.x ? { ...o, x: mx(o.x) } : o);
   }
 
-  return { box, pair, extrude, beam, emit, out, used };
+  return { box, pair, extrude, beam, emit, mesh, out, used };
 }
 

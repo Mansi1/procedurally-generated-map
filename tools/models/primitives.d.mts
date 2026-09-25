@@ -31,6 +31,8 @@ export interface Model {
   extrude(name: string, mtl: string, axis: Axis, span: Range, poly: readonly (readonly [number, number])[]): void;
   beam(name: string, mtl: string, p0: Point, p1: Point, w: number, o?: BeamOptions): void;
   emit(name: string, mtl: string, bottom: readonly Point[], top: readonly Point[]): void;
+  /** Free-form surface; faces index into vertices (0-based), uvs one per vertex. */
+  mesh(name: string, mtl: string, vertices: readonly Point[], faces: readonly (readonly number[])[], uvs?: readonly (readonly [number, number])[]): void;
   /** OBJ lines written so far. */
   out: string[];
   /** Materials used so far. */

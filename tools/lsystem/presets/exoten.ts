@@ -20,6 +20,7 @@ const baobab = preset({
   rules: `# Flaschenstamm: dick (kleiner pipe-Exponent) und kurz, oben wenige knorrige Äste mit wenig Laub
 A -> "[&FA]/(100)[&(45)FA]/(110)[&(65)FA]/(90)[&(40)FA]`,
   leaves: 'A', leafSize: 0.5, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkGrey', tip: 0.02, pipe: 1.4,
+  leaf: 'baobab',
 });
 
 const akazie = preset({
@@ -28,6 +29,7 @@ const akazie = preset({
   rules: `# Gabelt steil, die Äste legen sich außen flach - ein flacher Schirm aus Laub
 A -> "[&FFA]/(180)[&FA]/(90)`,
   leaves: 'A', leafSize: 0.95, leafMaterials: ['LeafLight', 'LeafSilver'], stemMaterial: 'BarkDark', tip: 0.03,
+  leaf: 'akazie',
 });
 
 const drachenbaum = preset({
@@ -46,6 +48,7 @@ const eukalyptus = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]A
 A 0.4 -> "F[&(40)FA]/(137.5)[&FA]`,
   leaves: 'A', leafShape: 'needle', leafSize: 0.5, leafMaterials: ['LeafBlue', 'LeafSilver'], stemMaterial: 'BarkPale', tip: 0.022,
+  leaf: 'eukalyptus',
 });
 
 const saguaro = preset({

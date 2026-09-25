@@ -12,6 +12,7 @@ W -> [&(80)B]/(72)[&(80)B]/(72)[&(80)B]/(72)[&(80)B]/(72)[&(80)B]
 B -> "FL[-(40)C][+(40)C]B
 C -> "FLC`,
   leaves: 'BCT', leafShape: 'needle', leafSize: 0.35, leafMaterials: ['IvyDark', 'Ivy'], tip: 0.025, pipe: 2.4,
+  leaf: 'fichte',
 });
 
 const tanne = preset({
@@ -25,6 +26,8 @@ W -> [&(86)B]/(72)[&(86)B]/(72)[&(86)B]/(72)[&(86)B]/(72)[&(86)B]
 B -> "(0.8)FL[+C][-C]B
 C -> "(0.7)FLC`,
   leaves: 'BCT', leafShape: 'needle', leafSize: 0.3, leafMaterials: ['IvyDark'], tip: 0.022, pipe: 2.5,
+  // Zweigbild: Fichte (kein freigestellter Tannenzweig auf Commons gefunden).
+  leaf: 'fichte',
 });
 
 const douglasie = preset({
@@ -37,6 +40,8 @@ B -> "(0.85)FL[-C][+C]B
 C -> "(0.8)FLC`,
   leaves: 'BCT', leafShape: 'needle', leafSize: 0.33, leafMaterials: ['Leaf', 'IvyDark'], stemMaterial: 'BarkDark',
   tip: 0.024, pipe: 2.4,
+  // Zweigbild: Fichte (kein freigestellter Douglasienzweig gefunden).
+  leaf: 'fichte',
 });
 
 const kiefer = preset({
@@ -49,6 +54,7 @@ W -> [&(65)B]/(120)[&(70)B]/(120)[&(60)B]
 B 0.6 -> "F[-(35)B][+(35)B]
 B 0.4 -> "FB`,
   leaves: 'BT', leafSize: 0.7, leafMaterials: ['IvyDark', 'Ivy'], stemMaterial: 'BarkRed', tip: 0.03, pipe: 2.1,
+  leaf: 'kiefer',
 });
 
 const schirmpinie = preset({
@@ -57,6 +63,8 @@ const schirmpinie = preset({
   rules: `# Gabelt oben immer wieder gleich lang - die Enden liegen auf einer flachen Kuppel
 A -> "[&FA]/(120)[&FA]/(120)[&(20)FA]`,
   leaves: 'A', leafSize: 0.75, leafMaterials: ['IvyDark', 'Leaf'], stemMaterial: 'BarkRed', tip: 0.022, pipe: 2.6,
+  // Zweigbild: Waldkiefer.
+  leaf: 'kiefer',
 });
 
 const laerche = preset({
@@ -69,6 +77,7 @@ B -> "(0.88)FL[-(45)C]/(180)B
 C -> "(0.8)FLC`,
   leaves: 'BCT', leafShape: 'needle', leafSize: 0.3, leafMaterials: ['NeedleLight', 'LeafLight'], stemMaterial: 'BarkRed',
   tip: 0.02, pipe: 2.4,
+  leaf: 'laerche',
 });
 
 const zeder = preset({
@@ -82,6 +91,7 @@ C -> "(0.85)FL[+D][-D]C
 D -> FL`,
   leaves: 'BCDT', leafShape: 'needle', leafSize: 0.34, leafMaterials: ['LeafBlue', 'IvyDark'], stemMaterial: 'BarkDark',
   tip: 0.022, pipe: 2.3,
+  leaf: 'zeder',
 });
 
 const zypresse = preset({
@@ -91,6 +101,8 @@ const zypresse = preset({
 A -> F[&(18)"B]/(137.5)[&(22)"B]/(137.5)A
 B -> "FLB`,
   leaves: 'ABL', leafSize: 0.32, leafMaterials: ['IvyDark', 'Ivy'], tip: 0.02, pipe: 2.4,
+  // Zweigbild: Mammutbaum - ebenfalls Schuppenblätter.
+  leaf: 'mammutbaum',
 });
 
 const eibe = preset({
@@ -100,6 +112,7 @@ const eibe = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]
 A 0.4 -> "[&FA]/(137.5)[&FA]/(137.5)[&FA]`,
   leaves: 'A', leafSize: 0.45, leafMaterials: ['IvyDark'], stemMaterial: 'BarkRed', tip: 0.018,
+  leaf: 'eibe',
 });
 
 const mammutbaum = preset({
@@ -111,6 +124,7 @@ W -> [&(75)B]/(120)[&(80)B]/(120)[&(75)B]
 B -> "(0.7)FL[-(40)C]/(180)B
 C -> FL`,
   leaves: 'BCT', leafSize: 0.7, leafMaterials: ['IvyDark', 'Leaf'], stemMaterial: 'BarkRed', tip: 0.03, pipe: 1.7,
+  leaf: 'mammutbaum',
 });
 
 export const NADELBAEUME = {

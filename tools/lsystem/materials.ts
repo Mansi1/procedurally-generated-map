@@ -2,6 +2,8 @@
 // MTL-Datei. Die Werte stammen aus PALETTE in tools/models/lib.mjs (Bäume) und
 // tools/models/farmsGen.mjs (Weizen, Mais), damit alles zum Spiel passt; die
 // übrigen (Rinden, Herbstlaub, Blüten) sind hier neu.
+import type { Tone } from './leaves/sources.ts';
+
 export const MATERIALS = {
   Bark: [0.33, 0.22, 0.12],
   BarkDark: [0.22, 0.16, 0.11],
@@ -35,13 +37,9 @@ export const MATERIALS = {
 
 export type Material = keyof typeof MATERIALS;
 
-/** MTL-Datei für die benutzten Materialien. */
-export function mtl(used: Iterable<string>): string {
-  let out = '';
-  for (const name of [...used].sort()) {
-    const rgb = MATERIALS[name as Material];
-    if (!rgb) throw new Error(`Keine Farbe für ${name}`);
-    out += `\nnewmtl ${name}\nKd ${rgb.map((v) => v.toFixed(3)).join(' ')}\nKa 0 0 0\nKs 0 0 0\nd 1\nillum 1\n`;
-  }
-  return out;
+/** Farbton eines Laub-Materials - entscheidet, ob ein Blattfoto direkt passt (foliage.ts). */
+export function toneOf(material: Material): Tone {
+  if (material.startsWith('Autumn')) return 'autumn';
+  if (material.startsWith('Blossom')) return 'blossom';
+  return 'green';
 }

@@ -1,9 +1,10 @@
 // Spielwiese für L-System-Bäume: Beispiel wählen, Regeln und Regler ändern,
 // das Ergebnis dreht sich in der Vorschau und lässt sich als OBJ speichern.
-import { grow, type Tree, type TreeSpec } from './lsystem.ts';
-import { MATERIALS } from './materials.ts';
+import { grow, type LeafMode, type Tree, type TreeSpec } from './lsystem.ts';
+import { looksFor } from './looks.ts';
+import { mtlFile } from './mtl.ts';
 import { GROUPS, PRESETS, isPresetName, type PresetName } from './presets/index.ts';
-import { render, trianglesFromObj, type Triangle, type View } from './render.ts';
+import { render, shapesFromObj, type Shape, type View } from './render.ts';
 
 /** Regler: Feld des Rezepts, das sie einstellen - die id im HTML ist derselbe Name. */
 const SLIDERS = ['iterations', 'angle', 'tropism', 'jitter', 'lengthFactor', 'leafSize'] as const satisfies readonly (keyof TreeSpec)[];
@@ -26,13 +27,18 @@ const presetSelect = element('preset', HTMLSelectElement);
 const seedInput = element('seed', HTMLInputElement);
 const stats = element('stats', HTMLElement);
 const error = element('error', HTMLElement);
+const leafModeSelect = element('leafMode', HTMLSelectElement);
 const sliders = SLIDERS.map((key) => ({ key, input: element(key, HTMLInputElement), value: element(`${key}-value`, HTMLElement) }));
 const texts = TEXTS.map((key) => ({ key, input: textField(key) }));
 
 const view: View = { yaw: 0.6, pitch: 0.25, zoom: 1 };
 let base: TreeSpec = PRESETS.laubbaum;
-let triangles: Triangle[] = [];
-let obj = '';
+let shapes: Shape[] = [];
+let tree: Tree | null = null;
+/** Zählt die Aufrufe von update - eine ältere, noch ladende Vorschau zeichnet dann nicht mehr. */
+let generation = 0;
+
+const leafMode = (): LeafMode => (leafModeSelect.value === 'texture' ? 'texture' : 'shape');
 
 /** Rezept aus dem gewählten Beispiel und den Eingaben. */
 function currentSpec(): TreeSpec {
@@ -50,36 +56,48 @@ function load(name: PresetName) {
   update();
 }
 
-function update() {
+async function update() {
   const spec = currentSpec();
+  const mode = leafMode();
+  const current = ++generation;
   for (const { key, value } of sliders) value.textContent = String(spec[key]);
-  let tree: Tree;
+  let grown: Tree;
   try {
-    tree = grow(spec);
+    grown = grow(spec, mode);
   } catch (e) {
     error.textContent = e instanceof Error ? e.message : String(e);
     return;
   }
   error.textContent = '';
-  obj = `# L-System "${spec.label}", Seed ${spec.seed} (tools/lsystem)\n${tree.model.out.join('\n')}\n`;
-  triangles = trianglesFromObj(tree.model.out, MATERIALS);
+  const look = await looksFor(grown, mode);
+  if (current !== generation) return;
+  tree = grown;
+  shapes = shapesFromObj(grown.model.out, look);
   const n = (v: number) => v.toLocaleString('de');
   stats.textContent = [
-    `${tree.iterations} Schritte${tree.capped ? ' (gekappt - zu viele Zeichen)' : ''}`,
-    `${n(tree.symbols)} Zeichen`, `${n(tree.segments)} Äste`, `${n(tree.leaves)} Laub`,
-    `${n(triangles.length)} Dreiecke`, `${tree.height.toFixed(1)} m hoch`,
+    `${grown.iterations} Schritte${grown.capped ? ' (gekappt - zu viele Zeichen)' : ''}`,
+    `${n(grown.symbols)} Zeichen`, `${n(grown.segments)} Äste`, `${n(grown.leaves)} Laub`,
+    `${n(shapes.length)} Flächen`, `${grown.height.toFixed(1)} m hoch`,
   ].join(' · ');
   draw();
 }
 
-const draw = () => render(canvas, triangles, view);
+const draw = () => render(canvas, shapes, view);
 
-function download() {
+function save(name: string, text: string) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([obj], { type: 'model/obj' }));
-  a.download = `lsys_${presetSelect.value}.obj`;
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = name;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+/** OBJ und MTL; die Blattbilder liegen in tools/lsystem/leaves/img (MTL verweist auf leaves/). */
+function download() {
+  if (!tree) return;
+  const file = `lsys_${presetSelect.value}`;
+  save(`${file}.obj`, `# L-System "${base.label}" (tools/lsystem)\nmtllib ${file}.mtl\n${tree.model.out.join('\n')}\n`);
+  save(`${file}.mtl`, `# ${file}.mtl${mtlFile(tree, leafMode(), 'leaves')}`);
 }
 
 // Ziehen dreht, Mausrad zoomt.
@@ -111,11 +129,12 @@ for (const group of GROUPS) {
 }
 presetSelect.addEventListener('change', () => {
   if (!isPresetName(presetSelect.value)) return;
-  history.replaceState(null, '', `?preset=${presetSelect.value}`);
+  history.replaceState(null, '', `?preset=${presetSelect.value}&leaves=${leafMode()}`);
   load(presetSelect.value);
 });
 for (const { input } of [...sliders, ...texts]) input.addEventListener('input', update);
 seedInput.addEventListener('input', update);
+leafModeSelect.addEventListener('change', update);
 element('reseed', HTMLButtonElement).addEventListener('click', () => {
   seedInput.value = String(1 + Math.floor(Math.random() * 99_999));
   update();
@@ -125,5 +144,6 @@ element('download', HTMLButtonElement).addEventListener('click', download);
 // ?preset=<name> - so verlinkt die Galerie (gallery.html) hierher.
 const requested = new URLSearchParams(location.search).get('preset') ?? '';
 const initial: PresetName = isPresetName(requested) ? requested : 'laubbaum';
+if (new URLSearchParams(location.search).get('leaves') === 'texture') leafModeSelect.value = 'texture';
 presetSelect.value = initial;
 load(initial);

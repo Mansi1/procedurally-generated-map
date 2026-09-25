@@ -25,3 +25,4 @@ dist-ssr
 
 # L-System-Export (tools/lsystem/export.ts)
 tools/lsystem/out
+tools/lsystem/leaves/.cache

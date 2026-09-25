@@ -19,7 +19,11 @@
 // Die Astdicke folgt dem Pipe-Modell (da Vinci): der Querschnitt eines Astes
 // trägt alle Spitzen darüber - r = tip * spitzen^(1/pipe).
 import { model, type Model } from '../models/primitives.mjs';
+import { leafMaterial, placeLeaf, type LeafMaterialInfo, type LeafMode } from './foliage.ts';
+import type { LeafName } from './leaves/data.ts';
 import type { Material } from './materials.ts';
+
+export type { LeafMode } from './foliage.ts';
 
 export type Vec3 = readonly [number, number, number];
 
@@ -45,6 +49,10 @@ export interface Organ {
   readonly spread?: number;
   /** Wahrscheinlichkeit, dass es an einem Zeichen wirklich sitzt (Standard 1), z. B. Früchte. */
   readonly chance?: number;
+  /** clump und needle: statt der einfachen Form echte Blätter dieses Fotos (leaves/). */
+  readonly leaf?: LeafName;
+  /** Blätter je Büschel (clump, Standard 6). */
+  readonly leafCount?: number;
 }
 
 export interface Token {
@@ -82,6 +90,10 @@ export interface TreeSpec {
   /** Halbe Größe eines Laubbüschels in Metern. */
   readonly leafSize: number;
   readonly leafMaterials: readonly Material[];
+  /** Blattfoto für das Laub (leaves/); ohne: einfache Büschel. */
+  readonly leaf?: LeafName;
+  /** Blätter je Büschel, wenn `leaf` gesetzt ist (Standard 6). */
+  readonly leafCount?: number;
   /** Weitere Organe je Zeichen, z. B. Blätter und Ähren beim Getreide. */
   readonly organs?: Readonly<Record<string, Organ>>;
   /** Material der Äste bzw. Halme. */
@@ -118,6 +130,8 @@ export interface Skeleton {
 
 export interface Tree {
   readonly model: Model;
+  /** Materialien der Blätter (Name im Modell -> Foto und Farbe), für Vorschau und MTL. */
+  readonly leafMaterials: ReadonlyMap<string, LeafMaterialInfo>;
   readonly symbols: number;
   /** Ausgeführte Schritte - weniger als verlangt, wenn die Kette zu lang wurde. */
   readonly iterations: number;
@@ -307,14 +321,25 @@ function pipeRadii(segments: readonly Segment[], spec: TreeSpec): [number, numbe
 /** Eckenzahl eines Astes: dicke rund, dünne dreieckig. */
 const sides = (r: number) => (r > 0.08 ? 7 : r > 0.03 ? 5 : 3);
 
+/** Zeichnet in ein Modell; sammelt die benutzten Blatt-Materialien. */
+interface Drawing {
+  readonly m: Model;
+  readonly mode: LeafMode;
+  readonly rnd: () => number;
+  readonly leafMaterials: Map<string, LeafMaterialInfo>;
+}
+
 /** Das Gerüst als Modell: Äste als Balken, dazu Laub und Organe. */
-export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number): Model {
+export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number, mode: LeafMode = 'shape') {
   const m = model();
+  const drawing: Drawing = { m, mode, rnd, leafMaterials: new Map() };
   skeleton.segments.forEach((s, i) => {
     const [r0, r1] = skeleton.radii[i];
     m.beam(r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0 * 2, { w1: r1 * 2, n: sides(r0) });
   });
-  const foliage: Organ = { shape: spec.leafShape, size: spec.leafSize, materials: spec.leafMaterials };
+  const foliage: Organ = {
+    shape: spec.leafShape, size: spec.leafSize, materials: spec.leafMaterials, leaf: spec.leaf, leafCount: spec.leafCount,
+  };
   const count = new Map<Organ, number>();
   for (const leaf of skeleton.leaves) {
     const organ = spec.organs?.[leaf.symbol] ?? foliage;
@@ -322,9 +347,9 @@ export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number): Mo
     const n = count.get(organ) ?? 0;
     count.set(organ, n + 1);
     const mtl = organ.materials[n % organ.materials.length];
-    for (const part of rosette(leaf, organ, rnd)) drawOrgan(m, organ, mtl, part, rnd);
+    for (const part of rosette(leaf, organ, rnd)) drawOrgan(drawing, organ, mtl, part);
   }
-  return m;
+  return { model: m, leafMaterials: drawing.leafMaterials };
 }
 
 /** Die Teile eines Organs: bei count > 1 rund um die Blickrichtung verteilt und um spread geneigt. */
@@ -340,9 +365,47 @@ function rosette(leaf: Leaf, organ: Organ, rnd: () => number): Leaf[] {
   });
 }
 
-function drawOrgan(m: Model, organ: Organ, mtl: Material, { p, heading, left, scale }: Leaf, rnd: () => number) {
+/** Zufällige Richtung, gleich verteilt auf der Kugel. */
+function randomUnit(rnd: () => number): Vec3 {
+  for (;;) {
+    const v: Vec3 = [rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1];
+    const l = length(v);
+    if (l > 0.05 && l <= 1) return normalize(v);
+  }
+}
+
+/**
+ * Echte Blätter statt der einfachen Form: ein Büschel (clump) aus leafCount
+ * Blättern, die vom Punkt aus nach außen und etwas nach oben zeigen, oder ein
+ * Zweigstück (needle) entlang der Astrichtung - flach wie ein Nadelzweig.
+ */
+function drawLeaves(drawing: Drawing, organ: Organ, leaf: LeafName, material: Material, { p, heading, left }: Leaf, size: number) {
+  const { m, mode, rnd } = drawing;
+  const { name, info } = leafMaterial(leaf, material);
+  drawing.leafMaterials.set(name, info);
+  if (organ.shape === 'needle') {
+    const dir = normalize(add(heading, randomUnit(rnd), 0.15));
+    const side = normalize(add(left, dir, -dot(left, dir)));
+    placeLeaf(m, mode, leaf, name, add(p, dir, -size), dir, side, size * (3 + rnd() * 0.8));
+    return;
+  }
+  for (let i = 0; i < (organ.leafCount ?? 6); i++) {
+    const out = randomUnit(rnd);
+    const dir = normalize(add(add(out, heading, 0.5), [0, 1, 0], 0.35));
+    const side = normalize(cross(dir, randomUnit(rnd)));
+    placeLeaf(m, mode, leaf, name, add(p, out, size * 0.3), dir, side, size * (0.75 + rnd() * 0.4));
+  }
+}
+
+function drawOrgan(drawing: Drawing, organ: Organ, mtl: Material, part: Leaf) {
+  const { m, rnd } = drawing;
+  const { p, heading, left, scale } = part;
   const size = organ.size * scale;
   const width = size * (organ.width ?? 0.1);
+  if (organ.leaf && (organ.shape === 'clump' || organ.shape === 'needle')) {
+    drawLeaves(drawing, organ, organ.leaf, mtl, part, size);
+    return;
+  }
   switch (organ.shape) {
     case 'clump': {
       const r = size * (0.7 + rnd() * 0.6);
@@ -397,12 +460,12 @@ function blade(m: Model, mtl: Material, p: Vec3, heading: Vec3, left: Vec3, blad
 }
 
 /** Vom Rezept zum Modell. Wirft bei unlesbaren Regeln. */
-export function grow(spec: TreeSpec): Tree {
+export function grow(spec: TreeSpec, mode: LeafMode = 'shape'): Tree {
   const rnd = rng(spec.seed);
   const { tokens, iterations, capped } = rewrite(tokenize(spec.axiom), parseRules(spec.rules), spec.iterations, rnd);
   const skeleton = interpret(tokens, spec, rnd);
   return {
-    model: build(skeleton, spec, rnd),
+    ...build(skeleton, spec, rnd, mode),
     symbols: tokens.length,
     iterations,
     capped,

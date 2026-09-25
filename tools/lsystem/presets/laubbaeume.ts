@@ -12,6 +12,7 @@ A 0.5 -> "[&FA]/(137.5)[&FA]/(137.5)[&FA]
 A 0.35 -> "[&FA]/(137.5)[&(15)FA]
 A 0.15 -> "F/(90)A`,
   leaves: 'A', leafSize: 0.9, tip: 0.035,
+  leaf: 'linde',
 });
 
 const ahorn = preset({
@@ -22,6 +23,7 @@ const ahorn = preset({
 A 0.65 -> "/(90)F[&A]/(180)[&A]
 A 0.35 -> "/(90)F[&(28)A]/(180)[&(28)A]^(5)A`,
   leaves: 'A', leafSize: 0.7, tip: 0.028,
+  leaf: 'ahorn',
 });
 
 const eiche = preset({
@@ -33,6 +35,7 @@ A 0.45 -> "[&FFA]/(137.5)[&FA]/(137.5)[&(62)FA]
 A 0.35 -> "F[&(55)FA]/(180)[&(30)FA]
 A 0.2 -> "F+(25)/(70)A`,
   leaves: 'A', leafSize: 0.85, leafMaterials: ['Leaf', 'IvyDark'], stemMaterial: 'BarkDark', tip: 0.035, pipe: 2,
+  leaf: 'eiche',
 });
 
 const buche = preset({
@@ -42,6 +45,7 @@ const buche = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]/(137.5)[&(18)FA]
 A 0.4 -> "F[&FA]/(180)[&FA]`,
   leaves: 'A', leafSize: 0.55, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkGrey', tip: 0.022,
+  leaf: 'buche',
 });
 
 const linde = preset({
@@ -51,6 +55,7 @@ const linde = preset({
 A 0.55 -> "[&FA]/(137.5)[&FA]/(137.5)[&(22)FA]
 A 0.45 -> "[&(25)FA]/(137.5)[&FA]`,
   leaves: 'A', leafSize: 0.6, leafMaterials: ['Leaf', 'LeafLight'], tip: 0.022,
+  leaf: 'linde',
 });
 
 const kastanie = preset({
@@ -61,6 +66,7 @@ const kastanie = preset({
 A 0.6 -> "/(90)F[&A[^(60)f(0.6)K]]/(180)[&A[^(60)f(0.6)K]]
 A 0.4 -> "/(90)F[&A[^(60)f(0.6)K]]/(180)[&A]^(10)A`,
   leaves: 'A', leafSize: 1.0, leafMaterials: ['IvyDark', 'Leaf'], stemMaterial: 'BarkDark', tip: 0.03,
+  leaf: 'kastanie',
 });
 
 const esche = preset({
@@ -70,6 +76,7 @@ const esche = preset({
 A 0.7 -> "/(90)F[&A]/(180)[&A]A
 A 0.3 -> "/(90)F[&(20)A]A`,
   leaves: 'A', leafSize: 0.5, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkGrey', tip: 0.022,
+  leaf: 'esche',
 });
 
 const ulme = preset({
@@ -78,6 +85,7 @@ const ulme = preset({
   rules: `# Vasenform: gabelt früh und steil, der Tropismus biegt die äußeren Äste auswärts
 A -> "[&FFA]/(180)[&FA]/(90)`,
   leaves: 'A', leafSize: 0.55, tip: 0.025,
+  leaf: 'ulme',
 });
 
 const platane = preset({
@@ -87,6 +95,7 @@ const platane = preset({
 A 0.5 -> "[&FA]/(137.5)[&FFA]/(137.5)[&FA]
 A 0.5 -> "F[&FA]/(160)[&(30)FA]`,
   leaves: 'A', leafSize: 0.9, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkPale', tip: 0.03,
+  leaf: 'platane',
 });
 
 const hainbuche = preset({
@@ -96,6 +105,8 @@ const hainbuche = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]/(137.5)[&FA]
 A 0.4 -> "F[&FA]/(137.5)[&(20)FA]`,
   leaves: 'A', leafSize: 0.5, leafMaterials: ['Leaf', 'LeafLight'], stemMaterial: 'BarkGrey', tip: 0.02,
+  // Kein freigestelltes Hainbuchenblatt gefunden - das Ulmenblatt ist ähnlich (gesägt, eiförmig).
+  leaf: 'ulme',
 });
 
 const erle = preset({
@@ -106,6 +117,7 @@ A -> F[&(55)"B]/(137.5)A
 B -> "FL[+C][-C]B
 C -> "FL`,
   leaves: 'ABC', leafSize: 0.6, leafMaterials: ['IvyDark', 'Leaf'], stemMaterial: 'BarkDark', tip: 0.018,
+  leaf: 'erle',
 });
 
 const walnuss = preset({
@@ -115,6 +127,7 @@ const walnuss = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]/(137.5)[&FA]
 A 0.4 -> "[&(30)FFA]/(180)[&FA]`,
   leaves: 'A', leafSize: 0.85, leafMaterials: ['Leaf', 'LeafLight'], stemMaterial: 'BarkGrey', tip: 0.03, pipe: 2,
+  leaf: 'walnuss',
 });
 
 const birke = preset({
@@ -124,6 +137,7 @@ const birke = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]A
 A 0.4 -> "[&(35)FA]/(137.5)F[&FA]`,
   leaves: 'A', leafSize: 0.35, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkWhite', tip: 0.018,
+  leaf: 'birke',
 });
 
 const haengebirke = preset({
@@ -132,6 +146,7 @@ const haengebirke = preset({
   rules: `A 0.6 -> "[&FFA]/(120)[&FFA]/(120)[&FA]
 A 0.4 -> "[&(20)FFA]/(180)[&FA]`,
   leaves: 'A', leafSize: 0.45, leafMaterials: ['Leaf', 'Ivy'], stemMaterial: 'BarkWhite', tip: 0.02,
+  leaf: 'birke',
 });
 
 const trauerweide = preset({
@@ -144,6 +159,7 @@ A 0.5 -> "[&(45)~(0.55)W]/(180)[&(25)FA]/(90)[&(60)~(0.55)W]
 W -> "(0.95)FL[+(25)~(0.55)V]W
 V -> FLV`,
   leaves: 'AWV', leafShape: 'needle', leafSize: 0.28, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkGrey', tip: 0.012,
+  leaf: 'weide',
 });
 
 const kopfweide = preset({
@@ -154,6 +170,7 @@ K -> [&(10)R]/(40)[&(25)R]/(40)[&(18)R]/(40)[&(30)R]/(40)[&(12)R]/(40)[&(28)R]/(
 R -> FLR`,
   leaves: 'LR', leafShape: 'needle', leafSize: 0.3, leafMaterials: ['LeafSilver', 'LeafLight'], stemMaterial: 'BarkGrey',
   tip: 0.028, pipe: 1.2,
+  leaf: 'weide',
 });
 
 const ginkgo = preset({
@@ -165,6 +182,7 @@ A 0.2 -> F/(150)A
 B -> "FL[+(35)C]B
 C -> "FL`,
   leaves: 'ABC', leafSize: 0.55, leafMaterials: ['LeafLight', 'Leaf'], stemMaterial: 'BarkGrey', tip: 0.02,
+  leaf: 'ginkgo',
 });
 
 const magnolie = preset({
@@ -174,6 +192,7 @@ const magnolie = preset({
 A 0.6 -> "[&FA]/(137.5)[&FA]
 A 0.4 -> "[&FA]/(137.5)[&FA]/(137.5)[&FA]`,
   leaves: 'A', leafSize: 0.28, leafMaterials: ['BlossomPink', 'BlossomWhite', 'BlossomPink'], stemMaterial: 'BarkGrey', tip: 0.015,
+  leaf: 'bluete_magnolie',
 });
 
 export const LAUBBAEUME = {
@@ -182,6 +201,7 @@ export const LAUBBAEUME = {
   eiche, eiche_herbst: autumn(eiche, ['AutumnBrown', 'AutumnOrange']), eiche_winter: winter(eiche),
   eiche_jung: variant(eiche, 'jung', { iterations: 5, length: 0.9, jitter: 0.3 }),
   buche, buche_herbst: autumn(buche, ['AutumnOrange', 'AutumnBrown', 'AutumnYellow']), buche_winter: winter(buche),
+  blutbuche: variant(buche, 'Blutbuche', { leaf: 'blutbuche', leafMaterials: ['AutumnBrown'] }),
   linde, linde_herbst: autumn(linde, ['AutumnYellow', 'LeafLight']),
   kastanie, kastanie_bluete: variant(kastanie, 'Blüte', {
     organs: { K: { shape: 'spindle', size: 0.45, width: 0.35, materials: ['BlossomWhite'], chance: 0.7 } },

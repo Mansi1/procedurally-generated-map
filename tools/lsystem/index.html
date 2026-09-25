@@ -39,8 +39,13 @@
     <div><label for="seed">Seed</label><input id="seed" type="number" min="1"></div>
     <div><label for="leaves">Laub-Zeichen</label><input id="leaves"></div>
   </div>
+  <label for="leafMode">Blätter</label>
+  <select id="leafMode">
+    <option value="shape">Form nach dem Foto (einfarbig)</option>
+    <option value="texture">Foto als Textur</option>
+  </select>
   <button id="reseed">Neuer Seed</button>
-  <button id="download">OBJ herunterladen</button>
+  <button id="download">OBJ + MTL herunterladen</button>
   <div id="error"></div>
   <details><summary>Zeichen</summary>
     <code>F</code> Ast, <code>f</code> bewegen, <code>+ -</code> gieren, <code>&amp; ^</code> nicken,
