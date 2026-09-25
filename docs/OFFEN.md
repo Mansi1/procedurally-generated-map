@@ -17,7 +17,7 @@ Was danach noch zu tun bleibt, grob nach Wichtigkeit.
 - **Mögliche Konflikte beim Übernehmen:** Der L-System-Branch
   (`lsystem-blattebenen`, eigener Worktree unter `.agents/worktree`) ändert
   ebenfalls `tools/README.md`, dessen Anfang hier neu geschrieben wurde.
-- **Vercel:** Die `.blend`-Dateien liegen in Git LFS (67 Dateien, rund 25 MB).
+- **Vercel:** Die `.blend`-Dateien liegen in Git LFS (63 Dateien, rund 25 MB).
   Das Spiel braucht sie nicht zum Bauen, nur `src/models/`. Prüfen, ob der
   LFS-Abruf beim Deploy unnötig Zeit oder Kontingent kostet; notfalls die
   `.blend`-Dateien für den Build ausnehmen.
