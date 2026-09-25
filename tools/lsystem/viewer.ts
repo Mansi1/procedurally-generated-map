@@ -1,13 +1,9 @@
 // Spielwiese für L-System-Bäume: Beispiel wählen, Regeln und Regler ändern,
 // das Ergebnis dreht sich in der Vorschau und lässt sich als OBJ speichern.
-import { BARK, grow, type LeafMaterial, type Tree, type TreeSpec } from './lsystem.ts';
-import { PRESETS, type PresetName } from './presets.ts';
+import { grow, type Tree, type TreeSpec } from './lsystem.ts';
+import { MATERIALS } from './materials.ts';
+import { GROUPS, PRESETS, isPresetName, type PresetName } from './presets/index.ts';
 import { render, trianglesFromObj, type Triangle, type View } from './render.ts';
-
-/** Farben wie PALETTE in tools/models/lib.mjs (die Datei braucht node:fs). */
-const COLORS: Record<LeafMaterial | typeof BARK, readonly [number, number, number]> = {
-  Bark: [0.33, 0.22, 0.12], Leaf: [0.3, 0.52, 0.22], Ivy: [0.3, 0.52, 0.2], IvyDark: [0.19, 0.38, 0.14],
-};
 
 /** Regler: Feld des Rezepts, das sie einstellen - die id im HTML ist derselbe Name. */
 const SLIDERS = ['iterations', 'angle', 'tropism', 'jitter', 'lengthFactor', 'leafSize'] as const satisfies readonly (keyof TreeSpec)[];
@@ -34,7 +30,7 @@ const sliders = SLIDERS.map((key) => ({ key, input: element(key, HTMLInputElemen
 const texts = TEXTS.map((key) => ({ key, input: textField(key) }));
 
 const view: View = { yaw: 0.6, pitch: 0.25, zoom: 1 };
-let base: TreeSpec = PRESETS.busch;
+let base: TreeSpec = PRESETS.laubbaum;
 let triangles: Triangle[] = [];
 let obj = '';
 
@@ -66,7 +62,7 @@ function update() {
   }
   error.textContent = '';
   obj = `# L-System "${spec.label}", Seed ${spec.seed} (tools/lsystem)\n${tree.model.out.join('\n')}\n`;
-  triangles = trianglesFromObj(tree.model.out, COLORS);
+  triangles = trianglesFromObj(tree.model.out, MATERIALS);
   const n = (v: number) => v.toLocaleString('de');
   stats.textContent = [
     `${tree.iterations} Schritte${tree.capped ? ' (gekappt - zu viele Zeichen)' : ''}`,
@@ -107,8 +103,17 @@ canvas.addEventListener('wheel', (e) => {
 }, { passive: false });
 addEventListener('resize', draw);
 
-for (const [name, p] of Object.entries(PRESETS)) presetSelect.add(new Option(p.label, name));
-presetSelect.addEventListener('change', () => load(presetSelect.value as PresetName));
+for (const group of GROUPS) {
+  const optgroup = document.createElement('optgroup');
+  optgroup.label = group;
+  for (const [name, p] of Object.entries(PRESETS)) if (p.group === group) optgroup.append(new Option(p.label, name));
+  presetSelect.append(optgroup);
+}
+presetSelect.addEventListener('change', () => {
+  if (!isPresetName(presetSelect.value)) return;
+  history.replaceState(null, '', `?preset=${presetSelect.value}`);
+  load(presetSelect.value);
+});
 for (const { input } of [...sliders, ...texts]) input.addEventListener('input', update);
 seedInput.addEventListener('input', update);
 element('reseed', HTMLButtonElement).addEventListener('click', () => {
@@ -117,4 +122,8 @@ element('reseed', HTMLButtonElement).addEventListener('click', () => {
 });
 element('download', HTMLButtonElement).addEventListener('click', download);
 
-load('busch');
+// ?preset=<name> - so verlinkt die Galerie (gallery.html) hierher.
+const requested = new URLSearchParams(location.search).get('preset') ?? '';
+const initial: PresetName = isPresetName(requested) ? requested : 'laubbaum';
+presetSelect.value = initial;
+load(initial);

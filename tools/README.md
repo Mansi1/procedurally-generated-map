@@ -22,15 +22,19 @@ Die Symbole zeigen die Modelle - nach `gen:models` also auch `gen:ui` laufen las
 
 ## L-System-Bäume (`lsystem/`)
 
-Versuch, Bäume mit einem [L-System](https://en.wikipedia.org/wiki/L-system) in 3D
-zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
+Versuch, Bäume und Pflanzen mit einem [L-System](https://en.wikipedia.org/wiki/L-system)
+in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
 `npx tsc -p tools/lsystem`.
 
 - Spielwiese: `npm run dev`, dann <http://localhost:5173/tools/lsystem/>. Beispiel
-  wählen, Regeln und Regler ändern, ziehen dreht, Mausrad zoomt, das Ergebnis als OBJ herunterladen.
+  wählen, Regeln und Regler ändern, ziehen dreht, Mausrad zoomt, als OBJ herunterladen.
+- Galerie aller Beispiele: <http://localhost:5173/tools/lsystem/gallery.html>
 - Export aller Beispiele: `npx vite-node tools/lsystem/export.ts [Zielordner]`
   (Standard `tools/lsystem/out`, nicht eingecheckt).
 - `lsystem.ts` - Regeln lesen, ersetzen, Schildkröte in 3D (mit Tropismus), Astdicke
-  nach dem Pipe-Modell, Modell über `models/primitives.mjs`
-- `presets.ts` - Beispiele: Busch (ABOP 1.25), Laubbaum, Fichte, Tanne, Hängebirke, Pappel, sympodial
-- `render.ts` + `viewer.ts` + `index.html` - die Spielwiese
+  nach dem Pipe-Modell, Laub und Organe (Blatt, Ähre, Kolben, Rosetten, Früchte)
+- `materials.ts` - Farben für Vorschau und MTL
+- `presets/` - Rezepte nach Gruppen: Laubbäume, Nadelbäume, Obstbäume, Exoten,
+  Getreide, Klassiker aus "The Algorithmic Beauty of Plants"; dazu Varianten
+  (Herbst, Winter, Blüte, jung) über `variant`, `autumn`, `winter` in `presets/base.ts`
+- `render.ts`, `viewer.ts`, `gallery.ts` + die beiden HTML-Seiten - Vorschau

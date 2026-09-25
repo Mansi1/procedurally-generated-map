@@ -10,18 +10,42 @@
 //   \ /  rollen um die Blickrichtung H                  |    umdrehen (180°)
 //   [ ]  Zustand merken / zurückholen (Verzweigung)
 //   "    Länge mal lengthFactor (oder Argument)
+//   ~    Tropismus ab hier für diesen Ast (Argument; ohne: wieder der des Rezepts)
 //   L    Laub; ebenso alle Zeichen in `leaves`
+//   Zeichen in `organs` werden als Organ gezeichnet (Blatt, Ähre, Kolben ...);
+//   ein Argument vergrößert es, z. B. B(0.7)
 // Andere Zeichen (A, B, ...) sind nur Platzhalter für die Regeln.
 //
 // Die Astdicke folgt dem Pipe-Modell (da Vinci): der Querschnitt eines Astes
 // trägt alle Spitzen darüber - r = tip * spitzen^(1/pipe).
 import { model, type Model } from '../models/primitives.mjs';
+import type { Material } from './materials.ts';
 
 export type Vec3 = readonly [number, number, number];
 
-/** Material der Äste und des Laubs - Namen aus PALETTE in tools/models/lib.mjs. */
-export type LeafMaterial = 'Leaf' | 'Ivy' | 'IvyDark';
-export const BARK = 'Bark';
+/** Ein Pflanzenteil, das an einem Zeichen sitzt. Maße in Metern, mal dem Argument des Zeichens. */
+export interface Organ {
+  /**
+   * clump: Laubbüschel, needle: Nadelbüschel entlang des Zweigs,
+   * blade: flaches, spitzes Blatt, das sich zum Boden biegt (Gras, Mais),
+   * spindle: Spindel entlang der Blickrichtung (Ähre, Kolben, Rispe)
+   */
+  readonly shape: 'clump' | 'needle' | 'blade' | 'spindle';
+  /** Größe bzw. Länge. */
+  readonly size: number;
+  /** Breite im Verhältnis zur Länge (blade, spindle). */
+  readonly width?: number;
+  /** Wie weit sich ein Blatt zum Boden biegt, in Grad über die ganze Länge. */
+  readonly droop?: number;
+  /** Der Reihe nach vergeben. */
+  readonly materials: readonly Material[];
+  /** Mehrere rund um die Blickrichtung - Rosette, Büschel, Rispe (Standard 1). */
+  readonly count?: number;
+  /** Neigung der Rosetten-Teile gegen die Blickrichtung, in Grad. */
+  readonly spread?: number;
+  /** Wahrscheinlichkeit, dass es an einem Zeichen wirklich sitzt (Standard 1), z. B. Früchte. */
+  readonly chance?: number;
+}
 
 export interface Token {
   readonly symbol: string;
@@ -57,7 +81,11 @@ export interface TreeSpec {
   readonly leafShape: 'clump' | 'needle';
   /** Halbe Größe eines Laubbüschels in Metern. */
   readonly leafSize: number;
-  readonly leafMaterials: readonly LeafMaterial[];
+  readonly leafMaterials: readonly Material[];
+  /** Weitere Organe je Zeichen, z. B. Blätter und Ähren beim Getreide. */
+  readonly organs?: Readonly<Record<string, Organ>>;
+  /** Material der Äste bzw. Halme. */
+  readonly stemMaterial: Material;
   /** Radius einer Astspitze in Metern. */
   readonly tip: number;
   /** Exponent des Pipe-Modells: 2 = Fläche bleibt gleich, größer = schlankerer Stamm. */
@@ -72,9 +100,13 @@ export interface Segment {
 }
 
 export interface Leaf {
+  readonly symbol: string;
+  /** Größenfaktor aus dem Argument des Zeichens. */
+  readonly scale: number;
   readonly p: Vec3;
-  /** Blickrichtung der Schildkröte dort. */
+  /** Blickrichtung und linke Seite der Schildkröte dort. */
   readonly heading: Vec3;
+  readonly left: Vec3;
 }
 
 export interface Skeleton {
@@ -177,6 +209,7 @@ const add = (a: Vec3, b: Vec3, k = 1): Vec3 => [a[0] + b[0] * k, a[1] + b[1] * k
 const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const length = (a: Vec3) => Math.hypot(a[0], a[1], a[2]);
+const normalize = (a: Vec3): Vec3 => add([0, 0, 0], a, 1 / (length(a) || 1));
 
 /** v um die Einheitsachse k drehen (Rodrigues). */
 function rotate(v: Vec3, k: Vec3, angle: number): Vec3 {
@@ -200,16 +233,17 @@ interface Turtle {
   readonly step: number;
   /** Zuletzt gezeichneter Ast auf diesem Weg. */
   readonly segment: number;
+  readonly tropism: number;
 }
 
 /** Die Schildkröte liest die Zeichen und liefert das Gerüst. Maße in Metern, y oben. */
 export function interpret(tokens: readonly Token[], spec: TreeSpec, rnd: () => number): Skeleton {
   const jitter = (v: number) => v * (1 + (rnd() * 2 - 1) * spec.jitter);
-  const leafSymbols = new Set(['L', ...spec.leaves]);
+  const leafSymbols = new Set(['L', ...spec.leaves, ...Object.keys(spec.organs ?? {})]);
   const segments: Segment[] = [];
   const leaves: Leaf[] = [];
   const stack: Turtle[] = [];
-  let t: Turtle = { p: [0, 0, 0], frame: { h: [0, 1, 0], l: [-1, 0, 0], u: [0, 0, 1] }, step: spec.length, segment: -1 };
+  let t: Turtle = { p: [0, 0, 0], frame: { h: [0, 1, 0], l: [-1, 0, 0], u: [0, 0, 1] }, step: spec.length, segment: -1, tropism: spec.tropism };
 
   const turn = (axis: keyof Frame, degrees: number) => {
     t = { ...t, frame: turnFrame(t.frame, t.frame[axis], jitter(degrees * DEG)) };
@@ -223,7 +257,7 @@ export function interpret(tokens: readonly Token[], spec: TreeSpec, rnd: () => n
         const p = add(t.p, t.frame.h, jitter(arg ?? t.step));
         let segment = t.segment;
         if (symbol === 'F') segment = segments.push({ a: t.p, b: p, parent: t.segment }) - 1;
-        t = { ...t, p, segment, frame: bend(t.frame, spec.tropism) };
+        t = { ...t, p, segment, frame: bend(t.frame, t.tropism) };
         break;
       }
       case '+': turn('u', angle); break;
@@ -234,9 +268,11 @@ export function interpret(tokens: readonly Token[], spec: TreeSpec, rnd: () => n
       case '/': turn('h', -angle); break;
       case '|': t = { ...t, frame: turnFrame(t.frame, t.frame.u, Math.PI) }; break;
       case '"': t = { ...t, step: t.step * (arg ?? spec.lengthFactor) }; break;
+      case '~': t = { ...t, tropism: arg ?? spec.tropism }; break;
       case '[': stack.push(t); break;
       case ']': t = stack.pop() ?? t; break;
-      default: if (leafSymbols.has(symbol)) leaves.push({ p: t.p, heading: t.frame.h });
+      default:
+        if (leafSymbols.has(symbol)) leaves.push({ symbol, scale: arg ?? 1, p: t.p, heading: t.frame.h, left: t.frame.l });
     }
   }
   return { segments, radii: pipeRadii(segments, spec), leaves };
@@ -248,7 +284,7 @@ function bend(frame: Frame, tropism: number): Frame {
   const axis = cross(frame.h, GRAVITY);
   const mag = length(axis);
   if (mag < 1e-6) return frame;
-  return turnFrame(frame, [axis[0] / mag, axis[1] / mag, axis[2] / mag], tropism * mag);
+  return turnFrame(frame, normalize(axis), tropism * mag);
 }
 
 /** Pipe-Modell: Spitzen über jedem Ast zählen, daraus die Radien. */
@@ -271,25 +307,93 @@ function pipeRadii(segments: readonly Segment[], spec: TreeSpec): [number, numbe
 /** Eckenzahl eines Astes: dicke rund, dünne dreieckig. */
 const sides = (r: number) => (r > 0.08 ? 7 : r > 0.03 ? 5 : 3);
 
-/** Das Gerüst als Modell: Äste als Balken, Laub als kleine Büschel. */
+/** Das Gerüst als Modell: Äste als Balken, dazu Laub und Organe. */
 export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number): Model {
   const m = model();
   skeleton.segments.forEach((s, i) => {
     const [r0, r1] = skeleton.radii[i];
-    m.beam(r0 > 0.12 ? 'Trunk' : 'Branch', BARK, s.a, s.b, r0 * 2, { w1: r1 * 2, n: sides(r0) });
+    m.beam(r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0 * 2, { w1: r1 * 2, n: sides(r0) });
   });
-  skeleton.leaves.forEach(({ p, heading }, i) => {
-    const mtl = spec.leafMaterials[i % spec.leafMaterials.length];
-    const r = spec.leafSize * (0.7 + rnd() * 0.6);
-    if (spec.leafShape === 'needle') {
-      // Nadelbüschel: länglich entlang des Zweigs, zur Spitze schmaler.
-      m.beam('Needles', mtl, add(p, heading, -r * 0.6), add(p, heading, r * 0.6), r * 1.4, { w1: r * 0.5, n: 4 });
-    } else {
+  const foliage: Organ = { shape: spec.leafShape, size: spec.leafSize, materials: spec.leafMaterials };
+  const count = new Map<Organ, number>();
+  for (const leaf of skeleton.leaves) {
+    const organ = spec.organs?.[leaf.symbol] ?? foliage;
+    if (organ.size <= 0 || rnd() >= (organ.chance ?? 1)) continue;
+    const n = count.get(organ) ?? 0;
+    count.set(organ, n + 1);
+    const mtl = organ.materials[n % organ.materials.length];
+    for (const part of rosette(leaf, organ, rnd)) drawOrgan(m, organ, mtl, part, rnd);
+  }
+  return m;
+}
+
+/** Die Teile eines Organs: bei count > 1 rund um die Blickrichtung verteilt und um spread geneigt. */
+function rosette(leaf: Leaf, organ: Organ, rnd: () => number): Leaf[] {
+  const count = organ.count ?? 1;
+  if (count <= 1) return [leaf];
+  const tilt = (organ.spread ?? 45) * DEG;
+  const offset = rnd() * Math.PI * 2;
+  return Array.from({ length: count }, (_, i) => {
+    const around = offset + (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.4;
+    const left = rotate(leaf.left, leaf.heading, around);
+    return { ...leaf, heading: rotate(leaf.heading, left, tilt * (0.8 + rnd() * 0.4)), left };
+  });
+}
+
+function drawOrgan(m: Model, organ: Organ, mtl: Material, { p, heading, left, scale }: Leaf, rnd: () => number) {
+  const size = organ.size * scale;
+  const width = size * (organ.width ?? 0.1);
+  switch (organ.shape) {
+    case 'clump': {
+      const r = size * (0.7 + rnd() * 0.6);
       m.box('Leaves', mtl, [p[0] - r, p[0] + r], [p[1] - r * 0.6, p[1] + r * 0.7], [p[2] - r, p[2] + r],
         { n: 5, rot: rnd() * 3, x: [p[0] - r * 0.4, p[0] + r * 0.4], z: [p[2] - r * 0.4, p[2] + r * 0.4] });
+      break;
     }
-  });
-  return m;
+    case 'needle': {
+      // Nadelbüschel: länglich entlang des Zweigs, zur Spitze schmaler.
+      const r = size * (0.7 + rnd() * 0.6);
+      m.beam('Needles', mtl, add(p, heading, -r * 0.6), add(p, heading, r * 0.6), r * 1.4, { w1: r * 0.5, n: 4 });
+      break;
+    }
+    case 'spindle': {
+      // Dick in der Mitte, spitz am Ende.
+      const mid = add(p, heading, size * 0.45), end = add(p, heading, size);
+      m.beam('Organ', mtl, p, mid, width * 0.7, { w1: width, n: 6 });
+      m.beam('Organ', mtl, mid, end, width, { w1: width * 0.25, n: 6 });
+      break;
+    }
+    case 'blade':
+      blade(m, mtl, p, heading, left, size, width, (organ.droop ?? 60) * DEG);
+      break;
+  }
+}
+
+/** Breite eines Blattes entlang der Länge, 0..1: schmal am Ansatz, spitz am Ende. */
+const BLADE_PROFILE = [0.5, 1, 0.95, 0.75, 0.45, 0.05];
+
+/**
+ * Flaches Blatt in einigen Stücken, jedes etwas weiter zum Boden gebogen.
+ * Die Fläche liegt quer zur linken Seite der Schildkröte.
+ */
+function blade(m: Model, mtl: Material, p: Vec3, heading: Vec3, left: Vec3, bladeLength: number, width: number, droop: number) {
+  const pieces = BLADE_PROFILE.length - 1;
+  const thick = Math.max(0.002, width * 0.08);
+  let dir = heading, at = p;
+  for (let i = 0; i < pieces; i++) {
+    // Seite und Dicke senkrecht zur aktuellen Richtung.
+    const side = normalize(add(left, dir, -dot(left, dir)));
+    const up = cross(dir, side);
+    const ring = (c: Vec3, w: number) => [
+      add(add(c, side, w / 2), up, thick), add(add(c, side, -w / 2), up, thick),
+      add(add(c, side, -w / 2), up, -thick), add(add(c, side, w / 2), up, -thick),
+    ];
+    const next = add(at, dir, bladeLength / pieces);
+    m.emit('Blade', mtl, ring(at, width * BLADE_PROFILE[i]), ring(next, width * BLADE_PROFILE[i + 1]));
+    at = next;
+    const axis = cross(dir, GRAVITY);
+    if (length(axis) > 1e-6) dir = rotate(dir, normalize(axis), droop / pieces);
+  }
 }
 
 /** Vom Rezept zum Modell. Wirft bei unlesbaren Regeln. */

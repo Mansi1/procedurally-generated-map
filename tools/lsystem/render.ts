@@ -54,7 +54,8 @@ export function render(canvas: HTMLCanvasElement, triangles: readonly Triangle[]
   if (!triangles.length) return;
 
   // Maßstab aus Höhe und Kronenradius, damit der ganze Baum ins Bild passt.
-  let top = 1, radius = 1;
+  // Untergrenze klein genug für Getreide, aber > 0 für leere Modelle.
+  let top = 0.1, radius = 0.1;
   for (const t of triangles) for (const p of t.p) {
     top = Math.max(top, p[1]);
     radius = Math.max(radius, Math.hypot(p[0], p[2]));
