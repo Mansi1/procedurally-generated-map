@@ -180,8 +180,8 @@ src/
 - [x] 0.2b `buildings.ts` → `catalog.ts`, `TileProbe` → `Terrain`
 - [x] 0.2c Vorrat `berries` → `food`: `ResourceKind`/`Resources` (Vorrat) getrennt von `DepositType` (Vorkommen auf der Karte), `YIELD` verbindet sie; alte Stände (`stock.berries`, Ladung `berries`) werden umgeschrieben
 - [x] 0.2d Namen in `main.ts`: `selected` → `placingType`, `selectedBuilding` → `focusedBuilding`, `camX`/`camY` → `camera.x`/`camera.y`
-- [ ] 0.2e (alt) Übrige Umbenennungen mit Spielstand-Migration in `save.ts` (alte Kennungen
-  und `berries` → `food` beim Laden umschreiben), dazu ein Test mit alten Ständen
+- [x] 0.2e Spielstand-Migration in `save.ts` (alte Kennungen, `berries` → `food`, halbe
+  Tiles bis Version 2), Test mit einem alten Stand in `tools/ui/smoke.mjs`
 
 ### Phase 1: Gebäude (fertig)
 

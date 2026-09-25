@@ -1,7 +1,7 @@
 // Rauchtest im Browser: spielt die wichtigsten Wege einmal durch - Hauptmenü,
 // neues Spiel, bauen, ausbilden, Feld über das Untermenü, speichern und neu
-// laden, Demo, Galerie. Bricht mit Exit-Code 1 ab, wenn etwas fehlt oder die
-// Seite einen Fehler wirft.
+// laden, Demo, alter Spielstand, Galerie. Bricht mit Exit-Code 1 ab, wenn
+// etwas fehlt oder die Seite einen Fehler wirft.
 //
 // Aufruf: erst `npm run dev`, dann `npm run smoke` bzw.
 // `node tools/ui/smoke.mjs [Adresse]` (Standard http://localhost:5173).
@@ -121,6 +121,28 @@ await newGame('demo');
 const demo = await saved('Demo');
 check('Demo geladen', (await page.title()).endsWith('Demo') && demo.villagers.length > 0,
   `${demo.buildings.length} Gebäude, ${demo.villagers.length} Dorfbewohner`);
+
+// Alter Spielstand (Version 2): Tiles halb so groß, Nahrung hieß "berries",
+// das Holzfällerlager "lumberjack" - world/save.ts schreibt das beim Laden um.
+await page.evaluate(() => {
+  localStorage.setItem('pgm.world.Altstand', JSON.stringify({
+    version: 2,
+    stock: { wood: 100, stone: 0, gold: 0, berries: 77 },
+    buildings: [{ t: 'town_center', x: 20, y: 20 }, { t: 'lumberjack', x: 30, y: 20 }],
+    villagers: [{ x: 21, y: 22, c: 3, ct: 'berries', task: { kind: 'idle' } }],
+    harvested: {},
+  }));
+  localStorage.setItem('pgm.seed', 'Altstand');
+  sessionStorage.setItem('pgm.start', 'continue');
+});
+await page.goto(BASE + '/');
+await wait(2500);
+const old = await saved('Altstand');
+const camp = old.buildings.find((b) => b.t === 'lumber_camp');
+check('alter Stand: berries → food', old.stock.food === 77 && !('berries' in old.stock) && old.villagers[0]?.ct === 'food',
+  `Nahrung ${old.stock.food}, Ladung ${old.villagers[0]?.ct}`);
+check('alter Stand: lumberjack → lumber_camp, Koordinaten verdoppelt', camp?.x === 60 && camp?.y === 40,
+  camp ? `bei ${camp.x}, ${camp.y}` : old.buildings.map((b) => b.t).join(', '));
 
 // Galerie
 await page.goto(BASE + '/galerie');

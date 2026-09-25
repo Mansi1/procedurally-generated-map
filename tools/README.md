@@ -16,7 +16,8 @@ direkt in `src/` geschrieben.
 - `ui/icons.mjs` + `ui/icons.html` - rendert die Spielmodelle als Symbole
 - `ui/wood-bar.mjs` - Holzplanken für die Rohstoffleiste
 - `ui/smoke.mjs` - Rauchtest im Browser (`npm run smoke`, bei laufendem `npm run dev`):
-  Hauptmenü, neues Spiel, bauen, ausbilden, Feld, speichern und neu laden, Demo, Galerie.
+  Hauptmenü, neues Spiel, bauen, ausbilden, Feld, speichern und neu laden, Demo, alter
+  Spielstand, Galerie.
   Andere Adresse als Argument: `node tools/ui/smoke.mjs http://localhost:5199`
 
 `gen:ui` braucht Google Chrome (über `playwright-core`). Liegt Chrome nicht am
