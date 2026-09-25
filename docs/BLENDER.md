@@ -1,7 +1,7 @@
 # Alles aus Blender
 
 Jedes Objekt des Spiels ist eine Blender-Datei: Dorfbewohner, Gebäude, Bäume,
-Sträucher, Stein und Gold, Tiere, Werkzeuge. Die Bewegungen stecken in eigenen
+Sträucher, Stein und Gold, Tiere, Werkzeuge und die Pflanzen der Felder. Die Bewegungen stecken in eigenen
 Clip-Bibliotheken (docs/ANIMATION.md). Blender ist die Quelle - die Dateien
 in `src/models/` werden daraus erzeugt und nicht von Hand bearbeitet.
 
@@ -23,6 +23,8 @@ assets/blender/                       (Git LFS)
     animals/    deer, hare, cow, sheep, goat, boar
     props/      prop_axe, prop_knife, prop_scythe_male/_female, bow,
                 rally_flag, marker_arrow
+    fields/     field_stake, field_cord, field_wheat_leaf,
+                field_wheat_stalk(_light, _dark), field_corn_1, field_corn_2
   clips/                              Bewegungen - je Skelett eine Datei
     humanoid, quadruped, mill, flag
 ```
@@ -105,9 +107,27 @@ alle 51 Modelle Fläche für Fläche gleich (`tools/blender/compare-obj.mjs`),
 50 davon sogar Byte für Byte. Vorhandene `.blend`-Dateien überschreibt
 `init` nur mit `--force` - das würde Änderungen in Blender verwerfen.
 
-## Noch nicht in Blender
+## Felder
 
-- **Felder** (Weizen, Mais): Sie entstehen im Spiel aus
-  `tools/models/farmsGen.mjs` - Tausende Halme, je Furche und in drei
-  Detailstufen. Als Blender-Datei wären es 20 000 Objekte und rund 13 MB
-  mehr im Spiel.
+Ein Feld sind Tausende Pflanzen - als eine Blender-Datei wären das 20 000
+Objekte. In Blender liegen deshalb die **Teile** (`models/fields/`), das
+Spiel stellt sie beim Start auf (`tools/models/farmsGen.mjs`): wo jede
+Pflanze steht, wie hoch, geneigt und gedreht - mit denselben Zufallszahlen
+wie früher, die Felder sehen aus wie vorher.
+
+| Datei | wird im Spiel |
+|---|---|
+| `field_stake` | Pflock am Rand, so wie er ist |
+| `field_cord` | Schnur - 1 m lang entlang x, gestreckt von Pflock zu Pflock |
+| `field_wheat_leaf` | Blatt am Boden - 1 m nach oben, gestreckt auf 0,35–0,6 m und schräg gestellt |
+| `field_wheat_stalk`, `_light`, `_dark` | Halm mit Ähre (drei Farben: 30 %, 55 %, 15 %) - Halm 1 m, gestreckt auf 0,8–1,05 m und geneigt, die Ähre sitzt darüber |
+| `field_corn_1`, `field_corn_2` | Maispflanze mit einem bzw. zwei Kolben, 2,2 m - gedreht; was über 2 m liegt (Stängelspitze, Rispe), wächst mit der Höhe der Pflanze (2,0–2,45 m) |
+
+Halm, Blatt und Schnur werden entlang ihrer Achse gestreckt, quer dazu
+behalten sie ihre Dicke. Wer eine Maispflanze in Blender ändert: Blätter und
+Kolben unter 2 m bleiben auf ihrer Höhe.
+
+Verglichen mit den früheren Feldern: Blätter, Halme, Pflöcke und Schnur
+liegen bis auf 0,2 cm gleich, die Ähren im Mittel 1,5 cm anders (sie setzen
+jetzt den Halm fort), beim Mais Blätter 1 cm, Kolben 2,6 cm (ihre Höhe ist
+jetzt im Modell fest statt zufällig).

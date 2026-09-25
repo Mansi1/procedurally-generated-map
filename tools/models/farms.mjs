@@ -1,13 +1,18 @@
 // Writes the field models (farmsGen.mjs) as OBJ files for a look - the game
-// builds them itself at start-up.
+// builds them itself at start-up from the parts in src/models/field_*.obj.
 // Usage: node tools/models/farms.mjs <outDir>
-import { writeFileSync } from 'node:fs';
-import { FARM_KINDS, farmModel } from './farmsGen.mjs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { FARM_KINDS, FIELD_PARTS, farmModel } from './farmsGen.mjs';
 
 const dir = process.argv[2];
 if (!dir) throw new Error('usage: node tools/models/farms.mjs <outDir>');
+const models = new URL('../../src/models/', import.meta.url).pathname;
+const parts = Object.fromEntries(FIELD_PARTS.map((n) => [n, {
+  obj: readFileSync(`${models}field_${n}.obj`, 'utf8'),
+  mtl: readFileSync(`${models}field_${n}.mtl`, 'utf8'),
+}]));
 for (const kind of FARM_KINDS) {
-  const { obj, mtl } = farmModel(kind);
+  const { obj, mtl } = farmModel(kind, 1, parts);
   writeFileSync(`${dir}/farm_${kind}.obj`, obj);
   writeFileSync(`${dir}/farm_${kind}.mtl`, mtl);
   console.log(`wrote farm_${kind} (${(obj.length / 1024).toFixed(0)} KB)`);

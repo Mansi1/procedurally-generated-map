@@ -11,8 +11,9 @@ Nach einer Änderung neu erzeugen und die Ergebnisse mit einchecken.
 | `npm run gen:ui` | `src/icons/*.png`: Symbole der Rohstoffleiste und ihre Holztextur |
 
 - `blender/` - Export aus Blender und der einmalige Umzug der Modelle nach Blender
-- `models/primitives.mjs` - Grundformen für die Felder (`farmsGen.mjs`) und das L-System
-- `models/farmsGen.mjs` - die Felder (Weizen, Mais), noch als Skript
+- `models/primitives.mjs` - Grundformen (für das L-System und die Felder)
+- `models/farmsGen.mjs` - stellt die Felder (Weizen, Mais) aus ihren Teilen aus Blender auf
+  (`src/models/field_*.obj`); `node tools/models/farms.mjs <Ordner>` schreibt sie zum Ansehen als OBJ
 - Die früheren Generatoren (`villagers.mjs`, `buildings.mjs` ...) sind mit dem
   Umzug nach Blender entfallen; sie stehen in der Git-Geschichte.
 - `ui/icons.mjs` + `ui/icons.html` - rendert die Spielmodelle als Symbole

@@ -103,7 +103,14 @@ import berryBush3Obj from '../models/berry_bush_3.obj?raw';
 import berryBush3Mtl from '../models/berry_bush_3.mtl?raw';
 import berryBush4Obj from '../models/berry_bush_4.obj?raw';
 import berryBush4Mtl from '../models/berry_bush_4.mtl?raw';
-import { FARM_KINDS, farmModel } from '../../tools/models/farmsGen.mjs';
+import { FARM_KINDS, FIELD_PARTS, farmModel } from '../../tools/models/farmsGen.mjs';
+
+/** Teile der Felder aus Blender (assets/blender/models/fields/, docs/BLENDER.md). */
+const FIELD_PART_FILES = import.meta.glob('../models/field_*.{obj,mtl}', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+const FIELD_PART_MODELS = Object.fromEntries(FIELD_PARTS.map((n) => [n, {
+  obj: FIELD_PART_FILES[`../models/field_${n}.obj`],
+  mtl: FIELD_PART_FILES[`../models/field_${n}.mtl`],
+}]));
 import deerObj from '../models/deer.obj?raw';
 import deerMtl from '../models/deer.mtl?raw';
 import hareObj from '../models/hare.obj?raw';
@@ -2508,7 +2515,7 @@ function fieldModels(kind: (typeof FARM_KINDS)[number], base: number) {
   // weniger Halmen, die man von weit weg ohnehin nicht einzeln sieht.
   // Je Fassung einmal nach Furchen aufgeteilt (Pflöcke und Schnur zur ersten).
   const versions = FIELD_DETAIL.map((detail) => {
-    const { obj, mtl } = farmModel(kind, detail);
+    const { obj, mtl } = farmModel(kind, detail, FIELD_PART_MODELS);
     const triangles = parseObj(obj);
     const rows: ObjTriangle[][] = Array.from({ length: FIELD_FURROWS }, () => []);
     for (const t of triangles) {

@@ -1,0 +1,36 @@
+# field_corn_1.mtl
+
+newmtl CornCob
+Kd 1.000 0.840 0.220
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl CornHusk
+Kd 0.620 0.700 0.340
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl CornLeaf
+Kd 0.380 0.560 0.200
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl CornStalk
+Kd 0.460 0.590 0.230
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Tassel
+Kd 0.820 0.700 0.400
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

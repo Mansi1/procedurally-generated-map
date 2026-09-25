@@ -1,0 +1,8 @@
+# field_cord.mtl
+
+newmtl Rope
+Kd 0.900 0.860 0.740
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1

@@ -28,6 +28,7 @@ function category(name) {
   if (/^tree_/.test(name)) return 'trees';
   if (/^(berry_bush|stone_|gold_)/.test(name)) return 'nature';
   if (/^(boar|cow|deer|goat|hare|sheep)$/.test(name)) return 'animals';
+  if (/^field_/.test(name)) return 'fields';
   return 'misc';
 }
 
