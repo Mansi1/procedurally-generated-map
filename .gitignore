@@ -36,3 +36,8 @@ tools/export/out
 
 # Python-Cache der Blender-Skripte (tools/blender/*.py importieren einander)
 __pycache__/
+
+# Aus Blender erzeugt (npm run gen:models / gen:anim) - nicht eingecheckt;
+# die Posen-Dateien (*_pose.json) sind von Hand gepflegt und bleiben in Git
+src/models/*
+!src/models/*_pose.json
