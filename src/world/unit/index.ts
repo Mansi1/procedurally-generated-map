@@ -6,19 +6,21 @@
 //    ├─ Villager                 Auftrag, Ladung, Name
 //    └─ AnimalBase (abstrakt)    äsen, umherziehen, fliehen, Kadaver
 //        ├─ Deer
-//        └─ Hare
+//        ├─ Hare
+//        └─ Cow
 
 import { AnimalBase, type AnimalOptions, type AnimalState, type AnimalSurroundings } from './AnimalBase';
 import type { AnimalDefinition } from './definition';
+import { Cow } from './Cow';
 import { Deer } from './Deer';
 import { Hare } from './Hare';
 import { UnitBase } from './UnitBase';
 import { Villager, type Task } from './Villager';
 
-export { UnitBase, Villager, type Task, AnimalBase, Deer, Hare, type AnimalDefinition, type AnimalOptions, type AnimalState, type AnimalSurroundings };
+export { UnitBase, Villager, type Task, AnimalBase, Deer, Hare, Cow, type AnimalDefinition, type AnimalOptions, type AnimalState, type AnimalSurroundings };
 
 /** Alle Tierklassen. */
-export const ANIMAL_CLASSES = [Deer, Hare] as const;
+export const ANIMAL_CLASSES = [Deer, Hare, Cow] as const;
 
 /** Kennung einer Tierart, z. B. 'deer'. */
 export type AnimalKind = (typeof ANIMAL_CLASSES)[number]['definition']['type'];

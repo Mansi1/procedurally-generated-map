@@ -90,6 +90,8 @@ import deerObj from '../models/deer.obj?raw';
 import deerMtl from '../models/deer.mtl?raw';
 import hareObj from '../models/hare.obj?raw';
 import hareMtl from '../models/hare.mtl?raw';
+import cowObj from '../models/cow.obj?raw';
+import cowMtl from '../models/cow.mtl?raw';
 import birchLeafUrl from '../textures/birch_leaf.png';
 import rallyFlagObj from '../models/rally_flag.obj?raw';
 import rallyFlagMtl from '../models/rally_flag.mtl?raw';
@@ -185,7 +187,7 @@ export const SHAPE = {
   farmWheat: 50,
   farmCorn: 59,
   /**
-   * Wild zum Jagen (models/deer.obj, hare.obj): motion = [Blickrichtung,
+   * Wild zum Jagen (models/deer.obj, hare.obj, cow.obj): motion = [Blickrichtung,
    * Phase, Pose (ANIMAL_POSE), 0] - siehe "beast" im Shader.
    */
   deer: 90,
@@ -194,6 +196,7 @@ export const SHAPE = {
   treeBirch2: 92,
   /** Trauerbirke: gegabelter Stamm, Etagen aus Bögen mit langen Zweig-Vorhängen (models/tree_birch_3.obj). */
   treeBirch3: 93,
+  cow: 94,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -543,7 +546,7 @@ void main() {
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
     bool figure = shape == 5 || shape == 18;
-    bool beast = shape == ${SHAPE.deer} || shape == ${SHAPE.hare};
+    bool beast = shape == ${SHAPE.deer} || shape == ${SHAPE.hare} || shape == ${SHAPE.cow};
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
     bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
@@ -714,9 +717,11 @@ void main() {
       // Tiere: Beine schwingen um ihr oberes Gelenk, der Kopf samt Hals nickt
       // um den Halsansatz. Rehe gehen im Kreuzgang und springen auf der
       // Flucht, Hasen hoppeln - Vorder- und Hinterbeine jeweils zusammen.
+      // Kühe trotten auch auf der Flucht im Kreuzgang.
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
       bool hare = shape == ${SHAPE.hare};
+      bool jump = hare || (pose == 5 && shape != ${SHAPE.cow});
       bool front = part == 24 || part == 25;
       bool leg = part >= 24 && part <= 27;
       vec2 pivot = vec2(front ? uLegs.x : uLegs.y, uHip);
@@ -726,7 +731,7 @@ void main() {
         float amp = pose == 5 ? 0.8 : 0.45;
         float s = sin(phase);
         float a = 0.0;
-        if (hare || pose == 5) {
+        if (jump) {
           // Hoppeln bzw. Springen: vorn und hinten gegengleich, der Körper hebt ab.
           a = (front ? s : -s) * amp;
           bob = max(0.0, sin(phase + 1.2)) * (hare ? 0.25 : 0.1);
@@ -1033,7 +1038,7 @@ void main() {
   // höher - es schnitte Füße und Ring ab. Ihre Tiefe wird deshalb um etwa
   // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
   // wo es ist (siehe project: näher = kleinere Tiefe).
-  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || shape == ${SHAPE.deer} || shape == ${SHAPE.hare}) gl_Position.z -= 0.5 / uDepthRange;
+  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || shape == ${SHAPE.deer} || shape == ${SHAPE.hare} || shape == ${SHAPE.cow}) gl_Position.z -= 0.5 / uDepthRange;
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
   if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
@@ -1961,6 +1966,7 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   // Tiere: auf Höhe 1 gebracht - die Instanzgröße ist ihre Höhe in Tiles.
   { shape: SHAPE.deer, model: loadModel(deerObj, deerMtl, 'height'), scale: 1 },
   { shape: SHAPE.hare, model: loadModel(hareObj, hareMtl, 'height'), scale: 1 },
+  { shape: SHAPE.cow, model: loadModel(cowObj, cowMtl, 'height'), scale: 1 },
 ];
 
 /**

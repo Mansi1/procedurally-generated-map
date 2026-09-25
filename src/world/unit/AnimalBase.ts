@@ -1,5 +1,5 @@
 // AnimalBase.ts
-// Ein Tier (abstrakt - Deer, Hare): äst, zieht um seinen Platz herum und
+// Ein Tier (abstrakt - Deer, Hare, Cow): äst, zieht um seinen Platz herum und
 // flieht vor Dorfbewohnern; erlegt bleibt der Kadaver liegen, bis sein
 // Fleisch abgetragen ist. Was es sieht und wohin es darf, sagt ihm die Welt
 // (AnimalSurroundings) - so kennt das Tier die Welt nicht.

@@ -1,7 +1,8 @@
 // wildlife.ts
 // Das Wild der Welt: welche Tiere es gibt, wo neue entstehen und was aus
 // Kadavern wird. Tiere entstehen stückweise nahe der Kamera - fest nach Seed
-// und Lage: auf Wiese und Waldboden mal ein Rudel Rehe, mal ein, zwei Hasen.
+// und Lage: auf Wiese und Waldboden mal ein Rudel Rehe, mal ein, zwei Hasen,
+// mal eine kleine Herde Kühe.
 // Wie ein einzelnes Tier sich verhält, steht in unit/AnimalBase.ts.
 
 import type { Terrain } from '../map';
@@ -52,7 +53,7 @@ export class Wildlife {
   private spawnChunk(cx: number, cy: number) {
     const seed = this.world.seedHash;
     const roll = hash01(cx, cy, seed);
-    const kind: AnimalKind | null = roll < 0.22 ? 'deer' : roll < 0.55 ? 'hare' : null;
+    const kind: AnimalKind | null = roll < 0.22 ? 'deer' : roll < 0.55 ? 'hare' : roll < 0.65 ? 'cow' : null;
     if (!kind) return;
     const definition = ANIMALS[kind];
     for (let tries = 0; tries < 16; tries++) {

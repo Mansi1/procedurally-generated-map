@@ -1,0 +1,64 @@
+# cow.mtl
+
+newmtl Paint
+Kd 0.251 0.627 0.282
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl CowBlack
+Kd 0.110 0.100 0.100
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl CowMuzzle
+Kd 0.860 0.620 0.580
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl CowWhite
+Kd 0.920 0.900 0.860
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Eye
+Kd 0.050 0.040 0.040
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Hoof
+Kd 0.160 0.130 0.110
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Horn
+Kd 0.880 0.840 0.740
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Nose
+Kd 0.080 0.070 0.070
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
+
+newmtl Udder
+Kd 0.900 0.640 0.620
+Ka 0 0 0
+Ks 0 0 0
+d 1
+illum 1
