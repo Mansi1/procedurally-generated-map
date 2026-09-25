@@ -211,7 +211,7 @@ src/
 ### Phase 2: `world.ts` aufteilen (B7)
 
 - [x] 2.1 `save.ts`: `SaveData`, Schlüssel, lesen, schreiben und die Umrechnung alter Versionen; `worlds.ts` und `demo.ts` nutzen es
-- [ ] 2.2 `farming.ts`: Feldgruppen, Phasen, freie Furche, Bauern, Wachsen
+- [x] 2.2 `farming.ts`: Feldgruppen, Phase, freie Furche, Wachsen, Platz des Bauern (die Arbeit des Bauern bleibt bei den Dorfbewohnern, 2.4)
 - [x] 2.3 Tiere als Klassen (`unit/UnitBase`, `AnimalBase`, `Deer`, `Hare`, Liste in `unit/index.ts`) und `wildlife.ts` (entstehen lassen, suchen, Kadaver); Jagd bleibt bei den Dorfbewohnern
 - [ ] 2.4 `villagers.ts`: Aufgaben, Laufen, Sammeln, Abliefern, `describe()`
 - [x] 2.5 `render.ts`: Instanzen für den Renderer (Gebäude, Felder, Figuren, Tiere, Einsturz); `ruin.ts` für einstürzende Gebäude

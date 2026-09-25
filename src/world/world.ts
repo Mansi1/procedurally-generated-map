@@ -28,15 +28,16 @@ import {
 import type { AnimalKind, BuildingType, CropType, DepositType, ResourceKind, Resources } from './catalog';
 import {
   buildingFromSave, createBuilding, furrowFood, furrowPosition, maskCovers, CENTER_TILE,
-  type Building, type Farm, type Furrow, type UnitProducer,
+  type Building, type Farm, type UnitProducer,
 } from './building';
 import { readSave, writeSave, type LoadedSave, type SaveData } from './save';
 import { isAnimalKind, type Animal, type AnimalSurroundings } from './unit';
 import { Wildlife } from './wildlife';
+import { Farming, farmSpot, furrowKey, furrowNeeds, FIELD_INNER, METERS_PER_TILE, type FarmPhase } from './farming';
 import { RUIN_DURATION, type Ruin } from './ruin';
 
 // Gebäude sind Klassen (building/) - hier weiter unter diesen Namen erreichbar.
-export type { Building };
+export type { Building, FarmPhase };
 
 /**
  * Was ein Dorfbewohner gerade tun soll. Der Zustand (hingehen, sammeln,
@@ -126,20 +127,6 @@ export interface ViewRect {
   height: number;
 }
 
-/**
- * Was auf einem zusammenhängenden Feld gerade dran ist - alle Bauern darauf
- * arbeiten gemeinsam daran: erst alles pflügen, dann alles säen, warten, bis
- * alles reif ist, dann gemeinsam ernten. Abgeerntet wird alles neu gesät.
- */
-export type FarmPhase = 'plough' | 'sow' | 'grow' | 'harvest' | 'done';
-
-/**
- * Pflanzfläche eines Felds: halbe Kantenlänge in Metern wie im Modell
- * (INNER in tools/models/farmsGen.mjs), bei 5 m je Tile.
- */
-const FIELD_INNER = 7.5;
-const METERS_PER_TILE = 5;
-
 const key = (x: number, y: number) => `${x},${y}`;
 
 
@@ -205,7 +192,8 @@ export class World {
   /** Für sowable(): 0 nein, 1 ja, 2 erst wenn das Vorkommen abgebaut ist. */
   private sowableTiles = new Map<string, number>();
   /** Zusammenhängende Felder je Feldstück (farmGroup) - leer, sobald sich Gebäude ändern. */
-  private farmGroups = new Map<string, Farm[]>();
+  /** Felder: Gruppen, Phase, freie Furchen, Wachsen (farming.ts). */
+  private readonly farming: Farming;
   /** Umriss und Geländehöhen je Feldstück fürs Zeichnen (fieldLook) - ebenso. */
   private fieldLooks = new Map<string, { outline: { mask: number; others: number }; ground: Float32Array | null }>();
   /** Abgerissene Gebäude, die noch einstürzen (ruin.ts) - nur fürs Bild. */
@@ -238,6 +226,7 @@ export class World {
   groundAt: ((x: number, y: number) => number) | null = null;
 
   constructor(readonly terrain: Terrain, private seed: string) {
+    this.farming = new Farming(this);
     this.wildlife = new Wildlife({
       terrain,
       isOccupied: (x, y) => this.occupied.has(key(x, y)),
@@ -616,7 +605,7 @@ export class World {
     const building = createBuilding(type, x, y, type === 'farm' ? { crop: this.nextFarmCrop, tiles: this.farmTiles(x, y) } : {});
     this.buildings.set(building.anchor, building);
     for (const [tx, ty] of building.footprintTiles()) this.occupied.set(key(tx, ty), building.anchor);
-    this.farmGroups.clear();
+    this.farming.invalidate();
     this.fieldLooks.clear();
     this.dirty = true;
     return null;
@@ -631,7 +620,7 @@ export class World {
     for (const [tx, ty] of building.footprintTiles()) this.occupied.delete(key(tx, ty));
     const anchor = building.anchor;
     this.buildings.delete(anchor);
-    this.farmGroups.clear();
+    this.farming.invalidate();
     this.fieldLooks.clear();
     this.addRuin(building);
     // Wer gerade genau hierhin liefern wollte, sucht sich beim nächsten Tick
@@ -718,7 +707,7 @@ export class World {
       for (const v of selected) v.task = { kind: 'idle' };
       const busy = new Set(this.villagers.flatMap((v) => (v.task.kind === 'farm' ? [`${v.task.building}#${v.task.row}`] : [])));
       for (const v of selected) {
-        const spot = this.freeFurrow(target, busy);
+        const spot = this.farming.freeFurrow(target, busy);
         if (!spot) {
           v.problem = 'Auf allen Feldern in der Nähe arbeitet schon jemand in jeder Furche';
           continue;
@@ -787,7 +776,7 @@ export class World {
     if (this.ruins.length > 0) this.ruins = this.ruins.filter((r) => this.time - r.at < RUIN_DURATION);
     for (const b of this.buildings.values()) if (b.isUnitProducer()) this.tickTraining(b, dt);
     this.regrowBerries(dt);
-    this.growFarms(dt);
+    if (this.farming.grow(dt)) this.dirty = true;
     if (this.wildlife.tick(dt, this.animalSurroundings)) this.dirty = true;
     // Leer zerlegte Kadaver verschwinden.
     for (const v of this.villagers) {
@@ -980,56 +969,14 @@ export class World {
    * (über Tile-Kanten benachbart), es selbst eingeschlossen. Gemerkt, bis
    * sich an den Gebäuden etwas ändert.
    */
+  /** Das zusammenhängende Feld, zu dem `building` gehört (farming.ts). */
   farmGroup(building: Building): Farm[] {
-    if (!building.isFarm()) return [];
-    const anchor = building.anchor;
-    const known = this.farmGroups.get(anchor);
-    if (known) return known;
-    const group: Farm[] = [];
-    const seen = new Set<Building>([building]);
-    const queue: Farm[] = [building];
-    while (queue.length > 0) {
-      const b = queue.pop()!;
-      group.push(b);
-      for (const [tx, ty] of b.footprintTiles()) {
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const n = this.at(tx + dx, ty + dy);
-          if (n?.isFarm() && !seen.has(n)) {
-            seen.add(n);
-            queue.push(n);
-          }
-        }
-      }
-    }
-    for (const b of group) this.farmGroups.set(b.anchor, group);
-    return group;
-  }
-
-  /** Alle Furchen eines Felds, die es gibt (kleinere Feldstücke haben nicht alle neun). */
-  private groupFurrows(group: Farm[]): { building: Farm; row: number; f: Furrow }[] {
-    return group.flatMap((b) => b.furrows
-      .map((f, row) => ({ building: b, row, f }))
-      .filter(({ row }) => b.furrowCells(row).length > 0));
+    return this.farming.group(building);
   }
 
   /** Was auf dem Feld, zu dem `building` gehört, gerade dran ist. */
   farmPhase(building: Building): FarmPhase {
-    let plough = false, sow = false, ripe = true, food = false;
-    for (const { f } of this.groupFurrows(this.farmGroup(building))) {
-      if (f.plough < 1) plough = true;
-      else if (f.sown < 1) sow = true;
-      if (f.sown < 1 || f.growth < 1) ripe = false;
-      if (f.food > 1e-6) food = true;
-    }
-    return plough ? 'plough' : sow ? 'sow' : !ripe ? 'grow' : food ? 'harvest' : 'done';
-  }
-
-  /** Hat diese Furche in dieser Phase etwas zu tun? */
-  private furrowNeeds(f: Furrow, phase: FarmPhase): boolean {
-    return phase === 'plough' ? f.plough < 1
-      : phase === 'sow' ? f.sown < 1
-      : phase === 'harvest' ? f.food > 1e-6
-      : false;
+    return this.farming.phase(building);
   }
 
   /**
@@ -1039,41 +986,11 @@ export class World {
   private nextFurrow(v: Villager, group: Farm[], phase: FarmPhase): { building: Farm; row: number; distance: number } | undefined {
     const busy = new Set(this.villagers.flatMap((u) => (u !== v && u.task.kind === 'farm' ? [`${u.task.building}#${u.task.row}`] : [])));
     let best: { building: Farm; row: number; distance: number } | undefined;
-    for (const { building, row, f } of this.groupFurrows(group)) {
-      if (!this.furrowNeeds(f, phase) || busy.has(`${building.anchor}#${row}`)) continue;
+    for (const { building, row, f } of this.farming.furrows(group)) {
+      if (!furrowNeeds(f, phase) || busy.has(furrowKey(building, row))) continue;
       const spot = this.farmSpot(building, row, v);
       const distance = Math.hypot(spot.x - v.x, spot.y - v.y);
       if (!best || distance < best.distance) best = { building, row, distance };
-    }
-    return best;
-  }
-
-  /**
-   * Eine freie Furche auf dem Feld von `near` - lieber eine mit Arbeit in
-   * der aktuellen Phase -, sonst auf dem nächsten anderen Feld.
-   */
-  private freeFurrow(near: Building, busy: ReadonlySet<string>): { building: string; row: number } | undefined {
-    const free = (b: Building) => {
-      const phase = this.farmPhase(b);
-      const rows = this.groupFurrows(this.farmGroup(b))
-        .filter(({ building, row }) => !busy.has(`${building.anchor}#${row}`));
-      const pick = rows.find(({ f }) => this.furrowNeeds(f, phase)) ?? rows[0];
-      return pick && { building: key(pick.building.x, pick.building.y), row: pick.row };
-    };
-    const own = free(near);
-    if (own) return own;
-    const mine = new Set(this.farmGroup(near));
-    let best: { building: string; row: number } | undefined;
-    let bestDistance: number = VILLAGER.searchRadius;
-    for (const b of this.buildings.values()) {
-      if (!b.isFarm() || mine.has(b)) continue;
-      const d = Math.hypot(b.x - near.x, b.y - near.y);
-      if (d >= bestDistance) continue;
-      const spot = free(b);
-      if (spot) {
-        bestDistance = d;
-        best = spot;
-      }
     }
     return best;
   }
@@ -1095,40 +1012,9 @@ export class World {
     this.dirty = true;
   }
 
-  /** Eingesäte Furchen wachsen bis zur Reife - auch ohne Bauer. */
-  private growFarms(dt: number) {
-    for (const b of this.buildings.values()) {
-      if (!b.isFarm()) continue;
-      for (const f of b.furrows) {
-        if (f.sown < 1 || f.growth >= 1) continue;
-        f.growth = Math.min(1, f.growth + dt / CROPS[f.crop].growTime);
-        this.dirty = true;
-      }
-    }
-  }
-
-  /**
-   * Wo der Bauer in seiner Furche steht und wohin er greift: beim Pflügen und
-   * Säen dort, wo er gerade ist (von einem Ende zum anderen), beim Ernten an
-   * der letzten Pflanze, die noch steht; solange es wächst, geht er die
-   * Furche ab und jätet. Er steht neben der Furche, zur Kamera hin.
-   */
-  private farmSpot(building: Farm, row: number, v: Villager, wander = false): { x: number; y: number; aimX: number; aimY: number } {
-    const farm = building;
-    const f = farm.furrows[row];
-    const q = furrowPosition(farm.tiles, row, wander ? Math.abs(((this.time / 40 + v.id * 0.37) % 2) - 1)
-      : f.plough < 1 ? f.plough
-      : f.sown < 1 ? f.sown
-      : f.growth < 1 ? Math.abs(((this.time / 40 + v.id * 0.37) % 2) - 1)
-      : farm.furrowShare(row));
-    const gap = (2 * FIELD_INNER) / FIELD_ROWS;
-    // Modell: Furchen quer zur Blickrichtung (Welt-x), entlang Welt-y.
-    const aimX = building.x + 0.5 + (-FIELD_INNER + (row + 0.5) * gap) / METERS_PER_TILE;
-    // In Schritten: er geht ab und zu ein Stück weiter, statt zu rutschen.
-    const STEP = 0.2;
-    const along = Math.round((q * 2 * FIELD_INNER / METERS_PER_TILE) / STEP) * STEP;
-    const aimY = building.y + 0.5 - FIELD_INNER / METERS_PER_TILE + along;
-    return { x: aimX + (gap * 0.5) / METERS_PER_TILE, y: aimY, aimX, aimY };
+  /** Wo der Bauer in seiner Furche steht (farming.ts) - beim Jäten je Bauer versetzt. */
+  private farmSpot(building: Farm, row: number, v: Villager, wander = false) {
+    return farmSpot(building, row, Math.abs(((this.time / 40 + v.id * 0.37) % 2) - 1), wander);
   }
 
   /**
@@ -1181,7 +1067,7 @@ export class World {
     }
     if (phase === 'done') {
       // Alles abgeerntet: alles wird neu gesät.
-      for (const { building: b, row, f } of this.groupFurrows(group)) {
+      for (const { building: b, row, f } of this.farming.furrows(group)) {
         Object.assign(f, { crop: b.plan, sown: 0, growth: 0, food: furrowFood(b.plan, b.tiles, row), paid: false });
       }
       this.dirty = true;
@@ -1190,7 +1076,7 @@ export class World {
     // In der eigenen Furche nichts mehr zu tun: die nächste mit Arbeit. Beim
     // Ernten geht er immer zum nächsten reifen Getreide, auch in einer fremden
     // Furche - seine eigene behält er nur, solange sie kaum weiter weg ist.
-    const ownNeeds = this.furrowNeeds(building.furrows[task.row], phase);
+    const ownNeeds = furrowNeeds(building.furrows[task.row], phase);
     if (!ownNeeds || phase === 'harvest') {
       const next = this.nextFurrow(v, group, phase);
       const own = this.farmSpot(building, task.row, v);
@@ -1208,7 +1094,7 @@ export class World {
       }
     }
     const f = building.furrows[task.row];
-    const working = this.furrowNeeds(f, phase);
+    const working = furrowNeeds(f, phase);
     if (working && phase === 'sow' && !f.paid) {
       if (!this.canPay(RESEED_COST)) {
         v.problem = 'Zu wenig Holz, um neu zu säen';
@@ -1665,7 +1551,7 @@ export class World {
   /** Alles zurücksetzen - für den Neustart-Knopf. */
   reset() {
     this.buildings.clear();
-    this.farmGroups.clear();
+    this.farming.invalidate();
     this.fieldLooks.clear();
     this.occupied.clear();
     this.harvested.clear();
