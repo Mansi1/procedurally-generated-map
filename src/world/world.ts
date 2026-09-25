@@ -6,9 +6,8 @@
 
 import { findPath, lineOfSight } from './pathfinding';
 import { uniqueName } from './names';
-import type { EntityInstance } from '../gl/entityRenderer';
-import { ANIMAL_POSE, BUILDING_HEADING, FALL_LYING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelEntry } from '../gl/entityRenderer';
-import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type Terrain } from '../map';
+import { BUILDING_HEADING, FALL_LYING, POSE, modelEntry } from '../gl/entityRenderer';
+import { RESOURCE_TYPE_LABEL, type Terrain } from '../map';
 import { reliefZ } from '../noise';
 import {
   BUILDINGS,
@@ -22,7 +21,6 @@ import {
   HUNT,
   MAX_BUILD_SLOPE,
   MAX_GATHERERS,
-  player,
   VILLAGER,
   RESEED_COST,
   initialResources,
@@ -35,6 +33,7 @@ import {
 import { readSave, writeSave, type LoadedSave, type SaveData } from './save';
 import { isAnimalKind, type Animal, type AnimalSurroundings } from './unit';
 import { Wildlife } from './wildlife';
+import { RUIN_DURATION, type Ruin } from './ruin';
 
 // Gebäude sind Klassen (building/) - hier weiter unter diesen Namen erreichbar.
 export type { Building };
@@ -103,9 +102,9 @@ export interface Villager {
  * rutschen die Füße - aber nicht unter 0.3 Tiles: so kleine Figuren laufen
  * sonst so schnell, dass die Beine nur noch flimmern.
  */
-const STRIDE_LENGTH = Math.max(VILLAGER.size * 1.1, 0.6);
+export const STRIDE_LENGTH = Math.max(VILLAGER.size * 1.1, 0.6);
 /** Arbeitsschläge je Sekunde, in Radiant. */
-const WORK_TEMPO = 6;
+export const WORK_TEMPO = 6;
 
 /**
  * Was in der Welt passiert und man hören (oder sonst mitbekommen) soll. Die
@@ -119,32 +118,6 @@ export type WorldEvent =
   | { kind: 'deliver'; x: number; y: number }
   | { kind: 'collapse'; x: number; y: number }
   | { kind: 'trained'; x: number; y: number };
-
-/**
- * Ein abgerissenes Gebäude, das noch einstürzt: nur fürs Bild, es belegt
- * keine Felder mehr und verschwindet nach RUIN_DURATION Sekunden.
- */
-interface Ruin {
-  type: BuildingType;
-  /** Modell beim Abriss - bei Feldern hängt es an der Frucht. */
-  shape: number;
-  x: number;
-  y: number;
-  at: number;
-  /** Uhrzeit (performance.now, Sekunden) beim Abriss - dort bleiben die Mühlenflügel stehen. */
-  clock: number;
-  /** Schuttbrocken: Flugrichtung und -weite, Steiggeschwindigkeit, Bodenhöhe am Landepunkt. */
-  debris: { dx: number; dy: number; vz: number; size: number; heading: number; ground: number }[];
-}
-
-/** Ablauf des Einsturzes in Sekunden. */
-const RUIN_SHAKE = 0.3;
-const RUIN_COLLAPSE_START = 0.25;
-const RUIN_COLLAPSE = 1.0;
-const RUIN_FLIGHT = 0.8;
-const RUIN_FADE_START = 2.4;
-const RUIN_DURATION = 3.0;
-const DUST_COLOR: [number, number, number] = [214, 200, 172];
 
 export interface ViewRect {
   x: number;
@@ -169,8 +142,6 @@ const METERS_PER_TILE = 5;
 
 const key = (x: number, y: number) => `${x},${y}`;
 
-/** Farbe der Ladung auf dem Rücken: wie das Vorkommen, aus dem sie meist stammt. */
-const LOAD_LOOK: Record<ResourceKind, DepositType> = { food: 'berries', wood: 'wood', stone: 'stone', gold: 'gold' };
 
 /**
  * Beerensträucher: nach dem letzten Pflücken BERRY_REST Sekunden Pause, dann
@@ -237,7 +208,8 @@ export class World {
   private farmGroups = new Map<string, Farm[]>();
   /** Umriss und Geländehöhen je Feldstück fürs Zeichnen (fieldLook) - ebenso. */
   private fieldLooks = new Map<string, { outline: { mask: number; others: number }; ground: Float32Array | null }>();
-  private ruins: Ruin[] = [];
+  /** Abgerissene Gebäude, die noch einstürzen (ruin.ts) - nur fürs Bild. */
+  ruins: Ruin[] = [];
   /** Weltzeit in Sekunden, läuft mit den Ticks. */
   private time = 0;
   private lastDt = 0;
@@ -265,7 +237,7 @@ export class World {
    */
   groundAt: ((x: number, y: number) => number) | null = null;
 
-  constructor(private terrain: Terrain, private seed: string) {
+  constructor(readonly terrain: Terrain, private seed: string) {
     this.wildlife = new Wildlife({
       terrain,
       isOccupied: (x, y) => this.occupied.has(key(x, y)),
@@ -364,7 +336,7 @@ export class World {
   fall(x: number, y: number, blend: number): { angle: number; dir: number } | null {
     const f = this.felled.get(key(x, y));
     if (!f) return null;
-    const t = this.time + blend * this.lastDt - f.at;
+    const t = this.timeAt(blend) - f.at;
     const DURATION = 1.1;
     const BOUNCE = 0.35;
     const LYING = FALL_LYING;
@@ -529,7 +501,7 @@ export class World {
    * Anfang, Mitte und Ende die Geländehöhe (Tiles, ohne Relief-Skalierung;
    * ab Index 0) und das Gefälle quer zur Furche (ab Index 27).
    */
-  private fieldLook(building: Farm) {
+  fieldLook(building: Farm) {
     const anchor = building.anchor;
     let look = this.fieldLooks.get(anchor);
     if (!look) {
@@ -1580,184 +1552,9 @@ export class World {
     }
   }
 
-  // --- Zeichnen ------------------------------------------------------------
-
-  /**
-   * Sammelt alles Sichtbare als Zeichen-Instanzen. Der Rand ist großzügig,
-   * damit große Gebäude am Bildrand nicht abgeschnitten aufpoppen.
-   * @param blend 0..1 - wie weit der nächste Tick schon fortgeschritten ist,
-   *   damit Dorfbewohner flüssig laufen statt zehnmal je Sekunde zu springen.
-   * @param selection was ausgewählt ist - nur das bekommt einen Lebensbalken
-   */
-  instances(
-      view: ViewRect,
-      out: EntityInstance[] = [],
-      blend = 1,
-      selection?: { villagers: ReadonlySet<number>; buildings: ReadonlySet<string> },
-  ): EntityInstance[] {
-    const margin = 4;
-    const x0 = view.x - margin;
-    const y0 = view.y - margin;
-    const x1 = view.x + view.width + margin;
-    const y1 = view.y + view.height + margin;
-
-    this.ruinInstances(x0, y0, x1, y1, out, blend);
-
-    for (const building of this.buildings.values()) {
-      if (building.x < x0 || building.x > x1 || building.y < y0 || building.y > y1) continue;
-      const def = building.definition;
-      if (building.isFarm()) {
-        // Je Furche eine Instanz, jede mit ihrer Frucht und ihrem Stand.
-        const farm = building;
-        const { outline, ground } = this.fieldLook(building);
-        // Die erste Furche immer - an ihr hängen Pflöcke und Schnur, auch wenn
-        // das Feldstück selbst keine Pflanzen in ihr hat.
-        farm.furrows.forEach((f, row) => (row === 0 || farm.furrowCells(row).length > 0) && out.push({
-          x: building.x, y: building.y, size: def.size,
-          // Gefälle quer zur Furche an Anfang, Mitte und Ende (Tiles je Tile), * 255 wie unten.
-          color: ground ? [ground[27 + row * 3] * 255, ground[27 + row * 3 + 1] * 255, ground[27 + row * 3 + 2] * 255] : player.color.toRGB(),
-          shape: CROPS[f.crop].shape + row, alpha: 1,
-          motion: [row, farm.furrowStage(row), furrowPosition(farm.tiles, row, farm.furrowShare(row)), outline.mask],
-          // Geländehöhe am Anfang und Ende der Furche (Mitte in `ground`), * 255:
-          // der Renderer teilt die Akzentfarbe durch 255.
-          accent: [outline.others, ground ? ground[row * 3] * 255 : 0, ground ? ground[row * 3 + 2] * 255 : 0],
-          ground: ground ? ground[row * 3 + 1] : undefined,
-          health: row === 0 && selection?.buildings.has(building.anchor) ? building.health : undefined,
-        }));
-        continue;
-      }
-      out.push({
-        x: building.x,
-        y: building.y,
-        size: def.size,
-        color: player.color.toRGB(),
-        shape: building.model,
-        alpha: 1,
-        // Jede Mühle dreht in ihrem eigenen Takt; Felder zeigen Wuchs und Rest.
-        motion: def.model === SHAPE.mill ? millMotion(building.x, building.y) : undefined,
-        health: selection?.buildings.has(building.anchor) ? building.health : undefined,
-      });
-    }
-
-    for (const v of this.villagers) {
-      // Im Gebäude (beim Abladen) sieht man ihn nicht.
-      if (v.inside > 0) continue;
-      const { x, y } = this.villagerPosition(v, blend);
-      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
-      const phase = v.pose === POSE.walk
-        ? lerp(v.prevStride, v.stride, blend) * (Math.PI * 2 / STRIDE_LENGTH)
-        : v.pose === POSE.work || v.pose === POSE.pick || v.pose === POSE.scythe
-          ? lerp(v.prevWorkTime, v.workTime, blend) * WORK_TEMPO
-          // Stehen: Weltzeit in Sekunden, je Figur versetzt (Leerlauf-Animation).
-          : this.time + blend * this.lastDt + v.id * 7.3;
-      // Die Last auf dem Rücken wächst mit der Ladung und trägt die Farbe
-      // der Ressource - man sieht, wer was trägt und wie viel.
-      const load = v.carryType ? Math.min(1, v.carrying / VILLAGER.capacity) : 0;
-      out.push({
-        // Instanzen werden um die Tile-Mitte gezeichnet, die Figur steht auf (x, y).
-        x: x - 0.5,
-        y: y - 0.5,
-        size: VILLAGER.size,
-        color: player.color.toRGB(),
-        // Frau oder Mann - steht beim Dorfbewohner fest (siehe Villager.female).
-        shape: v.female ? SHAPE.villagerFemale : SHAPE.villager,
-        alpha: 1,
-        motion: [v.heading, phase, v.pose, load],
-        ground: this.groundAt?.(x, y),
-        health: selection?.villagers.has(v.id) ? v.hp / VILLAGER.hp : undefined,
-        accent: v.carryType ? RESOURCE_TYPE_COLORS[LOAD_LOOK[v.carryType]].toRGB() : undefined,
-      });
-    }
-    for (const a of this.wildlife.animals) {
-      const x = a.prevX + (a.x - a.prevX) * blend;
-      const y = a.prevY + (a.y - a.prevY) * blend;
-      if (x < x0 || x > x1 || y < y0 || y > y1) continue;
-      const def = a.definition;
-      const pose = a.state === 'dead' ? ANIMAL_POSE.dead
-        : a.state === 'flee' ? ANIMAL_POSE.flee
-        : a.state === 'walk' ? ANIMAL_POSE.walk : ANIMAL_POSE.graze;
-      // Gehen und Fliehen: Beine nach der Strecke; äsen: nach der Uhr, je Tier versetzt.
-      const phase = pose === ANIMAL_POSE.walk || pose === ANIMAL_POSE.flee
-        ? lerp(a.prevStride, a.stride, blend) * (Math.PI * 2 / (def.stride * (pose === ANIMAL_POSE.flee ? 2 : 1)))
-        : this.time + blend * this.lastDt + a.id * 3.1;
-      out.push({
-        x: x - 0.5, y: y - 0.5, size: def.height, color: [255, 255, 255], shape: def.shape, alpha: 1,
-        motion: [a.heading, phase, pose, 0],
-        ground: this.groundAt?.(x, y),
-      });
-    }
-    return out;
-  }
-
-  /** Einstürzende Gebäude: Wackeln, Zusammensacken, Staub, fliegender Schutt, Ausblenden. */
-  private ruinInstances(x0: number, y0: number, x1: number, y1: number, out: EntityInstance[], blend: number) {
-    const now = this.time + blend * this.lastDt;
-    const ease = (t: number) => t * t * (3 - 2 * t);
-    for (const ruin of this.ruins) {
-      if (ruin.x < x0 || ruin.x > x1 || ruin.y < y0 || ruin.y > y1) continue;
-      const def = BUILDINGS[ruin.type];
-      // Ein aufgegebenes Feld stürzt nicht ein - es ist einfach weg.
-      if (ruin.type === 'farm') continue;
-      const t = now - ruin.at;
-      const fade = t < RUIN_FADE_START ? 1 : Math.max(0, 1 - (t - RUIN_FADE_START) / (RUIN_DURATION - RUIN_FADE_START));
-      const collapse = ease(Math.min(1, Math.max(0, (t - RUIN_COLLAPSE_START) / RUIN_COLLAPSE)));
-      // Wackeln, bevor es nachgibt.
-      const shake = t < RUIN_SHAKE ? Math.sin(t * 70) * 0.04 * def.size : 0;
-      // Eine eingestürzte Mühle dreht nicht weiter.
-      const motion = def.model === SHAPE.mill
-        ? frozenMillMotion(ruin.x, ruin.y, ruin.clock)
-        : [buildingHeading(ruin.shape), 0, 0, 0] as [number, number, number, number];
-      motion[3] = Math.max(0.001, collapse);
-      out.push({
-        x: ruin.x + shake,
-        y: ruin.y - shake,
-        size: def.size,
-        color: player.color.toRGB(),
-        shape: ruin.shape,
-        // Knapp unter 1: bleibt so vorn in der Sortierung für Halbdurchsichtiges.
-        alpha: Math.max(0.01, fade * 0.999),
-        motion,
-      });
-
-      // Staub quillt in Wolken rund um das Gebäude auf, steigt und verzieht sich.
-      const dustT = Math.min(1, t / 2.2);
-      if (dustT < 1) {
-        const spread = Math.max(def.footprint, def.size) * 0.5;
-        for (let i = 0; i < 7; i++) {
-          const angle = (i / 7) * Math.PI * 2 + ruin.x * 0.7;
-          const reach = spread * (i === 0 ? 0 : 0.5 + 0.9 * ease(dustT));
-          out.push({
-            x: ruin.x + Math.cos(angle) * reach,
-            y: ruin.y + Math.sin(angle) * reach,
-            size: def.size * (0.7 + 0.9 * ease(dustT)) * (i === 0 ? 1.3 : 1),
-            color: DUST_COLOR,
-            shape: SHAPE.dust,
-            alpha: 0.75 * (1 - dustT) ** 1.3 * Math.min(1, t * 6),
-            motion: [def.size * (0.25 + 0.6 * dustT), 0, 0, 0],
-          });
-        }
-      }
-
-      // Schutt fliegt im Bogen hinaus und bleibt liegen.
-      const ground = reliefZ(this.terrain.getTile(ruin.x, ruin.y).height);
-      const tf = Math.min(t, RUIN_FLIGHT);
-      for (const d of ruin.debris) {
-        const along = tf / RUIN_FLIGHT;
-        // Höhe: Wurfparabel, die genau nach RUIN_FLIGHT auf der Landestelle ankommt.
-        const arc = d.vz * tf - 0.5 * (2 * d.vz / RUIN_FLIGHT) * tf * tf;
-        const z = ground + (d.ground - ground) * along + Math.max(0, arc) * 0.6;
-        out.push({
-          x: ruin.x + d.dx * along,
-          y: ruin.y + d.dy * along,
-          size: d.size * fade,
-          color: DUST_COLOR,
-          shape: SHAPE.stoneRock,
-          alpha: 1,
-          motion: [d.heading + t * 6 * (1 - along), 0, 0, 0],
-          ground: z,
-        });
-      }
-    }
+  /** Weltzeit (Sekunden) im laufenden Tick - `blend` 0..1 zwischen letztem und nächstem. */
+  timeAt(blend: number): number {
+    return this.time + blend * this.lastDt;
   }
 
   /** Überblendete Position zwischen zwei Ticks. */
@@ -1883,7 +1680,6 @@ export class World {
   }
 }
 
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 
 /** Fester Winkel 0..2π je Feld - gleiche Welt, gleiche Werte. */

@@ -40,6 +40,7 @@ import {
   type CropType,
 } from './world/catalog';
 import { World, type Villager } from './world/world';
+import { worldInstances } from './world/render';
 import type { UnitProducer } from './world/building';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './components/ResourceBar';
@@ -1562,7 +1563,7 @@ function collectOverlay(blend: number) {
     resources.update(visible, camX, camY);
     resources.instances(visible, world, overlay, selectedResource, blend);
   }
-  world.instances(visible, overlay, blend,
+  worldInstances(world, visible, overlay, blend,
       { villagers: selectedVillagers, buildings: selectedBuildings });
 
   // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.

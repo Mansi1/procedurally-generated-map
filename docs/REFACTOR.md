@@ -214,7 +214,7 @@ src/
 - [ ] 2.2 `farming.ts`: Feldgruppen, Phasen, freie Furche, Bauern, Wachsen
 - [x] 2.3 Tiere als Klassen (`unit/UnitBase`, `AnimalBase`, `Deer`, `Hare`, Liste in `unit/index.ts`) und `wildlife.ts` (entstehen lassen, suchen, Kadaver); Jagd bleibt bei den Dorfbewohnern
 - [ ] 2.4 `villagers.ts`: Aufgaben, Laufen, Sammeln, Abliefern, `describe()`
-- [ ] 2.5 `render.ts`: Instanzen für den Renderer, Ruinen
+- [x] 2.5 `render.ts`: Instanzen für den Renderer (Gebäude, Felder, Figuren, Tiere, Einsturz); `ruin.ts` für einstürzende Gebäude
 - [ ] 2.6 `Villager` und `Animal` als Klassen, wie die Gebäude
 
 ### Phase 3: `main.ts` aufteilen (B8)
