@@ -1,4 +1,4 @@
-# Legt assets/blender/humanoid.blend an - einmalig bzw. neu, wenn sich die
+# Legt assets/blender/clips/humanoid.blend an - einmalig bzw. neu, wenn sich die
 # Posen im Shader geändert haben: aus dem Export tools/export/bognerei.mjs das
 # Skelett der Dorfbewohner mit allen Clips (stand, walk, chop, pick, mow,
 # carve), dazu Bognerei, Werkbank und die Stufen des Bogens als Vorlage, damit

@@ -56,7 +56,7 @@ Solange es die Formeln gibt, sind sie der Rückfall, falls die Clip-Bibliothek
 fehlt.
 
 **Phase 3 ist fertig: Alle sechs Tiere spielen Clips aus
-`assets/blender/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
+`assets/blender/clips/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
 Wildschwein).
 
 - **Gleichstand:** Alle Clips stimmen auf den Bildern mit der Formel überein,
@@ -73,7 +73,7 @@ Wildschwein).
   (35,4 s Schleife).
 
 **Phase 4 ist fertig: Mühlenflügel und Fahne spielen Clips** aus
-`assets/blender/mill.blend` (Clip `sails`) und `flag.blend` (Clip `wave`).
+`assets/blender/clips/mill.blend` (Clip `sails`) und `flag.blend` (Clip `wave`).
 
 - **Gleichstand:** Die Fahne weicht an den Eckpunkten des Tuchs um 0,03 cm
   ab. Die Böen der Flügel sind exakt. Die Stellung der Flügel weicht bis 6,4°
@@ -107,17 +107,17 @@ Aus Phase 1:
 Die Migration läuft auf dem Branch `animation-migration`.
 
 ```
- 1. KÖRPER (per Skript erzeugt)
-    tools/models/villagers.mjs ──► src/models/villager_male.obj
-                                   src/models/villager_female.obj
-                                   (Form + Teilnamen wie Arm.L.Lower + Materialnamen)
+ 1. KÖRPER (aus Blender, docs/BLENDER.md)
+    assets/blender/models/villagers/villager_male.blend ──► src/models/villager_male.obj
+    assets/blender/models/villagers/villager_female.blend ──► src/models/villager_female.obj
+                                   (npm run gen:models; Teilnamen wie Arm.L.Lower + Materialnamen)
 
  2. EINMALIGE EINRICHTUNG (erledigt)
     tools/export/bognerei.mjs ──► tools/export/out/bognerei.glb
-    tools/blender/bootstrap_humanoid.py ──► assets/blender/humanoid.blend
+    tools/blender/bootstrap_humanoid.py ──► assets/blender/clips/humanoid.blend
 
  3. DER ARBEITSABLAUF
-    assets/blender/humanoid.blend      ◄── hier wird bearbeitet (Skelett "humanoid", Actions)
+    assets/blender/clips/humanoid.blend      ◄── hier wird bearbeitet (Skelett "humanoid", Actions)
             │  npm run gen:anim
             │  (tools/blender/export-all.mjs → Blender → tools/blender/export_clips.py)
             ▼
@@ -140,8 +140,8 @@ Die Migration läuft auf dem Branch `animation-migration`.
 
 | Art | Dateien | Bearbeiten? |
 |---|---|---|
-| Quelle: Bewegung | `assets/blender/*.blend` (Git LFS) | ja, in Blender |
-| Quelle: Körperform | `tools/models/villagers.mjs` | ja, als Code |
+| Quelle: Bewegung | `assets/blender/clips/*.blend` (Git LFS) | ja, in Blender |
+| Quelle: Körperform | `assets/blender/models/villagers/*.blend` (Git LFS) | ja, in Blender |
 | Quelle: Spiel-Logik | `src/gl/clips.ts`, `src/gl/entityRenderer.ts` | ja, als Code |
 | Erzeugt | `src/models/*_clips.glb` + `.json`, `src/models/*.obj` | nein, neu erzeugen |
 | Werkzeuge | `tools/blender/*` (Export), `tools/export/*` (Einrichtung, glTF-Vorschau) | nur für die Pipeline |
@@ -155,8 +155,8 @@ Die Migration läuft auf dem Branch `animation-migration`.
 | einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
 | festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
 | einen Clip nur für bestimmte Tiere | Custom Property `species` der Action (z. B. `hare`) | `npm run gen:anim` |
-| die Form eines Körpers ändern | `tools/models/villagers.mjs` | `npm run gen:models` |
-| ein Werkzeug ändern oder neu anhängen | `tools/models/villagers.mjs` (`tools()`), `FIGURE_PROPS` in `entityRenderer.ts` | `npm run gen:models`, siehe „Werkzeuge anhängen“ |
+| die Form eines Körpers ändern | `assets/blender/models/villagers/villager_*.blend` | `npm run gen:models` |
+| ein Werkzeug ändern oder neu anhängen | `assets/blender/models/props/prop_*.blend`, `FIGURE_PROPS` in `entityRenderer.ts` | `npm run gen:models`, siehe „Werkzeuge anhängen“ |
 | einen Clip ansehen | Galerie → „Clips aus Blender“ | – |
 
 **Drei Regeln halten es zusammen:**
@@ -192,9 +192,10 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
 
 **Ein neues Werkzeug (z. B. den Bogen):**
 
-1. In `tools/models/villagers.mjs` in `tools()` bauen (wie das Beil, im
-   Rahmen der Hand) und als `prop_<name>.obj` schreiben.
-   `npm run gen:models`.
+1. In Blender bauen: eine Kopie von `assets/blender/models/props/prop_axe.blend`
+   als `prop_<name>.blend`. Der Ursprung ist die Mitte der rechten Hand, die
+   Objekte heißen `Arm.R.Lower.Tool…` (Custom Property `obj_name`).
+   `npm run gen:models` schreibt `src/models/prop_<name>.obj`.
 2. In `entityRenderer.ts`: je Körper eine Form in `SHAPE`, ein Eintrag in
    `MODELS` mit `body`, ein Bit in `PROP_BITS` (`clips.ts`) und ein Eintrag
    in `FIGURE_PROPS`. Die Teile heißen wie beim Beil (`Arm.R.Lower.Tool…`),
@@ -204,7 +205,7 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
 
 ## So wird jetzt gearbeitet
 
-1. `assets/blender/humanoid.blend` in Blender öffnen. Es enthält das
+1. `assets/blender/clips/humanoid.blend` in Blender öffnen. Es enthält das
    Skelett `humanoid` und dazu die Bognerei mit Werkbank als Vorlage.
 2. Den Clip bearbeiten. Das ist die Action mit demselben Namen wie im Spiel:
    `stand`, `walk`, `chop`, `pick`, `mow` oder `carve`. Neue Clips sind neue
@@ -222,7 +223,7 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
    
    Mit `npm run check:anim` lässt sich prüfen, wie weit ein Clip von der
    alten Formel abweicht.
-3. `npm run gen:anim` exportiert alle `.blend`-Dateien in `assets/blender/`
+3. `npm run gen:anim` exportiert alle `.blend`-Dateien in `assets/blender/clips/`
    nach `src/models/<name>_clips.glb` + `.json`. Blender wird über die
    Umgebungsvariable `BLENDER` gefunden, sonst am üblichen Ort auf macOS.
 4. In der Galerie zeigen „Clips aus Blender“ → „Mann (Clips)“,
@@ -248,10 +249,10 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
   der Export (`export_force_sampling`) mit. `hand.*` und `ik.hand.*` kommen
   zwar mit in die `.glb`, `clips.ts` übergeht sie aber.
 - Neu einrichten (auch nach `bootstrap_humanoid.py`, das es selbst aufruft):
-  `blender -b assets/blender/humanoid.blend --python tools/blender/humanoid_ik.py`.
+  `blender -b assets/blender/clips/humanoid.blend --python tools/blender/humanoid_ik.py`.
   Das setzt die Ziele wieder auf die Hände der Keyframes.
 
-**Tiere** (`assets/blender/quadruped.blend`, Skelett `quadruped`, am Reh):
+**Tiere** (`assets/blender/clips/quadruped.blend`, Skelett `quadruped`, am Reh):
 Die Actions heißen `graze`, `walk`, `hop`, `flee`, `trot`, `hop_flee` und
 `dead`, die Posen sind 0 äsen, 1 gehen, 5 fliehen, 6 erlegt. Dazu kommen zwei
 eigene Custom Properties:
@@ -442,7 +443,7 @@ Anzeigen, keine Animationen.
 - **Takt-Marken:** Wann ein Hieb trifft (für den Ton), steht als
   Custom Property `strike` (Zeiten in Sekunden) an der Action. Heute rechnet
   `VillagerWork.swing()` das aus der Formel.
-- **Quellen:** `.blend`-Dateien liegen in `assets/blender/`, über Git LFS wie
+- **Quellen:** `.blend`-Dateien liegen in `assets/blender/clips/` (Clips) und `assets/blender/models/` (Modelle), über Git LFS wie
   die MP3s. Dafür kommt ein Eintrag in `.gitattributes`.
 - **Export:** Ein Skript ruft Blender ohne Oberfläche auf
   (`blender -b datei.blend --python tools/blender/export.py`) und schreibt
@@ -459,8 +460,8 @@ Umgesetzt wie unten beschrieben, mit diesen Abweichungen:
   Wie Blender Knochen intern ausrichtet, spielt deshalb keine Rolle, und ein
   Clip passt auf jeden Körper mit denselben Knochennamen: Mann 1,76 m, Frau
   1,72 m.
-- **Körper:** Die Körper sind noch die OBJ aus `tools/models/villagers.mjs`.
-  Gewichte kommen dort nicht aus einer Datei. Der Shader leitet je Eckpunkt
+- **Körper:** Die Körper kommen als OBJ aus Blender
+  (`assets/blender/models/villagers/`). Gewichte trägt das OBJ nicht. Der Shader leitet je Eckpunkt
   den Knochen aus der Teilnummer ab (`boneOf()`). Das Zugmesser verteilt er
   wie bisher auf beide Unterarme. Weiche Gewichte aus Blender folgen in
   Phase 2.
@@ -558,7 +559,7 @@ Umgesetzt mit diesen Abweichungen vom ursprünglichen Plan:
 ### Phase 4: Mühle und Fahne (klein) - erledigt
 
 Mühlenflügel und die Fahne am Sammelpunkt kommen als Clips aus Blender
-(`assets/blender/mill.blend`, `flag.blend`; eingerichtet mit
+(`assets/blender/clips/mill.blend`, `flag.blend`; eingerichtet mit
 `npm run export:props` und `tools/blender/bootstrap_rig.py`).
 
 - **Mühle:** Skelett `mill` (`root`, `sails` an der Nabe), Clip `sails`:

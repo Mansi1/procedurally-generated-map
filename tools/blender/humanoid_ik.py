@@ -1,4 +1,4 @@
-# IK für die Hände der Dorfbewohner in assets/blender/humanoid.blend
+# IK für die Hände der Dorfbewohner in assets/blender/clips/humanoid.blend
 # (docs/ANIMATION.md, Phase 2): zum Bearbeiten in Blender. Das Spiel liest nur
 # die bekannten Knochen (HUMANOID_BONES in src/gl/clips.ts) - was IK aus ihnen
 # macht, backt der Export (export_clips.py, export_force_sampling) mit.

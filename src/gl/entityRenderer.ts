@@ -340,7 +340,7 @@ const CLIP_TEXTURE_UNIT = 5;
  * Shader weiter.
  */
 export const CLIPS: Clip[] = readClips('humanoid', () => loadClips(humanoidClipsGlb, humanoidClipsManifest, HUMANOID));
-/** Clips der Tiere (src/models/quadruped_clips.glb, aus assets/blender/quadruped.blend). */
+/** Clips der Tiere (src/models/quadruped_clips.glb, aus assets/blender/clips/quadruped.blend). */
 export const ANIMAL_CLIPS: Clip[] = readClips('quadruped', () => loadClips(quadrupedClipsGlb, quadrupedClipsManifest, QUADRUPED));
 
 function readClips(name: string, load: () => Clip[]): Clip[] {
@@ -370,10 +370,10 @@ const CLIP_LIBRARIES: {
       [SHAPE.sheep]: 'sheep', [SHAPE.goat]: 'goat', [SHAPE.boar]: 'boar',
     },
   },
-  // Mühlenflügel (assets/blender/mill.blend): ein Clip "sails" für alle vier Mühlen.
+  // Mühlenflügel (assets/blender/clips/mill.blend): ein Clip "sails" für alle vier Mühlen.
   { rig: MILL, clips: readClips('mill', () => loadClips(millClipsGlb, millClipsManifest, MILL)),
     shapes: [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4] },
-  // Fahne am Sammelpunkt (assets/blender/flag.blend): Clip "wave".
+  // Fahne am Sammelpunkt (assets/blender/clips/flag.blend): Clip "wave".
   { rig: FLAG, clips: readClips('flag', () => loadClips(flagClipsGlb, flagClipsManifest, FLAG)), shapes: [SHAPE.rallyFlag] },
 ];
 
@@ -445,7 +445,7 @@ const FIELD_SOIL_METERS = '0.02';
 
 /**
  * Stufen des Werkstücks auf der Werkbank der Bognerei (Objekte "Craft.0" bis
- * "Craft.2" in tools/models/buildings.mjs): grob behauen, ausgearbeitet,
+ * "Craft.2" in assets/blender/models/buildings/bowyer.blend): grob behauen, ausgearbeitet,
  * gespannter Bogen.
  */
 export const CRAFT_STAGES = 3;
@@ -1132,7 +1132,7 @@ void main() {
       // Kühe trotten auch auf der Flucht im Kreuzgang.
       float phase = aMotion.y;
       int pose = int(aMotion.z + 0.5);
-      // Clip aus Blender statt Formel (assets/blender/quadruped.blend): Pose
+      // Clip aus Blender statt Formel (assets/blender/clips/quadruped.blend): Pose
       // >= CLIP_POSE (Galerie) oder eine Pose, die ein Clip dieser Art ersetzt.
       int clip = pose >= ${CLIP_POSE} ? pose - ${CLIP_POSE} : pose < 8 ? uPoseClip[pose] : -1;
       if (clip >= 0 && uClipRow[clip] < 0) clip = -1;
@@ -2248,7 +2248,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     [p[2] / unitLength, p[0] / unitLength, (p[1] - minY) / unitLength] as const;
 
   // Figuren: Mitte der rechten Hand in Ruhelage - dort hängen Werkzeuge (uSocket).
-  // Wie tools/models/villagers.mjs: der Mittelwert der Eckpunkte des Objekts.
+  // Der Mittelwert der Eckpunkte des Objekts (so wurden die Werkzeuge an die Hand gesetzt).
   const handPoints = new Map<string, readonly [number, number, number]>();
   for (const t of triangles) {
     if (t.object.startsWith('Arm.R.Lower.Hand')) for (const p of t.points) handPoints.set(p.join(), local(p));
@@ -2609,7 +2609,7 @@ const MODELS: {
 
 /**
  * Halber Handabstand (Meter), für den das Zugmesser gebaut ist - der des
- * Mannes (tools/models/villagers.mjs). Andere Körper strecken es auf ihren.
+ * Mannes (prop_knife.blend). Andere Körper strecken es auf ihren.
  */
 const KNIFE_HALF_SPAN = (() => {
   const man = MODELS.find((m) => m.shape === SHAPE.villager)!.model;

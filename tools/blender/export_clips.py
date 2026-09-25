@@ -9,7 +9,7 @@
 # mit passenden Knochennamen.
 #
 # Aufruf: blender -b <datei.blend> --python tools/blender/export_clips.py -- <out>
-# (npm run gen:anim macht das für alle Dateien in assets/blender/)
+# (npm run gen:anim macht das für alle Dateien in assets/blender/clips/)
 
 import json
 import sys
