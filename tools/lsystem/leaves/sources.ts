@@ -49,9 +49,9 @@ export const LEAF_SOURCES = {
   fichte: { file: '2020 year. Herbarium. Picea abies. img-007.jpg', license: 'CC BY-SA 4.0', author: 'Dmitry Makeev', rotate: 0, tone: 'green', crop: [0, 0, 0.07, 0], card: false },
   kiefer: { file: '2020 year. Herbarium. Pinus. img-002.jpg', license: 'CC BY-SA 4.0', author: 'Dmitry Makeev', rotate: 0, tone: 'green', crop: [0, 0, 0.07, 0], card: false },
   laerche: { file: 'Larix decidua leaf dimorphism singly or in dense clusters on same tree.jpg', license: 'CC BY-SA 3.0', author: 'unbekannt (siehe Commons)', rotate: 0, tone: 'green', tolerance: 125, card: false },
-  zeder: { file: 'E20161008-0003—Cedrus atlantica—Berkeley—DxO (30164010426).jpg', license: 'CC BY 2.0', author: 'John Rusk', rotate: -30, tone: 'green', card: false },
+  zeder: { file: 'E20161008-0003—Cedrus atlantica—Berkeley—DxO (30164010426).jpg', license: 'CC BY 2.0', author: 'John Rusk', rotate: 150, tone: 'green', card: false },
   eibe: { file: 'IfMale branchette.jpg', license: 'CC BY-SA 3.0', author: 'Lamiot', rotate: -90, tone: 'green', tolerance: 85, card: false },
-  mammutbaum: { file: 'Riesenmammutbaum Sequoiadendron giganteum top 08.jpg', license: 'CC BY-SA 3.0', author: 'NobbiP', rotate: -90, tone: 'green', card: false },
+  mammutbaum: { file: 'Riesenmammutbaum Sequoiadendron giganteum top 08.jpg', license: 'CC BY-SA 3.0', author: 'NobbiP', rotate: 90, tone: 'green', card: false },
   bluete_apfel: { file: 'Apple blossom Apfelblüte 05.jpg', license: 'CC BY-SA 3.0', author: 'Norbert Nagel', rotate: 0, tone: 'blossom' },
   bluete_magnolie: { file: 'Pristine magnolia (Unsplash).jpg', license: 'CC0', author: 'Quino Al', rotate: 0, tone: 'blossom' },
 } as const satisfies Record<string, LeafSource>;
