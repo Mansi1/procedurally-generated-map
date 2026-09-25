@@ -43,6 +43,13 @@ export function directionAt(side: 1 | -1): string {
   return 'N';
 }
 
+/** Wohin Norden gerade auf der Minimap zeigt - Grad, im Uhrzeigersinn ab rechts. */
+export function northAngle(): number {
+  const [dx, dy] = COMPASS.N;
+  const g = worldToGround(dx, dy);
+  return (Math.atan2(g.v * 2, g.u) * 180) / Math.PI;
+}
+
 export class Compass {
   /**
    * @param root Fläche so groß wie der Rahmen der Minimap, mittig auf ihr

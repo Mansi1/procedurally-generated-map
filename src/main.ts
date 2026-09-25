@@ -31,7 +31,8 @@ import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
 import { Picker, RESOURCE_OBJECTS_MIN_ZOOM } from './game/Picker';
 import { hoverDescription, type HoverTarget } from './game/hoverInfo';
-import { Compass, directionAt, isDirection, rotateToFace } from './game/Compass';
+import { Compass, directionAt, isDirection, northAngle, rotateToFace } from './game/Compass';
+import { TurnAnimation } from './game/TurnAnimation';
 import { Ground } from './game/Ground';
 import { worldSounds } from './game/worldSounds';
 import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
@@ -239,8 +240,26 @@ const compass = new Compass(document.getElementById('compass')!, 146, (dir) => f
 document.getElementById('turn-left')!.addEventListener('click', () => faceDirection(directionAt(1)));
 document.getElementById('turn-right')!.addEventListener('click', () => faceDirection(directionAt(-1)));
 
-/** Dreht die Ansicht so, dass die Richtung `dir` nach oben zeigt. */
+/** Übergang beim Drehen (game/TurnAnimation.ts). */
+const turnAnimation = new TurnAnimation(
+  canvas,
+  document.getElementById('turn-snapshot') as HTMLCanvasElement,
+  document.querySelector<HTMLElement>('#minimap-frame .minimap-spin')!,
+  document.getElementById('compass')!,
+);
+/**
+ * Gewünschte Blickrichtung - gedreht wird erst in loop(), direkt nach dem
+ * Zeichnen: dann steht das alte Bild noch im Puffer und lässt sich für den
+ * Übergang festhalten.
+ */
+let pendingFacing: string | null = null;
+
 function faceDirection(dir: string) {
+  pendingFacing = dir;
+}
+
+/** Dreht die Ansicht so, dass die Richtung `dir` nach oben zeigt. */
+function applyFacing(dir: string) {
   // Gedreht wird um die Stelle, die man in der Bildmitte sieht - mit ihrer
   // Geländehöhe. Um den Punkt auf Meereshöhe gedreht, wanderte ein Dorf auf
   // einem Hügel beim Drehen aus dem Bild.
@@ -494,6 +513,15 @@ function loop(now: number) {
   collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
   renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
+  if (pendingFacing) {
+    turnAnimation.capture();
+    const before = northAngle();
+    applyFacing(pendingFacing);
+    pendingFacing = null;
+    // Auf den kürzeren Weg: -180..180, eine halbe Drehung im Uhrzeigersinn.
+    const turned = ((northAngle() - before + 540) % 360) - 180;
+    turnAnimation.play(turned === -180 ? 180 : -turned);
+  }
 
   const seen = minimapView();
   minimapDots(world, minimap, seen, minimapOverlay);

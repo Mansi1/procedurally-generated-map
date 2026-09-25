@@ -2,8 +2,21 @@
    Auswahlrechteck, Minimap mit Rahmen, Kompass und Knöpfen. */
 #game {
   display: block;
+  /* Beim Drehen dreht es sich um die Bildmitte (game/TurnAnimation.ts). */
+  transform-origin: 50% 50%;
   image-rendering: pixelated;
   cursor: crosshair;
+}
+#turn-snapshot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  image-rendering: pixelated;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+}
+#turn-snapshot[hidden] {
+  display: none;
 }
 .panel {
   position: absolute;
@@ -210,11 +223,21 @@
   border: 2px solid #121213;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.6);
 }
+/* Ring, Drehteller und Kompass liegen alle ab der Außenkante des Rahmens -
+   ihre Mitte ist dieselbe (156, 156), um die sich beim Drehen alles dreht. */
 .minimap-ring,
-.minimap-edge {
+.minimap-spin {
   position: absolute;
   left: -2px;
   top: -2px;
+  width: 312px;
+  height: 312px;
+  pointer-events: none;
+}
+.minimap-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
   pointer-events: none;
 }
 .minimap-ring polygon {
@@ -244,6 +267,7 @@
   position: absolute;
   left: 16px;
   top: 16px;
+  pointer-events: auto;
   background: #05070a;
   image-rendering: pixelated;
   clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
@@ -272,7 +296,6 @@
   font: 700 13px Georgia, 'Times New Roman', serif;
   cursor: pointer;
   pointer-events: auto;
-  transition: left 0.25s, top 0.25s;
 }
 #compass button:hover {
   border-color: #d8b56a;

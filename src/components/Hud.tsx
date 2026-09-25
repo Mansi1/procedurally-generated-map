@@ -123,10 +123,13 @@ function Minimap() {
         <circle cx={c} cy={c} r={ring} class="ring-outer" />
         <circle cx={c} cy={c} r={ring - 5} class="ring-inner" />
       </svg>
-      <canvas id="minimap" />
-      <svg class="minimap-edge" viewBox="0 0 312 312" width="312" height="312">
-        <polygon points={`${c},${c - tip} ${c + tip},${c} ${c},${c + tip} ${c - tip},${c}`} />
-      </svg>
+      {/* Karte und Rand drehen sich beim Drehen der Ansicht gemeinsam (game/TurnAnimation.ts). */}
+      <div class="minimap-spin">
+        <canvas id="minimap" />
+        <svg class="minimap-edge" viewBox="0 0 312 312" width="312" height="312">
+          <polygon points={`${c},${c - tip} ${c + tip},${c} ${c},${c + tip} ${c - tip},${c}`} />
+        </svg>
+      </div>
       <Compass />
       <SoundButton />
       <div class="minimap-turn">
@@ -165,6 +168,8 @@ export function mountGame(root: HTMLElement) {
   render(
     <>
       <canvas id="game" />
+      {/* Das letzte Bild vor dem Drehen, für den Übergang (game/TurnAnimation.ts). */}
+      <canvas id="turn-snapshot" hidden />
       <Hud />
     </>,
     root,
