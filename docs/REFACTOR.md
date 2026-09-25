@@ -218,14 +218,16 @@ src/
 - [x] 2.5 `render.ts`: Instanzen für den Renderer (Gebäude, Felder, Figuren, Tiere, Einsturz); `ruin.ts` für einstürzende Gebäude
 - [x] 2.6 `Villager` und `Animal` als Klassen (unit/), `Task` bei `Villager`
 
-### Phase 3: `main.ts` aufteilen (B8) - läuft: 1778 → 1134 Zeilen
+### Phase 3: `main.ts` aufteilen (B8) - 1778 → 505 Zeilen
 
-- [x] 3.1 Zustand als Klassen: `game/Selection.ts` (Auswahl, `focusedBuilding`), `game/Camera.ts` (Bildmitte, Zoomstufen, `panPixels`, `centerOn`), `game/Placement.ts` (Baumodus, `placingType`)
-- [x] 3.2 Reine Teile: `game/selectionView.ts` (Daten fürs Panel), `game/overlay.ts` (Auswahl, Bauvorschau, Minimap-Punkte), `game/hoverInfo.ts`, `game/worldSounds.ts`
-- [x] 3.3 `game/Ground.ts` (Geländehöhe - eine Formel statt zwei - und Shader-Abgleich), `game/Picker.ts` (Klick-Erkennung), `game/Compass.ts`
-- [ ] 3.4 Spieler-Aktionen (`trainVillager`, `selectIdleVillager`, `cycleTownCenter`, `demolishSelected`, Links-/Rechtsklick, Rahmen) nach `game/actions.ts` - braucht einen gemeinsamen Kontext (`Game`), der Welt, Kamera, Auswahl, Baumodus, Picker und die Oberfläche hält
-- [ ] 3.5 Eingabe (Tastatur, Maus, Mausrad, Minimap) nach `game/input.ts`
-- [ ] 3.6 Menüs und Leisten verdrahten nach `game/ui.ts`; `main.ts` baut nur noch zusammen und startet die Schleife
+- [x] 3.1 Zustand als Klassen: `game/Selection.ts`, `game/Camera.ts`, `game/Placement.ts`, `game/Pointer.ts`
+- [x] 3.2 Reine Teile: `game/selectionView.ts`, `game/overlay.ts`, `game/hoverInfo.ts`, `game/worldSounds.ts`, `game/startPoint.ts`
+- [x] 3.3 `game/Ground.ts` (Geländehöhe, Shader-Abgleich), `game/Picker.ts` (Klick-Erkennung), `game/Compass.ts`
+- [x] 3.4 Spieler-Aktionen: `game/actions.ts` (`PlayerActions`) - Oberfläche nur über `ActionUi`
+- [x] 3.5 Eingabe: `game/MouseInput.ts` (Absichten statt Mausereignisse), `game/keyboard.ts` (Belegung als Tabelle), `game/cameraControl.ts` (WASD, Relief)
+- [x] 3.6 Oberfläche: `game/ui.ts` (`GameUi`: Leisten, Baumenü, Auswahl-Panel, Hinweise, Mauszeiger), `game/DevPanel.ts`, `game/timing.ts` (`FixedStep`, `Interval`)
+- [ ] 3.7 (optional) Menüs, Hauptmenü, Pause und Neues Spiel in eine `GameSession` - `main.ts` wäre dann nur noch Zusammenbau und Schleife
+- [ ] 3.8 Tastenkürzel nur einmal: die Liste in `components/Shortcuts.tsx` aus der Belegung in `game/keyboard.ts` ableiten
 
 ### Phase 4: Oberfläche (B9)
 
