@@ -11,7 +11,6 @@ import { ANIMAL_POSE, BUILDING_HEADING, FALL_LYING, POSE, SHAPE, buildingHeading
 import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type Terrain } from '../map';
 import { reliefZ } from '../noise';
 import {
-  ANIMALS,
   BUILDINGS,
   CROPS,
   FARM_RATE,
@@ -34,37 +33,8 @@ import {
   type Building, type Farm, type Furrow, type UnitProducer,
 } from './building';
 import { readSave, writeSave, type LoadedSave, type SaveData } from './save';
-
-/** Ein Tier: zieht umher, äst, flieht vor Dorfbewohnern; erlegt bleibt der Kadaver liegen. */
-export interface Animal {
-  id: number;
-  kind: AnimalKind;
-  /** Position in Welt-Tiles (Mitte). */
-  x: number;
-  y: number;
-  prevX: number;
-  prevY: number;
-  heading: number;
-  hp: number;
-  /** Nahrung am Kadaver - zählt erst, wenn es erlegt ist. */
-  food: number;
-  /** Wo das Rudel steht - dort zieht es umher. */
-  home: { x: number; y: number };
-  state: 'graze' | 'walk' | 'flee' | 'dead';
-  target: { x: number; y: number } | null;
-  /** Sekunden bis zum nächsten Umherziehen (äsen) bzw. Rest von Sprint und Verschnaufen (Hase). */
-  timer: number;
-  sprint: number;
-  rest: number;
-  /** Zurückgelegte Strecke - Takt der Beine. */
-  stride: number;
-  prevStride: number;
-}
-
-/** Kantenlänge (Tiles) der Stücke, in denen Tiere entstehen - je Stück höchstens ein Rudel. */
-const ANIMAL_CHUNK = 24;
-/** Tiere entstehen nur so nah an der Kamera (Tiles) - herausgezoomt sonst Tausende. */
-const ANIMAL_SPAWN_RADIUS = 60;
+import { isAnimalKind, type Animal, type AnimalSurroundings } from './unit';
+import { Wildlife } from './wildlife';
 
 // Gebäude sind Klassen (building/) - hier weiter unter diesen Namen erreichbar.
 export type { Building };
@@ -277,9 +247,9 @@ export class World {
   stock: Resources = initialResources();
   villagers: Villager[] = [];
   /** Wild - lebend und erlegt. */
-  animals: Animal[] = [];
+  /** Das Wild: Tiere und wo schon welche entstanden sind (wildlife.ts). */
+  readonly wildlife: Wildlife;
   /** Stücke (ANIMAL_CHUNK), in denen schon Tiere entstanden sind - erlegte kommen nicht wieder. */
-  private spawnedChunks = new Set<string>();
   /** Was auf neu angelegten Feldern gesät wird - die zuletzt gewählte Frucht. */
   nextFarmCrop: CropType = 'wheat';
   onEvent: ((event: WorldEvent) => void) | null = null;
@@ -296,6 +266,12 @@ export class World {
   groundAt: ((x: number, y: number) => number) | null = null;
 
   constructor(private terrain: Terrain, private seed: string) {
+    this.wildlife = new Wildlife({
+      terrain,
+      isOccupied: (x, y) => this.occupied.has(key(x, y)),
+      nextId: () => this.nextId++,
+      seedHash: this.seedHash,
+    });
     const saved = readSave(seed);
     if (saved) this.applySave(saved);
   }
@@ -840,11 +816,8 @@ export class World {
     for (const b of this.buildings.values()) if (b.isUnitProducer()) this.tickTraining(b, dt);
     this.regrowBerries(dt);
     this.growFarms(dt);
-    for (const a of this.animals) this.tickAnimal(a, dt);
+    if (this.wildlife.tick(dt, this.animalSurroundings)) this.dirty = true;
     // Leer zerlegte Kadaver verschwinden.
-    if (this.animals.some((a) => a.state === 'dead' && a.food <= 1e-6)) {
-      this.animals = this.animals.filter((a) => a.state !== 'dead' || a.food > 1e-6);
-    }
     for (const v of this.villagers) {
       v.prevX = v.x;
       v.prevY = v.y;
@@ -1321,66 +1294,14 @@ export class World {
     return tile.tileType === 'water' || tile.tileType === 'deep_water' || tile.tileType === 'mountain' || tile.tileType === 'snow';
   }
 
-  /**
-   * Lässt in den Stücken nahe der Kamera Tiere entstehen, die noch keine
-   * hatten - fest nach Seed und Lage: auf Wiese und Waldboden mal ein Rudel
-   * Rehe, mal ein, zwei Hasen.
-   */
+  /** Tiere in den Stücken nahe der Kamera entstehen lassen, die noch keine hatten (wildlife.ts). */
   ensureAnimals(centerX: number, centerY: number) {
-    const r = ANIMAL_SPAWN_RADIUS;
-    for (let cy = Math.floor((centerY - r) / ANIMAL_CHUNK); cy <= Math.floor((centerY + r) / ANIMAL_CHUNK); cy++) {
-      for (let cx = Math.floor((centerX - r) / ANIMAL_CHUNK); cx <= Math.floor((centerX + r) / ANIMAL_CHUNK); cx++) {
-        const k = key(cx, cy);
-        if (this.spawnedChunks.has(k)) continue;
-        this.spawnedChunks.add(k);
-        this.spawnChunk(cx, cy);
-        this.dirty = true;
-      }
-    }
-  }
-
-  private spawnChunk(cx: number, cy: number) {
-    const seed = this.seedHash;
-    const roll = hash01(cx, cy, seed);
-    const kind: AnimalKind | null = roll < 0.22 ? 'deer' : roll < 0.55 ? 'hare' : null;
-    if (!kind) return;
-    const def = ANIMALS[kind];
-    // Ein Platz im Stück auf Wiese oder Waldboden, ohne Baum und Fels.
-    for (let tries = 0; tries < 16; tries++) {
-      const x = cx * ANIMAL_CHUNK + Math.floor(hash01(cx, cy, seed + 10 + tries) * ANIMAL_CHUNK);
-      const y = cy * ANIMAL_CHUNK + Math.floor(hash01(cx, cy, seed + 40 + tries) * ANIMAL_CHUNK);
-      const tile = this.terrain.getTile(x, y);
-      if ((tile.tileType !== 'grass' && tile.tileType !== 'forest') || tile.resource !== 'none' || this.occupied.has(key(x, y))) continue;
-      const count = def.herd[0] + Math.floor(hash01(cx, cy, seed + 80) * (def.herd[1] - def.herd[0] + 1));
-      for (let i = 0; i < count; i++) {
-        const a = (i / count) * Math.PI * 2 + hash01(cx, cy, seed + 90 + i) * 2;
-        this.addAnimal(kind, x + 0.5 + Math.cos(a) * (i ? 1 : 0), y + 0.5 + Math.sin(a) * (i ? 1 : 0));
-      }
-      return;
-    }
-  }
-
-  addAnimal(kind: AnimalKind, x: number, y: number, hp = ANIMALS[kind].hp, food = ANIMALS[kind].food, dead = false) {
-    this.animals.push({
-      id: this.nextId++, kind, x, y, prevX: x, prevY: y, heading: Math.random() * Math.PI * 2,
-      hp, food, home: { x, y }, state: dead ? 'dead' : 'graze', target: null,
-      timer: 2 + Math.random() * 6, sprint: ANIMALS[kind].sprint?.time ?? 0, rest: 0, stride: 0, prevStride: 0,
-    });
-    this.dirty = true;
+    if (this.wildlife.spawnAround(centerX, centerY)) this.dirty = true;
   }
 
   /** Das Tier, das einem Welt-Punkt am nächsten liegt - höchstens `radius` Tiles entfernt. */
   animalNear(x: number, y: number, radius: number): Animal | undefined {
-    let best: Animal | undefined;
-    let bestDistance = radius;
-    for (const a of this.animals) {
-      const d = Math.hypot(a.x - x, a.y - y);
-      if (d < bestDistance) {
-        bestDistance = d;
-        best = a;
-      }
-    }
-    return best;
+    return this.wildlife.near(x, y, radius);
   }
 
   /** Rechtsklick auf ein Tier: die Ausgewählten jagen es bzw. zerlegen den Kadaver. */
@@ -1393,90 +1314,25 @@ export class World {
     }
   }
 
-  /** Ein Schritt eines Tiers: `speed` in Richtung `heading`, um Hindernisse herum. */
-  private stepAnimal(a: Animal, heading: number, speed: number, dt: number): boolean {
-    const step = speed * dt;
-    for (const turn of [0, 0.5, -0.5, 1.1, -1.1, 1.7, -1.7]) {
-      const h = heading + turn;
-      const nx = a.x + Math.cos(h) * step;
-      const ny = a.y + Math.sin(h) * step;
-      if (this.animalBlocked(Math.floor(nx), Math.floor(ny))) continue;
-      a.x = nx;
-      a.y = ny;
-      a.heading = h;
-      a.stride += step;
-      return true;
-    }
-    return false;
-  }
-
-  /** Äsen, umherziehen, vor Dorfbewohnern fliehen - Hasen in kurzen Sprints. */
-  private tickAnimal(a: Animal, dt: number) {
-    a.prevX = a.x;
-    a.prevY = a.y;
-    a.prevStride = a.stride;
-    if (a.state === 'dead') return;
-    const def = ANIMALS[a.kind];
-    let threat: Villager | undefined;
-    let threatDistance = Infinity;
-    for (const v of this.villagers) {
-      if (v.inside > 0) continue;
-      const d = Math.hypot(v.x - a.x, v.y - a.y);
-      if (d < threatDistance) {
-        threatDistance = d;
-        threat = v;
+  /** Was Tiere von der Welt wissen: wohin sie dürfen, wo der nächste Dorfbewohner ist. */
+  private readonly animalSurroundings: AnimalSurroundings = {
+    isBlocked: (x, y) => this.animalBlocked(x, y),
+    nearestThreat: (x, y) => {
+      let nearest: { x: number; y: number; distance: number } | undefined;
+      for (const v of this.villagers) {
+        if (v.inside > 0) continue;
+        const distance = Math.hypot(v.x - x, v.y - y);
+        if (!nearest || distance < nearest.distance) nearest = { x: v.x, y: v.y, distance };
       }
-    }
-    // Angeschossen flieht es weiter, auch wenn der Jäger zurückbleibt.
-    const wounded = a.hp < def.hp;
-    if (threat && threatDistance < (a.state === 'flee' || wounded ? def.fear * 2 : def.fear)) {
-      a.state = 'flee';
-      let speed = def.flee;
-      if (def.sprint) {
-        if (a.sprint > 0) {
-          a.sprint -= dt;
-          if (a.sprint <= 0) a.rest = def.sprint.rest;
-        } else {
-          speed = def.sprint.slow;
-          a.rest -= dt;
-          if (a.rest <= 0) a.sprint = def.sprint.time;
-        }
-      }
-      const away = Math.atan2(a.y - threat.y, a.x - threat.x) + Math.sin(a.id * 1.7 + a.stride * 0.6) * 0.35;
-      this.stepAnimal(a, away, speed, dt);
-      this.dirty = true;
-      return;
-    }
-    if (a.state === 'flee') {
-      // Entkommen: hier ist jetzt sein Platz.
-      a.state = 'graze';
-      a.home = { x: a.x, y: a.y };
-      a.timer = 3 + Math.random() * 5;
-    }
-    if (a.state === 'graze') {
-      a.timer -= dt;
-      if (a.timer > 0) return;
-      const ang = Math.random() * Math.PI * 2;
-      const r = 0.5 + Math.random() * 2.5;
-      a.target = { x: a.home.x + Math.cos(ang) * r, y: a.home.y + Math.sin(ang) * r };
-      a.state = 'walk';
-    }
-    if (a.state === 'walk' && a.target) {
-      const d = Math.hypot(a.target.x - a.x, a.target.y - a.y);
-      if (d < 0.1 || !this.stepAnimal(a, Math.atan2(a.target.y - a.y, a.target.x - a.x), def.walk, dt)) {
-        a.state = 'graze';
-        a.target = null;
-        a.timer = 4 + Math.random() * 8;
-      }
-      this.dirty = true;
-    }
-  }
+      return nearest;
+    },
+  };
 
   /** Nächstes Tier bzw. Kadaver mit Fleisch in Reichweite der Suche - lieber erlegte. */
   private nearestPrey(v: Villager, kind: AnimalKind | null): Animal | undefined {
     let best: Animal | undefined;
     let bestScore: number = VILLAGER.searchRadius;
-    for (const a of this.animals) {
+    for (const a of this.wildlife.animals) {
       if (a.state === 'dead' && a.food <= 1e-6) continue;
       if (kind && a.kind !== kind) continue;
       const score = Math.hypot(a.x - v.x, a.y - v.y) - (a.state === 'dead' ? 4 : 0);
@@ -1504,7 +1360,7 @@ export class World {
       if (this.deliverTo(v, site, dt)) task.delivering = false;
       return;
     }
-    let a = this.animals.find((x) => x.id === task.animal);
+    let a = this.wildlife.byId(task.animal);
     if (!a || (a.state === 'dead' && a.food <= 1e-6)) {
       const next = this.nearestPrey(v, a?.kind ?? null);
       if (next) {
@@ -1703,9 +1559,9 @@ export class World {
       case 'hunt': {
         if (v.task.delivering) return 'bringt Fleisch' + load;
         const hunt = v.task;
-        const a = this.animals.find((x) => x.id === hunt.animal);
+        const a = this.wildlife.byId(hunt.animal);
         if (!a) return 'jagt' + load;
-        return (a.state === 'dead' ? `zerlegt ${ANIMALS[a.kind].label}` : `jagt ${ANIMALS[a.kind].label}`) + load;
+        return (a.isDead ? `zerlegt ${a.label}` : `jagt ${a.label}`) + load;
       }
       case 'farm': {
         const building = this.buildings.get(v.task.building);
@@ -1812,11 +1668,11 @@ export class World {
         accent: v.carryType ? RESOURCE_TYPE_COLORS[LOAD_LOOK[v.carryType]].toRGB() : undefined,
       });
     }
-    for (const a of this.animals) {
+    for (const a of this.wildlife.animals) {
       const x = a.prevX + (a.x - a.prevX) * blend;
       const y = a.prevY + (a.y - a.prevY) * blend;
       if (x < x0 || x > x1 || y < y0 || y > y1) continue;
-      const def = ANIMALS[a.kind];
+      const def = a.definition;
       const pose = a.state === 'dead' ? ANIMAL_POSE.dead
         : a.state === 'flee' ? ANIMAL_POSE.flee
         : a.state === 'walk' ? ANIMAL_POSE.walk : ANIMAL_POSE.graze;
@@ -1930,11 +1786,11 @@ export class World {
         x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp, n: v.name, f: v.female,
       })),
       harvested: Object.fromEntries(this.harvested),
-      animals: this.animals.map((a) => ({
+      animals: this.wildlife.animals.map((a) => ({
         k: a.kind, x: +a.x.toFixed(2), y: +a.y.toFixed(2), hp: a.hp, f: +a.food.toFixed(1),
         ...(a.state === 'dead' ? { d: true } : {}),
       })),
-      spawned: [...this.spawnedChunks],
+      spawned: [...this.wildlife.spawnedChunks],
     };
   }
 
@@ -1966,9 +1822,9 @@ export class World {
       for (const [tx, ty] of building.footprintTiles()) this.occupied.set(key(tx, ty), building.anchor);
     }
 
-    for (const k of data.spawned ?? []) this.spawnedChunks.add(k);
+    for (const k of data.spawned ?? []) this.wildlife.spawnedChunks.add(k);
     for (const a of data.animals ?? []) {
-      if (ANIMALS[a.k]) this.addAnimal(a.k, a.x, a.y, a.hp, a.f, a.d);
+      if (isAnimalKind(a.k)) this.wildlife.add(a.k, a.x, a.y, { hp: a.hp, food: a.f, dead: a.d });
     }
 
     for (const s of data.villagers) {
@@ -2020,8 +1876,7 @@ export class World {
     this.berryTiles.clear();
     this.felled.clear();
     this.villagers = [];
-    this.animals = [];
-    this.spawnedChunks.clear();
+    this.wildlife.clear();
     this.stock = initialResources();
     this.dirty = true;
     this.save();
@@ -2030,12 +1885,6 @@ export class World {
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-/** Fester Zufall 0..1 je Feld und Kanal. */
-function hash01(x: number, y: number, channel: number): number {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(channel, 2246822519);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
 
 /** Fester Winkel 0..2π je Feld - gleiche Welt, gleiche Werte. */
 function tileAngle(x: number, y: number): number {

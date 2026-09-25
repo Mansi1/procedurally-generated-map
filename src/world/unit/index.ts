@@ -1,0 +1,44 @@
+// index.ts
+// Figuren auf der Karte als Klassen - die EINZIGE Liste der Tierarten:
+// ANIMAL_CLASSES. Daraus folgen AnimalKind und ANIMALS (Definition je Art).
+//
+//   UnitBase (abstrakt)          Lage, Blickrichtung, Trefferpunkte, Schritte
+//    └─ AnimalBase (abstrakt)    äsen, umherziehen, fliehen, Kadaver
+//        ├─ Deer
+//        └─ Hare
+
+import { AnimalBase, type AnimalOptions, type AnimalState, type AnimalSurroundings } from './AnimalBase';
+import type { AnimalDefinition } from './definition';
+import { Deer } from './Deer';
+import { Hare } from './Hare';
+import { UnitBase } from './UnitBase';
+
+export { UnitBase, AnimalBase, Deer, Hare, type AnimalDefinition, type AnimalOptions, type AnimalState, type AnimalSurroundings };
+
+/** Alle Tierklassen. */
+export const ANIMAL_CLASSES = [Deer, Hare] as const;
+
+/** Kennung einer Tierart, z. B. 'deer'. */
+export type AnimalKind = (typeof ANIMAL_CLASSES)[number]['definition']['type'];
+
+/** Ein Tier auf der Karte - welcher Art auch immer. */
+export type Animal = AnimalBase;
+
+type AnimalConstructor = { readonly definition: AnimalDefinition } &
+  (new (id: number, x: number, y: number, options?: AnimalOptions) => Animal);
+
+const CLASS_BY_KIND = Object.fromEntries(ANIMAL_CLASSES.map((c) => [c.definition.type, c])) as
+  Record<AnimalKind, AnimalConstructor>;
+
+/** Definition je Art. */
+export const ANIMALS = Object.fromEntries(ANIMAL_CLASSES.map((c) => [c.definition.type, c.definition])) as
+  Record<AnimalKind, AnimalDefinition>;
+
+export function isAnimalKind(kind: string): kind is AnimalKind {
+  return kind in CLASS_BY_KIND;
+}
+
+/** Neues Tier in der Klasse seiner Art. */
+export function createAnimal(kind: AnimalKind, id: number, x: number, y: number, options?: AnimalOptions): Animal {
+  return new CLASS_BY_KIND[kind](id, x, y, options);
+}

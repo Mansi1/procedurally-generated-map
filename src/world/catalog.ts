@@ -148,44 +148,8 @@ export const VILLAGER = {
  */
 export const MAX_GATHERERS = 6;
 
-export type AnimalKind = 'deer' | 'hare';
-
-export interface AnimalDef {
-  label: string;
-  shape: number;
-  /** Höhe in Tiles (1 Tile = 5 m) - der Hase etwas größer als echt, sonst sähe man ihn kaum. */
-  height: number;
-  /** So viele Speerwürfe hält es aus. */
-  hp: number;
-  /** Nahrung, die der Kadaver hergibt. */
-  food: number;
-  /** Tiles je Sekunde beim Umherziehen und auf der Flucht. */
-  walk: number;
-  flee: number;
-  /**
-   * Hasen sprinten nur kurz (Sekunden) und müssen dann verschnaufen - so holt
-   * ein Jäger sie ein. Rehe laufen gleichmäßig, etwas langsamer als er.
-   */
-  sprint?: { time: number; rest: number; slow: number };
-  /** Ab dieser Nähe (Tiles) eines Dorfbewohners flieht es. */
-  fear: number;
-  /** So viele leben zusammen (von, bis). */
-  herd: [number, number];
-  /** Tiles zwischen zwei Schritten - die Beine schwingen danach. */
-  stride: number;
-}
-
-/** Wild zum Jagen - Fleisch zählt als Nahrung, abgeliefert wie Beeren. */
-export const ANIMALS: Record<AnimalKind, AnimalDef> = {
-  deer: {
-    label: 'Reh', shape: SHAPE.deer, height: 0.27, hp: 3, food: 140, walk: 0.7, flee: 2.7,
-    fear: 4, herd: [2, 4], stride: 0.5,
-  },
-  hare: {
-    label: 'Hase', shape: SHAPE.hare, height: 0.13, hp: 1, food: 40, walk: 0.5, flee: 4.2,
-    sprint: { time: 1.4, rest: 2.2, slow: 1.1 }, fear: 3, herd: [1, 2], stride: 0.35,
-  },
-};
+// Tiere: Arten und Definitionen kommen aus den Klassen (unit/).
+export { ANIMALS, type AnimalKind, type AnimalDefinition } from './unit';
 
 /** Jagen: Wurfweite des Speers (Tiles), Sekunden zwischen zwei Würfen, Zerlegen (Nahrung je Sekunde). */
 export const HUNT = { range: 2.2, reload: 1.4, butcherRate: 1.0 };
