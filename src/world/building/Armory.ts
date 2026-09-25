@@ -2,7 +2,8 @@
 // Waffenkammer - wie in Stronghold: hier kommen die Waffen hin. Der Bogner
 // trägt jeden fertigen Bogen zur nächsten Waffenkammer; ohne eine, oder wenn
 // alle voll sind, wartet er mit dem Bogen in der Hand. Es passen 100 hinein,
-// und alle sind zu sehen: vier Stapel im Modell (Stock.0 bis 99).
+// und alle sind zu sehen: fünf Gestelle mit je 20 stehenden Bögen im
+// Modell (Stock.0 bis 99).
 
 import { Color } from '../../functions/Color';
 import { SHAPE } from '../../gl/entityRenderer';

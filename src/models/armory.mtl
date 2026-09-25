@@ -21,20 +21,6 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl Feather
-Kd 0.900 0.880 0.840
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
-newmtl Gold
-Kd 0.930 0.740 0.220
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
 newmtl Iron
 Kd 0.400 0.420 0.450
 Ka 0 0 0
@@ -84,13 +70,6 @@ Ks 0 0 0
 d 1
 illum 1
 
-newmtl Straw
-Kd 0.850 0.740 0.420
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
 newmtl Timber
 Kd 0.270 0.180 0.110
 Ka 0 0 0
@@ -107,13 +86,6 @@ illum 1
 
 newmtl WoodDark
 Kd 0.300 0.200 0.120
-Ka 0 0 0
-Ks 0 0 0
-d 1
-illum 1
-
-newmtl WoodLight
-Kd 0.600 0.450 0.280
 Ka 0 0 0
 Ks 0 0 0
 d 1

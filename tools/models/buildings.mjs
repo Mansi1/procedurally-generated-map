@@ -1073,18 +1073,17 @@ function bowyer() {
 
 // --- Armory: where the weapons go, like in Stronghold - built like the
 // houses (plaster in a timber frame on a stone plinth, shingle gable roof),
-// but without windows: one iron-banded door. Inside, on a plank floor, four
-// stacks hold up to 100 bows ('Stock.<n>'). Hovering the armory in the game
+// but without windows: one iron-banded door. Inside, on a plank floor, five
+// racks hold up to 100 bows standing ('Stock.<n>'). Hovering the armory in the game
 // hides everything named 'Cut.Roof' and cuts 'Cut.Wall' down to a low wall,
-// so you look in and see how many bows are stacked. In the yard on the right
-// a target, spears and arrows. 5 m wide (size 1). -----------------------------
+// so you look in and see how many bows are stacked. Nothing outside - it
+// is a store, not a home. 5 m wide (size 1). ----------------------------------
 function armory() {
   const m = model();
   const { box, beam } = m;
-  const W = 1.55, D = 1.3;        // half size of the walls
+  const W = 1.85, D = 1.5;        // half size of the walls
   const T = 0.18;                 // wall thickness - hollow, to look into
   const P = 0.35, E = 2.4, R = 3.95;
-  const CX = -0.5;                // the house sits left of the middle, the lean-to right
   const base = walls(m, W, D);
   const wall = (face, name, ...rest) => base(face, `Cut.Wall.${name}`, ...rest);
   const high = (face, name, ...rest) => base(face, `Cut.Roof.${name}`, ...rest);
@@ -1102,7 +1101,7 @@ function armory() {
   box('Cut.Wall.Right', 'PlasterGrey', [W - T, W], [P, E], [-D + T, D - T]);
   for (const face of ['front', 'back', 'left', 'right']) {
     const half = face === 'front' || face === 'back' ? W : D;
-    const posts = face === 'front' ? [-half, -0.25, half] : [-half, 0, half];
+    const posts = face === 'front' ? [-half, 0.05, half] : [-half, 0, half];
     for (const u of posts) wall(face, 'Timber.Post', 'Timber', [u - 0.08, u + 0.08], [P, E], [0, 0.06]);
     wall(face, 'Timber.Sill', 'Timber', [-half, half], [P, P + 0.12], [0, 0.06]);
     wall(face, 'Timber.Rail', 'Timber', [-half, half], [1.3, 1.4], [0, 0.05]);
@@ -1110,15 +1109,19 @@ function armory() {
     // Band in the player's colour under the eaves.
     high(face, 'Band', 'Paint', [-half, half], [E - 0.36, E - 0.16], [0, 0.04]);
   }
-  for (const t of [-1, 1]) beam('Cut.Wall.Brace', 'Timber', [t * (W - 0.1), P + 0.12, D + 0.03], [t * 0.7, 1.3, D + 0.03], 0.09);
 
-  // One door, iron-banded, with a shield in the player's colour above it.
+  // One door, iron-banded, and right of it (seen from the front; +x is the
+  // building's left) a big shield in the player's colour. It goes with the
+  // roof when the armory is open - squashed it would be a sliver.
   const dx = 0.75;
   doorOn(wall, 'front', dx, P, 0.84, 1.8, {});
   for (const y of [P + 0.25, P + 0.9, P + 1.55]) wall('front', 'Door.Band', 'Iron', [dx - 0.42, dx + 0.42], [y, y + 0.07], [0.06, 0.08]);
   box('Step', 'StoneLight', [dx - 0.55, dx + 0.55], [0, P], [D + 0.02, D + 0.4], { r: 0.1 });
-  m.extrude('Cut.Roof.Shield', 'Paint', 'z', [D + 0.07, D + 0.12], [[dx - 0.2, E + 0.02], [dx + 0.2, E + 0.02], [dx + 0.2, E - 0.24], [dx, E - 0.48], [dx - 0.2, E - 0.24]]);
-  beam('Cut.Roof.Shield.Stripe', 'Canvas', [dx - 0.16, E - 0.02, D + 0.125], [dx + 0.16, E - 0.36, D + 0.125], 0.06);
+  const shield = (cx, top, hw, h) => [[cx - hw, top], [cx + hw, top], [cx + hw, top - h * 0.45], [cx, top - h], [cx - hw, top - h * 0.45]];
+  const sx = -0.92, sTop = 1.85;
+  m.extrude('Cut.Roof.Shield.Rim', 'Iron', 'z', [D + 0.06, D + 0.1], shield(sx, sTop + 0.05, 0.5, 1.3));
+  m.extrude('Cut.Roof.Shield', 'Paint', 'z', [D + 0.1, D + 0.14], shield(sx, sTop, 0.44, 1.18));
+  beam('Cut.Roof.Shield.Stripe', 'Canvas', [sx + 0.36, sTop - 0.06, D + 0.145], [sx - 0.36, sTop - 0.62, D + 0.145], 0.14);
 
   // Gable roof with shingles, ridge along x; plastered gables with a king post.
   const RX = W + 0.3, RZ = D + 0.42;
@@ -1134,73 +1137,28 @@ function armory() {
     }
   }
 
-  // Inside: four stacks of bows lying flat on low trestles, 25 high - 100
-  // bows. They fill round the stacks layer by layer ('Stock.<n>', n = layer
-  // * 4 + stack), so all four grow together as the stock grows.
-  const stacks = [[-0.68, -0.72], [0.68, -0.72], [-0.68, -0.05], [0.68, -0.05]];
-  for (const [sx, sz] of stacks) {
-    for (const x of [sx - 0.45, sx + 0.45]) {
-      box('Trestle', 'Timber', [x - 0.05, x + 0.05], [P, P + 0.14], [sz - 0.3, sz + 0.3]);
-      box('Trestle.Top', 'Wood', [x - 0.07, x + 0.07], [P + 0.14, P + 0.18], [sz - 0.32, sz + 0.32]);
+  // Inside: five racks one behind the other, twenty bows standing in each,
+  // leaning against the upper rail - 100 bows. They fill from the back rack
+  // to the front ('Stock.<n>').
+  let n = 0;
+  for (let r = 0; r < 5; r++) {
+    const z = -D + T + 0.16 + r * ((2 * (D - T) - 0.5) / 4);
+    for (const x of [-W + T + 0.06, W - T - 0.06]) {
+      box('Rack.Post', 'Timber', [x - 0.05, x + 0.05], [P, P + 1.45], [z - 0.05, z + 0.05]);
+      box('Rack.Foot', 'Timber', [x - 0.05, x + 0.05], [P, P + 0.07], [z - 0.18, z + 0.18]);
+    }
+    for (const y of [P + 0.18, P + 1.3]) box('Rack.Rail', 'Wood', [-W + T + 0.02, W - T - 0.02], [y, y + 0.07], [z - 0.035, z + 0.035]);
+    for (let i = 0; i < 20; i++) {
+      const x = -W + T + 0.2 + i * ((2 * (W - T) - 0.5) / 19);
+      bow(m, [x, P + 0.72, z + 0.08], [0, 1, 0.08], [1, 0, 0], 1.3, 0.07, `Stock.${n++}`);
     }
   }
-  let n = 0;
-  for (let layer = 0; layer < 25; layer++) {
-    stacks.forEach(([sx, sz], i) => {
-      // Jede Lage etwas verdreht und versetzt, damit es ein Stapel ist und kein Block.
-      const a = ((layer * 7 + i * 3) % 5 - 2) * 0.04;
-      const dz = ((layer * 5 + i) % 3 - 1) * 0.04;
-      const y = P + 0.21 + layer * 0.045;
-      bow(m, [sx, y, sz + dz - 0.06], [Math.cos(a), 0, Math.sin(a)], [-Math.sin(a), 0, Math.cos(a)], 1.25, 0.12, `Stock.${n++}`);
-    });
-  }
 
-  // The house sits left of the middle: shift what is built so far - in
-  // place, the primitives keep writing into this array.
-  m.out.forEach((l, i) => {
-    if (!l.startsWith('v ')) return;
-    const [x, y, z] = l.split(' ').slice(1);
-    m.out[i] = `v ${(Number(x) + CX).toFixed(3)} ${y} ${z}`;
-  });
-
-  box('Ground', 'Dirt', [-2.3, 2.45], [0, 0.03], [-1.85, 2.1], { r: 0.2 });
-
-  // In the yard on the right: target, spears in a rack, a barrel of arrows -
-  // in the open, no lean-to: nobody lives here.
-  const TX = 1.65, TY = 0.95, TZ = -0.55, TR = 0.4;
-  for (const [x0, z0] of [[TX - 0.35, TZ - 0.1], [TX + 0.35, TZ - 0.1], [TX, TZ - 0.5]]) beam('Target.Leg', 'Wood', [x0, 0, z0], [TX, TY + 0.15, TZ - 0.1], 0.06);
-  box('Target', 'Straw', [TX - TR, TX + TR], [TY - TR, TY + TR], [TZ - 0.08, TZ + 0.08], { axis: 'z', n: 16 });
-  for (const [r, mtl, dz] of [[0.3, 'Paint', 0.09], [0.2, 'Canvas', 0.1], [0.11, 'Paint', 0.11], [0.04, 'Gold', 0.12]]) {
-    box('Target.Ring', mtl, [TX - r, TX + r], [TY - r, TY + r], [TZ + 0.08, TZ + dz], { axis: 'z', n: 16 });
-  }
-  box('Spears.Rack', 'Wood', [1.2, 2.1], [1.1, 1.17], [0.75, 0.82]);
-  for (const x of [1.2, 2.1]) box('Spears.Post', 'Timber', [x - 0.05, x + 0.05], [0, 1.2], [0.73, 0.83]);
-  for (let i = 0; i < 4; i++) {
-    const x = 1.35 + i * 0.22;
-    beam('Spear', 'WoodLight', [x, 0.02, 0.6], [x, 2.15, 0.8], 0.04);
-    beam('Spear.Head', 'Iron', [x, 2.15, 0.8], [x, 2.38, 0.82], 0.08, { w1: 0.005 });
-  }
-  barrel(m, 1.75, 1.6, 0.75, 0.24);
-  for (let i = 0; i < 8; i++) {
-    const a = i * 2.4, r = 0.03 + (i % 3) * 0.05;
-    const x = 1.75 + Math.cos(a) * r, z = 1.6 + Math.sin(a) * r;
-    const p1 = [x + Math.cos(a) * 0.06, 1.2 + (i % 2) * 0.05, z + Math.sin(a) * 0.06];
-    beam('Arrow', 'WoodLight', [x, 0.5, z], p1, 0.02);
-    beam('Arrow.Fletch', 'Feather', [p1[0], p1[1] - 0.14, p1[2]], p1, 0.05, { w1: 0.02 });
-  }
-
-  // Round shields in the player's colour leaning on the front wall, a crate.
-  for (const [x, tilt] of [[-1.55, 0.12], [-1.0, 0.18]]) {
-    const z = D + 0.1;
-    box('Shield', 'Paint', [x - 0.28, x + 0.28], [0.05, 0.61], [z, z + 0.05], { axis: 'z', n: 12, rot: tilt });
-    box('Shield.Rim', 'Iron', [x - 0.3, x + 0.3], [0.03, 0.63], [z - 0.01, z + 0.03], { axis: 'z', n: 12, rot: tilt });
-    box('Shield.Boss', 'Iron', [x - 0.07, x + 0.07], [0.26, 0.4], [z + 0.05, z + 0.1], { axis: 'z', n: 8 });
-  }
-  crate(m, [-2.2, -1.8], 0, [D + 0.05, D + 0.45]);
+  box('Ground', 'Dirt', [-W - 0.5, W + 0.5], [0, 0.03], [-D - 0.45, D + 0.75], { r: 0.2 });
 
   // Wo Waffen abgeliefert werden: vor der Tür (unsichtbar, liest das Spiel aus).
-  box('Entry', 'Soot', [dx + CX - 0.03, dx + CX + 0.03], [0, 0.05], [D + 0.6, D + 0.65]);
-  write(dir, 'armory', header('armory', 'Waffenkammer', '# Material Paint (Band, Wappen, Schilde, Zielscheibe) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet. Cut.Roof verschwindet und\n# Cut.Wall wird niedrig, wenn der Zeiger darauf steht; Stock.<n> sind die Boegen im Vorrat.\n'), m, '0.420 0.300 0.180');
+  box('Entry', 'Soot', [dx - 0.03, dx + 0.03], [0, 0.05], [D + 0.6, D + 0.65]);
+  write(dir, 'armory', header('armory', 'Waffenkammer', '# Material Paint (Band, Wappen) bekommt die Gebaeudefarbe aus dem Spiel.\n# Das Objekt Entry markiert den Eingang und wird nicht gezeichnet. Cut.Roof verschwindet und\n# Cut.Wall wird niedrig, wenn der Zeiger darauf steht; Stock.<n> sind die Boegen im Vorrat.\n'), m, '0.420 0.300 0.180');
 }
 
 // --- A single bow, tilted, with an arrow on the string - for the stock icon
