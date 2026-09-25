@@ -68,6 +68,14 @@ for name, action in found.items():
     if frames != c['frames']:
         raise SystemExit(f'{name}: {frames} Bilder nach dem Import, erwartet {c["frames"]}')
 
+# IK für die Hände (zum Bearbeiten in Blender): Ziele ik.hand.L/R, gebacken
+# für carve und mow (tools/blender/humanoid_ik.py).
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import humanoid_ik
+humanoid_ik.setup(rig)
+humanoid_ik.bake(rig)
+
 # Zu sehen ist beim Öffnen das Schnitzen an der Werkbank.
 rig.animation_data.action = found['carve']
 scene.frame_start = 0

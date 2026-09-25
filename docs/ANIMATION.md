@@ -33,10 +33,17 @@ Phase 0 und Phase 1 sind fertig. Von Phase 2 ist der erste Teil fertig:
 - **Größe:** `humanoid_clips.glb` hat 1,2 MB, vor allem durch `stand`
   (34 s Schleife).
 
-Offen in Phase 2: IK für die Hände in Blender, Werkzeuge als Anhänge,
-Schichten (`walk` + `carry`), Takt-Marken (`strike`) und das Löschen der
-Formeln. Solange es die Formeln gibt, sind sie der Rückfall, falls die
-Clip-Bibliothek fehlt.
+- **Takt-Marken:** Der Ton beim Hacken, Pflücken, Mähen und Schnitzen kommt
+  aus der Custom Property `strike` des Clips (`VillagerWork.swing`). Über
+  20 Minuten Arbeit kommt jeder Ton im selben Takt wie mit der Formel.
+- **IK für die Hände:** In `humanoid.blend` gibt es IK-Ziele für beide Hände,
+  aktiv in `carve` und `mow` (siehe „Hände mit IK“). Die Clips sind dadurch
+  unverändert (`check:anim` wie vorher). Ein verschobenes Ziel kommt im Spiel
+  an: 5 cm verschoben ergibt 5,0 cm an der Hand.
+
+Offen in Phase 2: Werkzeuge als Anhänge, Schichten (`walk` + `carry`) und
+das Löschen der Formeln. Solange es die Formeln gibt, sind sie der Rückfall,
+falls die Clip-Bibliothek fehlt.
 
 **Phase 3 ist fertig: Alle sechs Tiere spielen Clips aus
 `assets/blender/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
@@ -165,6 +172,9 @@ Die Migration läuft auf dem Branch `animation-migration`.
    - `phase_period`, `phase_shift`: welcher Bereich der Spiel-Phase eine
      Schleife ist. Die Clip-Zeit ist (Phase − shift) × Dauer / period.
    - `kneel`: 1, wenn der Rock beim Knien gestaucht wird
+   - `strike`: Clip-Zeiten in Sekunden, zu denen der Hieb bzw. Griff zu
+     hören ist, durch Komma getrennt (z. B. `chop`: `0.775`). Wer einen Clip
+     umbaut, verschiebt die Marken mit.
    
    Mit `npm run check:anim` lässt sich prüfen, wie weit ein Clip von der
    alten Formel abweicht.
@@ -174,6 +184,28 @@ Die Migration läuft auf dem Branch `animation-migration`.
 4. In der Galerie zeigen „Clips aus Blender“ → „Mann (Clips)“,
    „Frau (Clips)“ und „Tiere (Clips)“ jeden Clip der Bibliotheken. Im Spiel
    spielt ihn die Pose, die er ersetzt (Custom Property `pose`).
+
+**Hände mit IK** (`humanoid.blend`, eingerichtet von
+`tools/blender/humanoid_ik.py`):
+
+- Die Knochen `ik.hand.L` und `ik.hand.R` sind die Ziele der Hände. Sie haben
+  keinen Eltern-Knochen. Man verschiebt sie, und Schulter, Oberarm und
+  Unterarm folgen.
+- `hand.L` und `hand.R` hängen am Unterarm (Handgelenk bis Handmitte) und
+  tragen die IK-Einschränkung `IK` (Kette aus 4 Knochen).
+- Jeder Knochen dreht dabei nur um seine Spiel-Achse: Schulter und Ellbogen
+  um x, der Oberarm um z. So ist die Lösung eindeutig, ein Pol ist nicht
+  nötig.
+- Aktiv ist IK in `carve` und `mow`, wo beide Hände ein Werkzeug halten. Dort
+  sind die Ziele je Bild gebacken, und die Kurve `influence` der
+  Einschränkung steht in der Action auf 1. In allen anderen Actions steht sie
+  auf 0.
+- Das Spiel liest nur die bekannten Knochen. Was IK aus ihnen macht, backt
+  der Export (`export_force_sampling`) mit. `hand.*` und `ik.hand.*` kommen
+  zwar mit in die `.glb`, `clips.ts` übergeht sie aber.
+- Neu einrichten (auch nach `bootstrap_humanoid.py`, das es selbst aufruft):
+  `blender -b assets/blender/humanoid.blend --python tools/blender/humanoid_ik.py`.
+  Das setzt die Ziele wieder auf die Hände der Keyframes.
 
 **Tiere** (`assets/blender/quadruped.blend`, Skelett `quadruped`, am Reh):
 Die Actions heißen `graze`, `walk`, `hop`, `flee`, `trot`, `hop_flee` und
@@ -431,7 +463,7 @@ Bildrate mit 500 Dorfbewohnern gleich bleibt.
    Clips. Das ist der Gleichstand, wie heute aus den Formeln gerechnet.
 2. **In Blender:**
    - IK für die Hände bei `mow` und `carve`, damit Sense und Stab gegriffen
-     werden.
+     werden - **erledigt** (`humanoid_ik.py`, siehe „Hände mit IK“).
    - Weiche Gewichte an Ellbogen, Knien und Schultern.
    - Der Rock folgt beim Knien über Gewichte, statt über eine eigene Formel.
 3. Das Spiel lädt `villager_male.glb` und `villager_female.glb`. `POSE.*`
@@ -443,7 +475,8 @@ Bildrate mit 500 Dorfbewohnern gleich bleibt.
    je mit anderem Werkzeug.
 5. **Schichten:** `walk` nur für den Unterkörper, `carry` nur für den
    Oberkörper, übereinander abgespielt.
-6. **Ton:** `swing()` liest `strike` aus dem Clip statt aus der Formel.
+6. **Ton:** `swing()` liest `strike` aus dem Clip statt aus der Formel -
+   **erledigt**. Ohne Clip für die Pose gilt weiter die Formel.
 7. **Bildvergleich:** alle Posen in der Galerie, alt und neu nebeneinander.
 8. **Weg damit:**
    - im Shader die Figuren-Teile, die Gelenk-Uniforms (`uHip`, `uShoulder`,
