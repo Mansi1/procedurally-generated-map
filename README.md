@@ -25,9 +25,15 @@ wird. Auch der Standard-Seed der Welt heißt `Soliva`.
 ## Starten
 
 ```bash
-npm install
+bun install
 npm run dev
 ```
+
+**Paketmanager ist [Bun](https://bun.sh)** – aber nur zum Installieren der
+Abhängigkeiten: `bun install` statt `npm install` oder `yarn`. Die
+Versionen stehen in `bun.lock`; `package-lock.json` und `yarn.lock` gibt es
+nicht mehr. Alles andere läuft weiter mit Node: die Skripte startet man
+wie gewohnt mit `npm run …` (auch in `docs/`).
 
 Danach läuft das Spiel unter der Adresse, die Vite ausgibt (z. B.
 `http://localhost:5173`).
