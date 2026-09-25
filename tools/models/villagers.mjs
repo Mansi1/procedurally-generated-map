@@ -217,16 +217,16 @@ function scythe(m) {
     return add3(c, add3(mul3(side1, Math.cos(a) * w), mul3(side2, Math.sin(a) * w)));
   });
   m.prism('Arm.R.Lower.Scythe.Snath', 'Wood', round(top, 0.022).map(rest), round(foot, 0.024).map(rest));
-  // Blatt: am Fuß waagerecht nach links, zur Spitze hin schmaler und zum
-  // Mäher zurückgebogen - in Weltlage gebaut, damit es flach über dem Boden liegt.
+  // Blatt: am Fuß waagerecht nach vorn, zur Spitze hin schmaler und leicht
+  // nach links gebogen - in Weltlage gebaut, damit es flach über dem Boden liegt.
   const base = world(foot);
   const along = [[0, 0.06], [0.3, 0.05], [0.52, 0.035], [0.66, 0.012]];
   for (let i = 0; i < along.length - 1; i++) {
     const [u0, w0] = along[i];
     const [u1, w1] = along[i + 1];
-    const at = (u) => add3(base, [u, 0, -0.35 * u * u]);
-    const quad = (u, w) => [[0, -0.008, -w / 2], [0, -0.008, w / 2], [0, 0.008, w / 2], [0, 0.008, -w / 2]].map((d) => add3(at(u), d));
-    // Der Querschnitt steht senkrecht zur Blattrichtung: quer liegt z.
+    const at = (u) => add3(base, [0.35 * u * u, 0, u]);
+    // Der Querschnitt steht senkrecht zur Blattrichtung: quer liegt x.
+    const quad = (u, w) => [[-w / 2, -0.008, 0], [w / 2, -0.008, 0], [w / 2, 0.008, 0], [-w / 2, 0.008, 0]].map((d) => add3(at(u), d));
     m.prism('Arm.R.Lower.Scythe.Blade', 'Steel', quad(u0, w0).map((p) => rest(fromWorld(p))), quad(u1, w1).map((p) => rest(fromWorld(p))));
   }
 }
