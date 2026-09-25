@@ -12,8 +12,6 @@ import {
 import type { EntityInstance } from './gl/entityRenderer';
 import { setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
-  BUILDINGS,
-  BUILDING_ORDER,
   CROP_ORDER,
   RESOURCE_LABEL,
   type ResourceKind,
@@ -27,6 +25,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { Keyboard } from './game/keyboard';
 import { MouseInput } from './game/MouseInput';
 import { PlayerActions } from './game/actions';
 import { Placement } from './game/Placement';
@@ -512,7 +511,6 @@ let mouseTileY: number | undefined;
 let mousePixelX: number | undefined;
 let mousePixelY: number | undefined;
 
-const keys: Record<string, boolean> = {};
 
 /**
  * Zoomt so, dass das Welt-Tile unter dem Ankerpunkt dort stehen bleibt.
@@ -534,78 +532,44 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   zoomEl.textContent = `${camera.tileSize}px`;
 }
 
-window.addEventListener('keydown', (e) => {
-  // F10 wie in AoE2: Menü. Solange es offen ist, keine Spieltasten.
-  if (e.key === 'F10') {
-    e.preventDefault();
-    // Im Hauptmenü ohne die Knöpfe, die nur im Spiel Sinn haben.
-    if (menu.isOpen()) menu.close();
-    else menu.open(start.isOpen());
-    return;
-  }
-  if (menu.isOpen()) {
-    if (e.key === 'Escape') menu.close();
-    // Ton (M) geht auch mit offenem Menü - dort steht der Schalter ja.
-    if (e.key.toLowerCase() === 'm') toggleSound();
-    return;
-  }
-  // Im Hauptmenü gibt es noch nichts zu steuern - nur den Ton (M).
-  if (start.isOpen()) {
-    if (e.key.toLowerCase() === 'm') toggleSound();
-    return;
-  }
-  // F3 wie in AoE2: Pause.
-  if (e.key === 'F3') {
-    e.preventDefault();
-    togglePause();
-    return;
-  }
-  keys[e.key.toLowerCase()] = true;
-  if (e.key === 'e') setZoom(camera.zoomIndex + 1);
-  if (e.key === 'q') setZoom(camera.zoomIndex - 1);
-  if (e.key === 'Escape') {
+/** Tastatur: gehaltene Tasten und die Belegung (game/keyboard.ts) - hier, was sie im Spiel tut. */
+const keyboard = new Keyboard({
+  isMenuOpen: () => menu.isOpen(),
+  isTitleOpen: () => start.isOpen(),
+  // Im Hauptmenü ohne die Knöpfe, die nur im Spiel Sinn haben.
+  toggleMenu: () => (menu.isOpen() ? menu.close() : menu.open(start.isOpen())),
+  closeMenu: () => menu.close(),
+  togglePause,
+  toggleSound,
+  zoom: (step) => setZoom(camera.zoomIndex + step),
+  cancel: () => {
     if (buildMenu.farmsOpen) {
       buildMenu.showFarms(false);
       if (placement.placingType === 'farm') select(null);
-    } else if (placement.placingType) select(null);
+    } else if (placement.isActive) select(null);
     else clearSelection();
-  }
-  if (e.key === 'Delete' || e.key === 'Backspace') actions.demolishSelected();
-  // H wie in AoE2 - "Home".
-  if (e.key.toLowerCase() === 'h') actions.cycleTownCenter();
-  if (e.key.toLowerCase() === 'm') toggleSound();
-  // I: Tastenhilfe (Info), P: Entwickler-Infos (Programmierer).
-  if (e.key.toLowerCase() === 'i') setPanels({ showHelp: !settings.showHelp });
-  if (e.key.toLowerCase() === 'p') setPanels({ showDebug: !settings.showDebug });
-  // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
-  if (e.key === '.' || e.key === ':') actions.selectIdle(!e.shiftKey);
-  if (e.key === ' ') {
-    // Leertaste gedrückt halten legt das Gelände flach (siehe loop). Sonst
-    // scrollt die Seite oder ein fokussierter Knopf wird ausgelöst - bei
-    // Knöpfen passiert das erst beim Loslassen, darum auch der Fokus weg.
-    e.preventDefault();
-    (document.activeElement as HTMLElement | null)?.blur();
-  }
-  if (e.key.toLowerCase() === VILLAGER.key) actions.trainVillagers(e.shiftKey ? 5 : 1);
-
-  // Im Untermenü der Felder wählen 1, 2, ... die Frucht.
-  if (buildMenu.farmsOpen) {
-    const crop = CROP_ORDER[Number(e.key) - 1];
-    if (crop && world.affordable('farm')) {
-      world.nextFarmCrop = crop;
-      select('farm');
-    }
-    return;
-  }
-  const byKey = BUILDING_ORDER.find((type) => BUILDINGS[type].key === e.key);
-  // Das Feld öffnet das Untermenü (Weizen, Mais).
-  if (byKey === 'farm') buildMenu.showFarms(true);
-  else if (byKey) select(placement.placingType === byKey ? null : byKey);
+  },
+  demolish: () => actions.demolishSelected(),
+  home: () => actions.cycleTownCenter(),
+  toggleHelp: () => setPanels({ showHelp: !settings.showHelp }),
+  toggleDebug: () => setPanels({ showDebug: !settings.showDebug }),
+  selectIdle: (all) => actions.selectIdle(all),
+  train: (count) => actions.trainVillagers(count),
+  farmsOpen: () => buildMenu.farmsOpen,
+  chooseCrop: (index) => {
+    const crop = CROP_ORDER[index];
+    if (!crop || !world.affordable('farm')) return;
+    world.nextFarmCrop = crop;
+    select('farm');
+  },
+  // Das Feld öffnet das Untermenü (Weizen, Mais); sonst Baumodus an oder aus.
+  build: (type) => {
+    if (type === 'farm') buildMenu.showFarms(true);
+    else select(placement.placingType === type ? null : type);
+  },
 });
 
-window.addEventListener('keyup', (e) => {
-  keys[e.key.toLowerCase()] = false;
-});
+
 
 minimapCanvas.addEventListener('click', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
@@ -747,16 +711,16 @@ function loop(now: number) {
   const speed = Math.min(400 * (camera.tileSize / 4), 3200) * dt * settings.scroll;
   let dx = 0;
   let dy = 0;
-  if (keys['w'] || keys['arrowup']) dy -= speed;
-  if (keys['s'] || keys['arrowdown']) dy += speed;
-  if (keys['a'] || keys['arrowleft']) dx -= speed;
-  if (keys['d'] || keys['arrowright']) dx += speed;
+  if (keyboard.isDown('w', 'arrowup')) dy -= speed;
+  if (keyboard.isDown('s', 'arrowdown')) dy += speed;
+  if (keyboard.isDown('a', 'arrowleft')) dx -= speed;
+  if (keyboard.isDown('d', 'arrowright')) dx += speed;
   // Hinter dem Hauptmenü zieht die Welt langsam vorbei.
   if (start.isOpen()) dx += 24 * dt;
   // Leertaste halten: Relief sinkt flach, um hinter Berge zu sehen. Weich
   // überblendet, damit man sieht, was wohin gehört. Nie ganz 0 - siehe
   // MapRenderer.relief.
-  const targetRelief = keys[' '] ? 0.02 : 1;
+  const targetRelief = keyboard.isDown(' ') ? 0.02 : 1;
   const reliefBefore = renderer.relief;
   renderer.relief += (targetRelief - renderer.relief) * Math.min(1, dt * 10);
   if (Math.abs(targetRelief - renderer.relief) < 0.002) renderer.relief = targetRelief;

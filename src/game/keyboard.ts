@@ -1,0 +1,117 @@
+// keyboard.ts
+// Die Tastatur: welche Tasten gehalten werden (WASD, Pfeile, Leertaste - die
+// fragt die Spielschleife je Bild ab) und die Tastenbelegung als Tabelle.
+// Was eine Taste im Spiel tut, liefert main.ts als KeyCommands.
+//
+// Reihenfolge: F10 (Menü) geht immer; bei offenem Menü nur Esc und M, im
+// Hauptmenü nur M; F3 hält an. Danach die Spieltasten.
+
+import { BUILDING_ORDER, BUILDINGS, VILLAGER, type BuildingType } from '../world/catalog';
+
+/** Was die Tasten im Spiel auslösen. */
+export interface KeyCommands {
+  isMenuOpen(): boolean;
+  isTitleOpen(): boolean;
+  /** Menü auf oder zu (F10). */
+  toggleMenu(): void;
+  closeMenu(): void;
+  togglePause(): void;
+  toggleSound(): void;
+  /** Eine Zoomstufe hinein (+1) oder hinaus (-1). */
+  zoom(step: 1 | -1): void;
+  /** Esc im Spiel: Untermenü zu, Baumodus aus, sonst Auswahl aufheben. */
+  cancel(): void;
+  demolish(): void;
+  /** Zum (nächsten) Hauptgebäude springen. */
+  home(): void;
+  toggleHelp(): void;
+  toggleDebug(): void;
+  /** Untätige: alle oder einzeln reihum. */
+  selectIdle(all: boolean): void;
+  train(count: number): void;
+  /** Ist das Untermenü der Felder offen? Dann wählen Ziffern die Frucht. */
+  farmsOpen(): boolean;
+  /** Frucht Nummer `index` (0, 1, ...) im Untermenü der Felder. */
+  chooseCrop(index: number): void;
+  /** Taste eines Gebäudes im Baumenü. */
+  build(type: BuildingType): void;
+}
+
+export class Keyboard {
+  private held = new Set<string>();
+
+  constructor(private commands: KeyCommands) {
+    window.addEventListener('keydown', (e) => this.down(e));
+    window.addEventListener('keyup', (e) => this.held.delete(e.key.toLowerCase()));
+  }
+
+  /** Wird die Taste gerade gehalten? Kleinbuchstaben bzw. KeyboardEvent.key in klein ('arrowup', ' '). */
+  isDown(...keys: string[]): boolean {
+    return keys.some((k) => this.held.has(k));
+  }
+
+  private down(e: KeyboardEvent) {
+    const c = this.commands;
+    const key = e.key.toLowerCase();
+    // F10 wie in AoE2: Menü.
+    if (e.key === 'F10') {
+      e.preventDefault();
+      c.toggleMenu();
+      return;
+    }
+    // Menü offen: keine Spieltasten - nur Esc, und der Ton (M), dessen Schalter dort steht.
+    if (c.isMenuOpen()) {
+      if (e.key === 'Escape') c.closeMenu();
+      if (key === 'm') c.toggleSound();
+      return;
+    }
+    // Im Hauptmenü gibt es noch nichts zu steuern - nur den Ton.
+    if (c.isTitleOpen()) {
+      if (key === 'm') c.toggleSound();
+      return;
+    }
+    // F3 wie in AoE2: Pause.
+    if (e.key === 'F3') {
+      e.preventDefault();
+      c.togglePause();
+      return;
+    }
+    this.held.add(key);
+    if (e.key === ' ') {
+      // Leertaste gedrückt halten legt das Gelände flach (Spielschleife). Sonst
+      // scrollt die Seite oder ein fokussierter Knopf wird ausgelöst - bei
+      // Knöpfen erst beim Loslassen, darum auch der Fokus weg.
+      e.preventDefault();
+      (document.activeElement as HTMLElement | null)?.blur();
+    }
+    this.gameKey(e, key);
+  }
+
+  /** Die Spieltasten - wie in AoE2, wo es sie dort gibt. */
+  private gameKey(e: KeyboardEvent, key: string) {
+    const c = this.commands;
+    switch (key) {
+      case 'e': c.zoom(1); break;
+      case 'q': c.zoom(-1); break;
+      case 'escape': c.cancel(); break;
+      case 'delete': case 'backspace': c.demolish(); break;
+      // H wie in AoE2 - "Home".
+      case 'h': c.home(); break;
+      case 'm': c.toggleSound(); break;
+      // I: Tastenhilfe (Info), P: Entwickler-Infos (Programmierer).
+      case 'i': c.toggleHelp(); break;
+      case 'p': c.toggleDebug(); break;
+      // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
+      case '.': case ':': c.selectIdle(!e.shiftKey); break;
+      case VILLAGER.key: c.train(e.shiftKey ? 5 : 1); break;
+    }
+    // Ziffern: im Untermenü der Felder die Frucht, sonst ein Gebäude.
+    if (c.farmsOpen()) {
+      const digit = Number(e.key);
+      if (digit >= 1) c.chooseCrop(digit - 1);
+      return;
+    }
+    const type = BUILDING_ORDER.find((t) => BUILDINGS[t].key === e.key);
+    if (type) c.build(type);
+  }
+}
