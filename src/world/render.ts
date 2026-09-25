@@ -49,6 +49,12 @@ export function worldInstances(
 
   ruinInstances(world, x0, y0, x1, y1, out, blend);
   const armory = world.armoryStock();
+  // Bognereien: wie weit der Bogen auf der Werkbank ist - nur solange der
+  // Bogner daran arbeitet (sein Holz liegt auf der Bank), sonst ist sie leer.
+  const crafting = new Map<string, number>();
+  for (const v of world.villagers) {
+    if (v.task.kind === 'craft' && v.task.step === 'carve' && v.carryType !== 'wood') crafting.set(v.task.building, v.task.progress);
+  }
 
   for (const building of world.allBuildings()) {
     if (building.x < x0 || building.x > x1 || building.y < y0 || building.y > y1) continue;
@@ -82,6 +88,7 @@ export function worldInstances(
       alpha: 1,
       // Jede Mühle dreht in ihrem eigenen Takt; Felder zeigen Wuchs und Rest.
       motion: def.model === SHAPE.mill ? millMotion(building.x, building.y)
+        : def.model === SHAPE.bowyer ? [BUILDING_HEADING, crafting.get(building.anchor) ?? -1, 0, 0]
         : armory.has(building.anchor) && modelStockSlots(building.model) > 0
           ? armoryMotion(building.model, armory.get(building.anchor)!, def.weaponCapacity,
               building.anchor === hovered || !!selection?.buildings.has(building.anchor))

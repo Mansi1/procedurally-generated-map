@@ -1022,15 +1022,25 @@ function bowyer() {
   }
   box('Bench.Rail', 'Wood', [BX0 + 0.1, BX1 - 0.1], [0.3, 0.36], [(BZ0 + BZ1) / 2 - 0.03, (BZ0 + BZ1) / 2 + 0.03]);
   box('Bench.Vise', 'WoodDark', [BX0 + 0.05, BX0 + 0.2], [BY, BY + 0.12], [BZ0 + 0.1, BZ1 - 0.1]);
-  // Stave: a gentle arc along the bench, thicker in the middle.
-  // Der Stab liegt längs, im Bankhaken (Vise) am linken Ende eingespannt; am
-  // rechten Ende steht der Bogner und zieht das Zugmesser in Faserrichtung.
-  const staveAt = (t) => [BX0 - 0.25 + t * (BX1 - BX0 + 0.3), BY + 0.05 + 0.05 * (1 - (2 * t - 1) ** 2), (BZ0 + BZ1) / 2];
-  for (let i = 0; i < 6; i++) {
-    const t0 = i / 6, t1 = (i + 1) / 6;
-    const w = (t) => 0.03 + 0.03 * (1 - Math.abs(2 * t - 1));
-    beam('Stave.Work', 'WoodLight', staveAt(t0), staveAt(t1), w(t0), { w1: w(t1) });
+  // Auf der Bank, im Bankhaken (Vise) am linken Ende eingespannt: was gerade
+  // entsteht, in drei Stufen ('Craft.<n>') - das Spiel zeigt die zum
+  // Fortschritt des Bogners passende (P_CRAFT), ohne Bogner an der Bank keine.
+  // Am rechten Ende steht der Bogner und zieht das Zugmesser in Faserrichtung.
+  const [SX0, SX1] = [BX0 - 0.2, BX1 + 0.08];
+  const SZ = (BZ0 + BZ1) / 2;
+  const along = (t) => SX0 + t * (SX1 - SX0);
+  // 0: grob behauen - ein kantiger heller Stab, oben noch ein Streifen Rinde.
+  box('Craft.0', 'WoodLight', [SX0, SX1], [BY, BY + 0.08], [SZ - 0.045, SZ + 0.045]);
+  box('Craft.0.Bark', 'Bark', [SX0 + 0.1, SX1 - 0.3], [BY + 0.08, BY + 0.09], [SZ - 0.03, SZ + 0.03]);
+  // 1: ausgearbeitet - in der Mitte dick, zu den Enden schlank, leicht gebogen.
+  const staveAt = (t) => [along(t), BY + 0.04 + 0.04 * (1 - (2 * t - 1) ** 2), SZ];
+  for (let i = 0; i < 8; i++) {
+    const t0 = i / 8, t1 = (i + 1) / 8;
+    const w = (t) => 0.025 + 0.035 * (1 - Math.abs(2 * t - 1));
+    beam('Craft.1', 'WoodLight', staveAt(t0), staveAt(t1), w(t0), { w1: w(t1) });
   }
+  // 2: fertig und gespannt, flach auf der Bank.
+  bow(m, [(SX0 + SX1) / 2, BY + 0.04, SZ + 0.05], [1, 0, 0], [0, 0, -1], SX1 - SX0, 0.16, 'Craft.2', 1.4);
   for (let i = 0; i < 14; i++) {
     const a = i * 2.3, r = 0.2 + (i % 5) * 0.12;
     const x = 0.85 + Math.cos(a) * r * 1.3, z = 1.0 + Math.sin(a) * r * 0.8;

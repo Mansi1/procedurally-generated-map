@@ -82,7 +82,8 @@ function withWorker(label: string, shape: number, size: number, female: boolean,
   return {
     label,
     draw: (t, x, y, out) => {
-      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: 1 });
+      // Auf der Bank entsteht in 12 s ein Bogen, dann von vorn (siehe P_CRAFT).
+      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: 1, motion: [BUILDING_HEADING, loop(t, 12), 0, 0] });
       const spot = modelWorkSpot(shape, x - 0.5, y - 0.5, size, BUILDING_HEADING);
       if (!spot) return;
       out.push({

@@ -298,6 +298,13 @@ export const BUILDING_HEADING = 0.5;
 /** Wo die Pflanzen ansetzen, in Metern (SOIL in tools/models/farmsGen.mjs). */
 const FIELD_SOIL_METERS = '0.02';
 
+/**
+ * Stufen des Werkstücks auf der Werkbank der Bognerei (Objekte "Craft.0" bis
+ * "Craft.2" in tools/models/buildings.mjs): grob behauen, ausgearbeitet,
+ * gespannter Bogen.
+ */
+export const CRAFT_STAGES = 3;
+
 /** Waffenkammer offen: so hoch (Meter) bleiben die Wände stehen (siehe P_CUT_WALL). */
 const ARMORY_CUT_METERS = '1.1';
 
@@ -528,6 +535,10 @@ const int P_EDGE = 22;
 const int P_CUT_ROOF = 28;
 const int P_STOCK = 29;
 const int P_CUT_WALL = 30;
+// Bognerei: was auf der Werkbank entsteht, in ${CRAFT_STAGES} Stufen (Objekte
+// "Craft.<n>") - je Stufe ihre Nummer im Nachkomma-Teil. Zu sehen ist die
+// zum Fortschritt (aMotion.y, 0..1) passende; aMotion.y < 0: die Bank ist leer.
+const int P_CRAFT = 32;
 
 
 // Dreht p in der Ebene aus Blickrichtung (x) und Höhe (z) um ein Gelenk an
@@ -892,6 +903,11 @@ void main() {
     }
 
     if (part == P_STOCK && (aCorner.w - 29.0) / 0.45 >= aMotion.y) p = vec3(0.0);
+    if (part == P_CRAFT) {
+      float own = floor((aCorner.w - 32.0) / 0.45 * ${CRAFT_STAGES}.0);
+      float now = floor(clamp(aMotion.y, 0.0, 0.999) * ${CRAFT_STAGES}.0);
+      if (aMotion.y < 0.0 || own != now) p = vec3(0.0);
+    }
     if (part == P_CUT_ROOF && aMotion.z > 0.5) p = vec3(0.0);
     // Offen: die Wände nur bis gut einen Meter hoch - man schaut hinein.
     if (part == P_CUT_WALL && aMotion.z > 0.5) p.z = min(p.z, ${ARMORY_CUT_METERS} / uMeters);
@@ -1670,6 +1686,8 @@ const PARTS: [prefix: string, part: number][] = [
   ['Cut.Roof', 28],
   ['Stock', 29],
   ['Cut.Wall', 30],
+  // Werkstück der Bognerei (siehe P_CRAFT).
+  ['Craft', 32],
 ];
 
 /** Materialien, die zur Laufzeit gefärbt werden - aMaterial.w im Shader. */
@@ -1768,6 +1786,11 @@ interface Model {
 }
 
 /** Nummer einer Beere aus ihrem Objektnamen ("Berry.12.Shine" -> 12). */
+/** Stufe eines Werkstücks ("Craft.2.Grip": 2), siehe P_CRAFT. */
+function craftStage(object: string): number {
+  return Number(/^Craft\.(\d+)/.exec(object)?.[1] ?? 0);
+}
+
 /** Nummer eines Bogens im Vorrat ("Stock.7.Grip": 7), siehe P_STOCK. */
 function stockNumber(object: string): number {
   return Number(/^Stock\.(\d+)/.exec(object)?.[1] ?? 0);
@@ -1987,6 +2010,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       const partValue = part === 14 ? 14 + berryRandom(berryNumber(t.object)) * 0.45
         // Bögen im Vorrat: ihre Reihenfolge, die Mitte ihres Anteils.
         : part === 29 ? 29 + ((stockNumber(t.object) + 0.5) / stockSlots) * 0.45
+        // Werkstück: seine Stufe, die Mitte ihres Anteils.
+        : part === 32 ? 32 + ((craftStage(t.object) + 0.5) / CRAFT_STAGES) * 0.45
         // Feldpflanzen: ihre Reihenfolge beim Ernten, siehe P_CROP.
         : part === 20 || part === 21 ? part + furrowValue(t.object)
         // Schnur an einer Tile-Kante, siehe P_EDGE.
