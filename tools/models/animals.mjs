@@ -184,14 +184,16 @@ function boar() {
   m.box('Body.Hind', 'Boar', [-0.17, 0.17], [0.32, 0.66], [-0.66, -0.3], { r: 0.35 });
   m.box('Body.Mane', 'BoarDark', [-0.05, 0.05], [0.76, 0.9], [-0.25, 0.38], { r: 0.3, z: [-0.15, 0.3] });
   m.beam('Body.Tail', 'BoarDark', [0, 0.6, -0.67], [0, 0.42, -0.72], 0.03, { w1: 0.02 });
-  // Head: a wedge down to the snout - it dips to root in the ground.
-  m.box('Head.Skull', 'Boar', [-0.15, 0.15], [0.36, 0.72], [0.34, 0.6], { r: 0.3, x: [-0.1, 0.1] });
-  m.box('Head.Face', 'BoarDark', [-0.09, 0.09], [0.34, 0.56], [0.58, 0.8], { r: 0.3, x: [-0.06, 0.06] });
-  m.box('Head.Snout', 'Snout', [-0.06, 0.06], [0.36, 0.46], [0.8, 0.83], { r: 0.4 });
+  // Short, thick neck, then the head as a wedge down to the snout - both dip
+  // together to root in the ground.
+  m.beam('Head.Neck', 'Boar', [0, 0.58, 0.26], [0, 0.56, 0.5], 0.3, { w1: 0.24, n: 8 });
+  m.box('Head.Skull', 'Boar', [-0.15, 0.15], [0.36, 0.72], [0.44, 0.7], { r: 0.3, x: [-0.1, 0.1] });
+  m.box('Head.Face', 'BoarDark', [-0.09, 0.09], [0.34, 0.56], [0.68, 0.9], { r: 0.3, x: [-0.06, 0.06] });
+  m.box('Head.Snout', 'Snout', [-0.06, 0.06], [0.36, 0.46], [0.9, 0.93], { r: 0.4 });
   for (const s of [-1, 1]) {
-    m.box('Head.Eye', 'Eye', [s * 0.1 - 0.012, s * 0.1 + 0.012], [0.58, 0.605], [0.56, 0.59]);
-    m.beam('Head.Ear', 'BoarDark', [s * 0.09, 0.7, 0.42], [s * 0.15, 0.82, 0.38], 0.07, { w1: 0.02 });
-    m.beam('Head.Tusk', 'Tusk', [s * 0.06, 0.4, 0.74], [s * 0.1, 0.5, 0.78], 0.025, { w1: 0.008 });
+    m.box('Head.Eye', 'Eye', [s * 0.1 - 0.012, s * 0.1 + 0.012], [0.58, 0.605], [0.66, 0.69]);
+    m.beam('Head.Ear', 'BoarDark', [s * 0.09, 0.7, 0.52], [s * 0.15, 0.82, 0.48], 0.07, { w1: 0.02 });
+    m.beam('Head.Tusk', 'Tusk', [s * 0.06, 0.4, 0.84], [s * 0.1, 0.5, 0.88], 0.025, { w1: 0.008 });
   }
   for (const [name, x, z] of [['FL', 0.11, 0.26], ['FR', -0.11, 0.26], ['BL', 0.11, -0.5], ['BR', -0.11, -0.5]]) {
     m.beam(`Leg.${name}`, 'Boar', [x, 0.48, z], [x, 0.18, z], 0.1, { w1: 0.06 });
