@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "gen:models": "node tools/models/villagers.mjs && node tools/models/buildings.mjs && node tools/models/bushes.mjs && node tools/models/trees.mjs && node tools/models/rocks.mjs && node tools/models/animals.mjs",
     "gen:ui": "node tools/ui/icons.mjs && node tools/ui/wood-bar.mjs",
-    "smoke": "node tools/ui/smoke.mjs"
+    "smoke": "node tools/ui/smoke.mjs",
+    "export:bognerei": "node tools/export/bognerei.mjs && node tools/export/bognerei.mjs frau"
   },
   "devDependencies": {
     "defuss-vite": "^1.2.1",

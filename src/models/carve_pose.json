@@ -1,0 +1,6 @@
+{
+  "_": "Schnitzen mit dem Zugmesser (Pose 5): Winkel in Radiant, ausgestreckt (Hände weit vorn am Stab) und herangezogen (Hände am Stabende), jeweils auf Stabhöhe - so ausgerechnet, dass die Hände auf dem Stab liegen. Der Shader (entityRenderer.ts) blendet dazwischen über; tools/export/bognerei.mjs rechnet damit die Animation für Blender. shoulder: Schulter nach vorn, elbow: Ellbogen, lean: Oberkörper vor.",
+  "extended": { "shoulder": 1.14, "elbow": 1.08, "lean": 0.5 },
+  "pulled": { "shoulder": 0.26, "elbow": 1.88, "lean": 0.3 },
+  "inspect": { "shoulder": 0.3, "elbow": 0.3, "lean": -0.3 }
+}

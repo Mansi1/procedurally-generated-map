@@ -12,6 +12,7 @@ import type { RGB } from '../functions/Color';
 import { PROJECT_GLSL, cameraDirection, setCameraUniforms, type GpuCamera } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
 import MOW from '../models/mow_pose.json';
+import CARVE from '../models/carve_pose.json';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
@@ -730,19 +731,20 @@ void main() {
           lift = sin(cyc * 3.1415927);
           pull = 0.4;
         }
-        // Tief über den Stab gebeugt, die Hände auf Stabhöhe (gut 0.9 m):
-        // vorn fast gestreckt, beim Zug mit angewinkelten Ellbogen am Bauch.
+        // Über den Stab gebeugt, die Hände auf dem Stab: vorn weit vorgestreckt,
+        // beim Zug am Stabende (carve_pose.json - so ausgerechnet, dass sie
+        // auf Stabhöhe bleiben), beim Prüfen gehoben.
         hipL = 0.18;
         hipR = -0.12;
         kneeL = -0.32 - 0.1 * pull;
         kneeR = -0.26 - 0.1 * pull;
-        shL = 0.25 - 0.35 * pull + 0.5 * lift;
+        shL = mix(${CARVE.extended.shoulder.toFixed(3)}, ${CARVE.pulled.shoulder.toFixed(3)}, pull) + ${CARVE.inspect.shoulder.toFixed(3)} * lift;
         shR = shL;
-        elL = 0.15 + 0.95 * pull + 0.4 * lift;
+        elL = mix(${CARVE.extended.elbow.toFixed(3)}, ${CARVE.pulled.elbow.toFixed(3)}, pull) + ${CARVE.inspect.elbow.toFixed(3)} * lift;
         elR = elL;
         inL = 0.22;
         inR = 0.22;
-        lean = 0.52 - 0.15 * pull - 0.3 * lift;
+        lean = mix(${CARVE.extended.lean.toFixed(3)}, ${CARVE.pulled.lean.toFixed(3)}, pull) + ${CARVE.inspect.lean.toFixed(3)} * lift;
         // Mal etwas weiter links, mal rechts am Stab.
         twist = 0.06 * sin(k * 1.7);
         bob = -0.04 - 0.02 * pull;

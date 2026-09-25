@@ -26,3 +26,6 @@ dist-ssr
 # L-System-Export (tools/lsystem/export.ts)
 tools/lsystem/out
 tools/lsystem/leaves/.cache
+
+# Blender-Export der Bognerei (tools/export/bognerei.mjs)
+tools/export/out
