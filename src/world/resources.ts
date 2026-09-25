@@ -7,7 +7,7 @@
 
 import type { EntityInstance } from '../gl/entityRenderer';
 import { SHAPE, TREES, modelSize } from '../gl/entityRenderer';
-import type { TileProbe } from '../map';
+import type { Terrain } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
 import type { GatherType } from './catalog';
 import type { ViewRect, World } from './world';
@@ -125,7 +125,7 @@ function hash(x: number, y: number, channel: number): number {
 export class ResourceField {
   private chunks = new Map<string, ResourceNode[]>();
 
-  constructor(private probe: TileProbe, private mapGen: MapGenerator) {}
+  constructor(private terrain: Terrain, private mapGen: MapGenerator) {}
 
   /**
    * Vorkommen, deren Objekt am Bildschirmpunkt liegt: `hit` bekommt je
@@ -162,7 +162,7 @@ export class ResourceField {
 
   /** Baum- oder Strauchart auf Tile (x, y), z. B. "Eiche" - sonst undefined. */
   kindAt(x: number, y: number): string | undefined {
-    const found = this.probe.resourceAt(x, y);
+    const found = this.terrain.resourceAt(x, y);
     if (found.type === 'none') return undefined;
     return KIND_LABEL[shapeAt(x, y, found.type as GatherType, found.height)];
   }
@@ -209,7 +209,7 @@ export class ResourceField {
     const nodes: ResourceNode[] = [];
     for (let y = cy * CHUNK; y < (cy + 1) * CHUNK; y++) {
       for (let x = cx * CHUNK; x < (cx + 1) * CHUNK; x++) {
-        const found = this.probe.resourceAt(x, y);
+        const found = this.terrain.resourceAt(x, y);
         if (found.type === 'none' || found.amount <= 0) continue;
         const look = LOOK[found.type as GatherType];
         // Etwas Streuung, damit ein Wald nicht aus lauter gleichen Bäumen

@@ -278,12 +278,11 @@ export const TERRAIN_PALETTE = {
 };
 
 /**
- * Erzeugt einzelne Tiles für die Anzeige unter dem Mauszeiger. Das Bild kommt
- * seit der Umstellung auf WebGL aus dem Shader; ein Chunk-Cache wird dafür
- * nicht mehr gebraucht. Ein Tile kostet ein paar Mikrosekunden, und gebraucht
- * wird es einmal pro Mausbewegung.
+ * Das Gelände für die Spiel-Logik: je Tile Geländeart, Höhe, Feuchte und das
+ * Vorkommen, das der Generator dort hinlegt. Das Bild kommt aus dem Shader;
+ * hier wird ein Tile bei Bedarf berechnet - ein paar Mikrosekunden, ohne Cache.
  */
-export class TileProbe {
+export class Terrain {
   private resourceNoise: FractalNoise;
   private clusterNoise: SimplexNoise;
 

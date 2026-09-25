@@ -8,7 +8,7 @@ import { findPath, lineOfSight } from './pathfinding';
 import { uniqueName } from './names';
 import type { EntityInstance } from '../gl/entityRenderer';
 import { ANIMAL_POSE, BUILDING_HEADING, FALL_LYING, POSE, SHAPE, buildingHeading, frozenMillMotion, millMotion, modelEntry } from '../gl/entityRenderer';
-import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type TileProbe } from '../map';
+import { RESOURCE_TYPE_COLORS, RESOURCE_TYPE_LABEL, type Terrain } from '../map';
 import { reliefZ } from '../noise';
 import {
   ANIMALS,
@@ -308,7 +308,7 @@ export class World {
    */
   groundAt: ((x: number, y: number) => number) | null = null;
 
-  constructor(private probe: TileProbe, private seed: string) {
+  constructor(private terrain: Terrain, private seed: string) {
     this.load();
   }
 
@@ -430,7 +430,7 @@ export class World {
     for (const v of this.villagers) {
       if (v.task.kind === 'gather' && v.task.x === x && v.task.y === y) gatherers++;
     }
-    const total = bushTotal ?? this.probe.getTile(x, y).resourceAmount;
+    const total = bushTotal ?? this.terrain.getTile(x, y).resourceAmount;
     const remaining = bushTotal !== undefined ? Math.max(0, total - (this.harvested.get(k) ?? 0)) : found.amount;
     return {
       type: bushTotal !== undefined ? 'berries' : found.type!,
@@ -459,7 +459,7 @@ export class World {
   remainingAt(x: number, y: number): { type: GatherType | null; amount: number } {
     const k = key(x, y);
     if (this.exhausted.has(k)) return { type: null, amount: 0 };
-    const tile = this.probe.getTile(x, y);
+    const tile = this.terrain.getTile(x, y);
     if (tile.resource === 'none' || tile.resourceAmount <= 0) return { type: null, amount: 0 };
     return {
       type: tile.resource as GatherType,
@@ -623,7 +623,7 @@ export class World {
 
     for (const [tx, ty] of this.footprintTiles(x, y, type)) {
       if (this.occupied.has(key(tx, ty))) return 'Hier steht schon etwas';
-      const tile = this.probe.getTile(tx, ty);
+      const tile = this.terrain.getTile(tx, ty);
       if (!def.terrain.includes(tile.tileType)) return `${def.label} braucht festen Boden`;
     }
 
@@ -645,7 +645,7 @@ export class World {
     if (this.occupied.has(k)) return false;
     let soil = this.sowableTiles.get(k);
     if (soil === undefined) {
-      const tile = this.probe.getTile(x, y);
+      const tile = this.terrain.getTile(x, y);
       soil = !BUILDINGS.farm.terrain.includes(tile.tileType) ? 0 : tile.resource === 'none' ? 1 : tile.resource === 'berries' ? 0 : 2;
       if (this.sowableTiles.size > 50_000) this.sowableTiles.clear();
       this.sowableTiles.set(k, soil);
@@ -664,7 +664,7 @@ export class World {
     let hi = -Infinity;
     for (let cy = y - r; cy <= y + r + 1; cy++) {
       for (let cx = x - r; cx <= x + r + 1; cx++) {
-        const z = reliefZ(this.probe.getTile(cx, cy).height);
+        const z = reliefZ(this.terrain.getTile(cx, cy).height);
         lo = Math.min(lo, z);
         hi = Math.max(hi, z);
       }
@@ -727,7 +727,7 @@ export class World {
         vz: def.size * (1.2 + Math.random() * 1.6),
         size: def.size * (0.12 + Math.random() * 0.14),
         heading: Math.random() * Math.PI * 2,
-        ground: reliefZ(this.probe.getTile(Math.floor(cx + dx), Math.floor(cy + dy)).height),
+        ground: reliefZ(this.terrain.getTile(Math.floor(cx + dx), Math.floor(cy + dy)).height),
       });
     }
     this.ruins.push({
@@ -750,7 +750,7 @@ export class World {
       this.dirty = true;
       return null;
     }
-    const tile = this.probe.getTile(x, y);
+    const tile = this.terrain.getTile(x, y);
     if (tile.tileType === 'water' || tile.tileType === 'deep_water') return 'Dorfbewohner können nicht schwimmen';
     building.setRallyPoint({ x, y });
     this.dirty = true;
@@ -828,7 +828,7 @@ export class World {
       return null;
     }
 
-    const tile = this.probe.getTile(x, y);
+    const tile = this.terrain.getTile(x, y);
     if (tile.tileType === 'water' || tile.tileType === 'deep_water') return 'Dorfbewohner können nicht schwimmen';
 
     // Mehrere Dorfbewohner stellen sich im Kreis um das Ziel, statt alle auf
@@ -900,7 +900,7 @@ export class World {
     if (anchor !== undefined) return !this.buildings.get(anchor)?.isFarm();
     let t = this.terrainBlock.get(k);
     if (t === undefined) {
-      const found = this.probe.resourceAt(x, y);
+      const found = this.terrain.resourceAt(x, y);
       t = found.tileType === 'water' || found.tileType === 'deep_water' ? 1
         : found.type === 'wood' || found.type === 'stone' || found.type === 'gold' ? 2 : 0;
       if (this.terrainBlock.size > 200_000) this.terrainBlock.clear();
@@ -1332,7 +1332,7 @@ export class World {
     const k = key(x, y);
     const anchor = this.occupied.get(k);
     if (anchor !== undefined && !this.buildings.get(anchor)?.isFarm()) return true;
-    const tile = this.probe.getTile(x, y);
+    const tile = this.terrain.getTile(x, y);
     return tile.tileType === 'water' || tile.tileType === 'deep_water' || tile.tileType === 'mountain' || tile.tileType === 'snow';
   }
 
@@ -1364,7 +1364,7 @@ export class World {
     for (let tries = 0; tries < 16; tries++) {
       const x = cx * ANIMAL_CHUNK + Math.floor(hash01(cx, cy, seed + 10 + tries) * ANIMAL_CHUNK);
       const y = cy * ANIMAL_CHUNK + Math.floor(hash01(cx, cy, seed + 40 + tries) * ANIMAL_CHUNK);
-      const tile = this.probe.getTile(x, y);
+      const tile = this.terrain.getTile(x, y);
       if ((tile.tileType !== 'grass' && tile.tileType !== 'forest') || tile.resource !== 'none' || this.occupied.has(key(x, y))) continue;
       const count = def.herd[0] + Math.floor(hash01(cx, cy, seed + 80) * (def.herd[1] - def.herd[0] + 1));
       for (let i = 0; i < count; i++) {
@@ -1651,7 +1651,7 @@ export class World {
         const felled = task.type === 'wood' ? this.felled.get(key(task.x, task.y)) : undefined;
         const length = felled ? this.treeLength?.(task.x, task.y) : undefined;
         if (felled && length) {
-          const total = this.probe.getTile(task.x, task.y).resourceAmount;
+          const total = this.terrain.getTile(task.x, task.y).resourceAmount;
           const share = Math.max(0, Math.min(1, found.amount / total));
           // In Sprüngen von STEP Tiles: so geht er ab und zu ein paar Schritte
           // weiter, statt dem kürzer werdenden Stamm hinterherzurutschen.
@@ -1898,7 +1898,7 @@ export class World {
       }
 
       // Schutt fliegt im Bogen hinaus und bleibt liegen.
-      const ground = reliefZ(this.probe.getTile(ruin.x, ruin.y).height);
+      const ground = reliefZ(this.terrain.getTile(ruin.x, ruin.y).height);
       const tf = Math.min(t, RUIN_FLIGHT);
       for (const d of ruin.debris) {
         const along = tf / RUIN_FLIGHT;
@@ -1986,7 +1986,7 @@ export class World {
     for (const [k, amount] of Object.entries(scale === 1 ? data.harvested ?? {} : {})) {
       this.harvested.set(k, amount);
       const comma = k.indexOf(',');
-      const tile = this.probe.getTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1)));
+      const tile = this.terrain.getTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1)));
       if (amount >= tile.resourceAmount) this.exhausted.add(k);
       // Wann zuletzt gepflückt wurde, steht nicht im Speicherstand - die
       // Pause beginnt beim Laden von vorn.

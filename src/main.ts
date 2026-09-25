@@ -16,7 +16,7 @@ import {
   MiniMap,
   RESOURCE_TYPE_LABEL,
   TILE_TYPE_LABEL,
-  TileProbe,
+  Terrain,
 } from './map';
 import type { EntityInstance } from './gl/entityRenderer';
 import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
@@ -116,8 +116,8 @@ if (window.location.pathname !== '/' || window.location.search) window.history.r
 
 const seed = currentSeed();
 const mapGen = new MapGenerator(seed);
-const probe = new TileProbe(mapGen, seed);
-const world = new World(probe, seed);
+const terrain = new Terrain(mapGen, seed);
+const world = new World(terrain, seed);
 
 /**
  * Wo es losgeht: beim ersten Hauptgebäude, in der Standardwelt bei
@@ -129,7 +129,7 @@ function startPoint(): { x: number; y: number } {
   if (home) return { x: home.x, y: home.y };
   if (seed === DEFAULT_SEED) return DEFAULT_START;
   const solid = (x: number, y: number) => {
-    const t = probe.getTile(x, y).tileType;
+    const t = terrain.getTile(x, y).tileType;
     return t !== 'water' && t !== 'deep_water' && t !== 'mountain' && t !== 'snow';
   };
   for (let r = 0; r <= 600; r += 3) {
@@ -138,7 +138,7 @@ function startPoint(): { x: number; y: number } {
       const a = (i / steps) * Math.PI * 2;
       const x = Math.round(Math.cos(a) * r);
       const y = Math.round(Math.sin(a) * r);
-      if (probe.getTile(x, y).tileType !== 'grass') continue;
+      if (terrain.getTile(x, y).tileType !== 'grass') continue;
       // Genug Platz für ein Dorf: ringsum im Abstand von 5 Tiles kein Wasser, kein Fels.
       if ([[5, 0], [-5, 0], [0, 5], [0, -5], [4, 4], [-4, 4], [4, -4], [-4, -4]].every(([dx, dy]) => solid(x + dx, y + dy))) {
         return { x, y };
@@ -152,7 +152,7 @@ const { x: startX, y: startY } = startPoint();
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 // Mit derselben Feinheit wie das Geländegitter der jetzigen Zoomstufe (wie zAt).
 world.groundAt = (x, y) => flatten(x, y, reliefZ(mapGen.heightAt(x, y, 4 / (tileSize * pixelRatio))), flatZones);
-const resources = new ResourceField(probe, mapGen);
+const resources = new ResourceField(terrain, mapGen);
 const sound = new Sound();
 /** Hintergrundmusik aus assets/music/ - der Ton-Schalter (M) gilt auch für sie. */
 const music = new Music();
@@ -1393,7 +1393,7 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
 
   cursorCoordsEl.textContent = `${mouseTileX}, ${mouseTileY}`;
 
-  const info = probe.getTile(mouseTileX, mouseTileY);
+  const info = terrain.getTile(mouseTileX, mouseTileY);
   tileInfoEl.textContent =
     `${TILE_TYPE_LABEL[info.tileType]} | h ${info.height.toFixed(2)}` +
     ` | Feuchte ${info.moisture.toFixed(2)} | Temp ${info.temperature.toFixed(2)}`;

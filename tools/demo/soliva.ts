@@ -4,7 +4,7 @@
 // Aufruf: npx vite-node tools/demo/soliva.ts - schreibt public/demo-soliva.json.
 import fs from 'node:fs';
 import { MapGenerator } from '../../src/noise';
-import { TileProbe } from '../../src/map';
+import { Terrain } from '../../src/map';
 import { World } from '../../src/world/world';
 import { VILLAGER, type BuildingType } from '../../src/world/catalog';
 
@@ -18,8 +18,8 @@ const store = new Map<string, string>();
 
 const seed = 'Soliva';
 const mapGen = new MapGenerator(seed);
-const probe = new TileProbe(mapGen, seed);
-const world = new World(probe, seed);
+const terrain = new Terrain(mapGen, seed);
+const world = new World(terrain, seed);
 world.stock = { wood: 99999, stone: 99999, gold: 99999, berries: 99999 };
 
 function spiral(cx: number, cy: number, maxR: number, test: (x: number, y: number) => boolean) {
@@ -31,7 +31,7 @@ function spiral(cx: number, cy: number, maxR: number, test: (x: number, y: numbe
   }
   return null;
 }
-const res = (x: number, y: number) => probe.getTile(x, y).resource;
+const res = (x: number, y: number) => terrain.getTile(x, y).resource;
 /** Nahe `near`, aber nicht auf dem Vorkommen selbst - mindestens `gap` Tiles daneben. */
 const place = (type: BuildingType, near: { x: number; y: number }, r = 14, gap = 0) => {
   const at = spiral(near.x, near.y, r, (x, y) => Math.max(Math.abs(x - near.x), Math.abs(y - near.y)) >= gap
