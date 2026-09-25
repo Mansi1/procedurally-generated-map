@@ -102,6 +102,36 @@ export function model() {
     if (uvs) uvBase += uvs.length;
   }
 
+  /**
+   * Ellipsoid around `c` with radii `r` ([x, y, z]) - for round bodies and
+   * heads. o.around/o.rings: segments (default 10 and 6); o.pitch tilts it
+   * nose-down about the x axis (radians).
+   */
+  function ellipsoid(name, mtl, c, r, o = {}) {
+    const around = o.around ?? 10;
+    const rings = o.rings ?? 6;
+    const cos = Math.cos(o.pitch ?? 0), sin = Math.sin(o.pitch ?? 0);
+    const at = ([x, y, z]) => [c[0] + x, c[1] + y * cos - z * sin, c[2] + y * sin + z * cos];
+    const vertices = [at([0, -r[1], 0])];
+    for (let i = 1; i < rings; i++) {
+      const phi = -Math.PI / 2 + (i * Math.PI) / rings;
+      for (let j = 0; j < around; j++) {
+        const theta = (j * 2 * Math.PI) / around;
+        vertices.push(at([Math.cos(theta) * Math.cos(phi) * r[0], Math.sin(phi) * r[1], Math.sin(theta) * Math.cos(phi) * r[2]]));
+      }
+    }
+    vertices.push(at([0, r[1], 0]));
+    const top = vertices.length - 1;
+    const ring = (i, j) => 1 + (i - 1) * around + (j % around);
+    const faces = [];
+    for (let j = 0; j < around; j++) {
+      faces.push([0, ring(1, j + 1), ring(1, j)]);
+      for (let i = 1; i < rings - 1; i++) faces.push([ring(i, j), ring(i, j + 1), ring(i + 1, j + 1), ring(i + 1, j)]);
+      faces.push([ring(rings - 1, j), ring(rings - 1, j + 1), top]);
+    }
+    mesh(name, mtl, vertices, faces);
+  }
+
   /** Mirror in x: '#' in the name becomes L (x > 0) / R. */
   const mx = ([a, b]) => [-b, -a];
   function pair(name, mtl, x, y, z, o = {}) {
@@ -109,6 +139,6 @@ export function model() {
     box(name.replace('#', 'R'), mtl, mx(x), y, z, o.x ? { ...o, x: mx(o.x) } : o);
   }
 
-  return { box, pair, extrude, beam, emit, mesh, out, used };
+  return { box, pair, extrude, beam, ellipsoid, emit, mesh, out, used };
 }
 
