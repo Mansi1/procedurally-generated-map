@@ -42,6 +42,7 @@ uniform float uTundraTemperature;
 uniform float uReliefHeight;
 uniform float uReliefExponent;
 uniform float uLowlandRelief;
+uniform float uLowlandShade;
 uniform float uMountainFoot;
 
 // Ebenen in der Permutations-Textur (Reihenfolge = NOISE_LAYERS)
@@ -958,7 +959,9 @@ void main() {
   float hRight = elevation((tile + vec2(step, 0.0)) * uMapScale, detailStep);
   float hDown = elevation((tile + vec2(0.0, step)) * uMapScale, detailStep);
   float shade = tanh(((height - hRight) + (height - hDown)) * uShadeGain / step);
-  color *= 1.0 + shade * (isWater ? 0.08 : mix(0.42, 0.18, sandy));
+  // Im Flachland gedämpft, sonst zeichnet sie jede kleine Welle der Wiese nach.
+  float lowland = mix(uLowlandShade, 1.0, smoothstep(uMountainFoot - 0.15, uMountainFoot, height));
+  color *= 1.0 + shade * (isWater ? 0.08 : mix(0.42, 0.18, sandy) * lowland);
 
   // Licht auf das Relief. Die Hangneigung oben ist nur ein Schattierungs-
   // effekt der Hoehenwerte; hier zaehlt die Neigung der tatsaechlich
