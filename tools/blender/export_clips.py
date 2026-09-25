@@ -73,6 +73,10 @@ def clip_entry(a):
         'props': listed(a.get('props')),
         'kneel': bool(a.get('kneel', 0)),
     }
+    # Takt-Marken: Clip-Zeiten (s) in einer Schleife, zu denen der Hieb zu
+    # hören ist (VillagerWork.swing).
+    if a.get('strike'):
+        entry['strike'] = [float(t) for t in listed(a.get('strike'))]
     # Tiere: nur für diese Arten (leer: alle), auf der Seite liegend.
     if 'species' in a:
         entry['species'] = listed(a.get('species'))

@@ -61,6 +61,9 @@ for name, action in found.items():
     action['phase_period'] = float(c['phase_period'])
     action['phase_shift'] = float(c['phase_shift'])
     action['kneel'] = 1 if c['kneel'] else 0
+    # Takt-Marken: Clip-Zeiten (s), zu denen der Hieb zu hören ist.
+    if c.get('strike'):
+        action['strike'] = ','.join(f'{t:.6f}' for t in c['strike'])
     frames = int(action.frame_range[1] - action.frame_range[0]) + 1
     if frames != c['frames']:
         raise SystemExit(f'{name}: {frames} Bilder nach dem Import, erwartet {c["frames"]}')

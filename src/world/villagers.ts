@@ -4,7 +4,8 @@
 // als kurzer Text beschreiben, was sie gerade tun. Was ein Dorfbewohner ist
 // und hat, steht in unit/Villager.ts; die Welt ruft tick() je Dorfbewohner.
 
-import { BUILDING_HEADING, POSE, modelEntry, modelWorkSpot } from '../gl/entityRenderer';
+import { BUILDING_HEADING, CLIPS, POSE, modelEntry, modelWorkSpot } from '../gl/entityRenderer';
+import type { Clip } from '../gl/clips';
 import { RESOURCE_TYPE_LABEL } from '../map';
 import { findPath, lineOfSight } from './pathfinding';
 import { furrowFood, type Building, type Farm } from './building';
@@ -29,6 +30,24 @@ function tileAngle(x: number, y: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return (((h ^ (h >>> 16)) >>> 0) / 4294967296) * Math.PI * 2;
+}
+
+/** Der Clip, der eine Pose der Dorfbewohner spielt und Takt-Marken hat - oder keiner. */
+function clipOfPose(pose: number): Clip | undefined {
+  return CLIPS.find((c) => c.pose === pose && c.strike.length > 0);
+}
+
+/**
+ * Wie viele Takt-Marken des Clips zwischen zwei Phasen (der Pose) liegen - im
+ * halboffenen Bereich (von, bis], über das Ende der Schleife hinweg.
+ */
+export function strikesBetween(clip: Clip, fromPhase: number, toPhase: number): number {
+  const loop = (clip.frames - 1) / clip.fps;
+  const a = (fromPhase - clip.phaseShift) * clip.phaseRate;
+  const b = (toPhase - clip.phaseShift) * clip.phaseRate;
+  let count = 0;
+  for (const t of clip.strike) count += Math.floor((b - t) / loop) - Math.floor((a - t) / loop);
+  return count;
 }
 
 export class VillagerWork {
@@ -305,14 +324,24 @@ export class VillagerWork {
    * ein Ereignis melden - im Takt der Animation (siehe Shader).
    */
   private swing(v: Villager, dt: number, resource: DepositType, picking: boolean) {
-    // Der Arm schlägt zu, wenn sin(Phase) sein Minimum durchläuft - genau
-    // dann soll man den Hieb hören. Pflücken ist im Shader langsamer
-    // (Phase * 0.6), das Rascheln folgt dem Griff.
+    const before = v.workTime;
+    v.workTime += dt;
+    // Der Ton kommt im Takt des Clips, der die Pose spielt: zu seinen
+    // Takt-Marken (Custom Property "strike" in Blender). Die Phase der Pose
+    // ist Arbeitszeit * WORK_TEMPO, die Clip-Zeit (Phase - shift) * rate - wie
+    // im Shader.
+    const clip = clipOfPose(v.pose);
+    if (clip) {
+      if (strikesBetween(clip, before * WORK_TEMPO, v.workTime * WORK_TEMPO) > 0) {
+        this.world.onEvent?.({ kind: 'strike', resource, x: v.x, y: v.y });
+      }
+      return;
+    }
+    // Ohne Clip die Formel: der Arm schlägt zu, wenn sin(Phase) sein Minimum
+    // durchläuft. Pflücken ist im Shader langsamer (Phase * 0.6).
     const tempo = picking ? WORK_TEMPO * 0.6 : WORK_TEMPO;
     const strikes = (time: number) => Math.floor((time * tempo - Math.PI * 1.5) / (Math.PI * 2));
-    const before = strikes(v.workTime);
-    v.workTime += dt;
-    if (strikes(v.workTime) > before) {
+    if (strikes(v.workTime) > strikes(before)) {
       this.world.onEvent?.({ kind: 'strike', resource, x: v.x, y: v.y });
     }
   }

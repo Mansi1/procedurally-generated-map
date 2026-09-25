@@ -35,11 +35,32 @@ export const CLIPS = [
   { name: 'stand', pose: 0, props: 'axe', period: 34, shift: 0, seconds: 34 },
   // Gehen: 2 s statt der raschen Spielzeit - genug Bilder für Knie und Füße (61).
   { name: 'walk', pose: 1, props: 'axe', period: Math.PI * 2, shift: 0, seconds: 2 },
-  { name: 'chop', pose: 2, props: 'axe', period: Math.PI * 2, shift: 0, seconds: (Math.PI * 2) / 6 },
-  { name: 'pick', pose: 3, props: '', period: (Math.PI * 4) / 0.6, shift: 0, seconds: (Math.PI * 4) / 0.6 / 6, kneel: true },
-  { name: 'mow', pose: 4, props: 'scythe', period: (Math.PI * 2) / 0.6, shift: 0, seconds: (Math.PI * 2) / 0.6 / 6 },
-  { name: 'carve', pose: 5, props: 'knife', period: (15 * Math.PI * 2) / 0.6, shift: 4.712389 / 0.6, seconds: (15 * Math.PI * 2) / 0.6 / 6 },
+  { name: 'chop', pose: 2, props: 'axe', period: Math.PI * 2, shift: 0, seconds: (Math.PI * 2) / 6, strikeTempo: 1 },
+  { name: 'pick', pose: 3, props: '', period: (Math.PI * 4) / 0.6, shift: 0, seconds: (Math.PI * 4) / 0.6 / 6, kneel: true, strikeTempo: 0.6 },
+  { name: 'mow', pose: 4, props: 'scythe', period: (Math.PI * 2) / 0.6, shift: 0, seconds: (Math.PI * 2) / 0.6 / 6, strikeTempo: 0.6 },
+  { name: 'carve', pose: 5, props: 'knife', period: (15 * Math.PI * 2) / 0.6, shift: 4.712389 / 0.6, seconds: (15 * Math.PI * 2) / 0.6 / 6, strikeTempo: 0.6 },
 ];
+
+/**
+ * Takt-Marken eines Clips (Custom Property `strike`): die Clip-Zeiten (s) in
+ * einer Schleife, zu denen ein Hieb bzw. Griff zu hören ist - wie
+ * VillagerWork.swing() es vor den Clips aus der Formel rechnete: der Ton kommt,
+ * wenn Phase * strikeTempo 1,5π (+ 2π k) durchläuft (Hacken im vollen Takt,
+ * Pflücken, Mähen und Schnitzen mit 0,6). `duration`: Länge der Schleife in
+ * Blender. Ohne strikeTempo (Stehen, Gehen) keine.
+ */
+export function strikeTimes(clip, duration) {
+  if (!clip.strikeTempo) return [];
+  const step = (Math.PI * 2) / clip.strikeTempo;
+  const first = (Math.PI * 1.5) / clip.strikeTempo;
+  const times = [];
+  // Erste Marke ab dem Anfang der Schleife (shift), eine Periode lang.
+  let phase = first + Math.ceil((clip.shift - first) / step - 1e-6) * step;
+  for (; phase < clip.shift + clip.period - 1e-6; phase += step) {
+    times.push(Math.max(0, ((phase - clip.shift) * duration) / clip.period));
+  }
+  return times;
+}
 
 /**
  * Gelenkwinkel einer Pose zur Phase - der Abschnitt `if (pose == …)` im

@@ -77,6 +77,11 @@ export interface Clip {
    */
   phaseRate: number;
   phaseShift: number;
+  /**
+   * Takt-Marken: Clip-Zeiten (s) in einer Schleife, zu denen ein Hieb bzw.
+   * Griff zu hören ist (Custom Property `strike` der Action) - leer: keiner.
+   */
+  strike: number[];
   /** Kniend: der Rock wird gestaucht (KNEEL_BIT). */
   kneel: boolean;
   /** Tiere: nur für diese Arten (ANIMALS-Schlüssel wie 'hare') - leer: für alle. */
@@ -106,7 +111,7 @@ interface Manifest {
   clips: {
     name: string; frames: number; duration: number; props?: string[];
     /** Aus den Custom Properties der Action (tools/blender/export_clips.py) - können fehlen. */
-    pose?: number; phase_period?: number; phase_shift?: number; kneel?: boolean;
+    pose?: number; phase_period?: number; phase_shift?: number; kneel?: boolean; strike?: number[];
     /** Tiere: nur für diese Arten (leer: alle) und ob es auf der Seite liegt. */
     species?: string[]; lying?: boolean;
   }[];
@@ -298,6 +303,7 @@ export function loadClips(glbDataUrl: string, manifest: Manifest, rig: Rig<any> 
       phaseRate: period ? meta.duration / period : 1,
       phaseShift: meta.phase_shift ?? 0,
       kneel: meta.kneel === true,
+      strike: meta.strike ?? [],
       species: meta.species ?? [],
       lying: meta.lying === true,
       grazeRef: manifest.graze ?? 0,

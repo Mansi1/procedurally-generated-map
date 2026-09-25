@@ -19,7 +19,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { CLIPS, boneRotations, pose, qAxis } from './poses.mjs';
+import { CLIPS, boneRotations, pose, qAxis, strikeTimes } from './poses.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
 const female = process.argv.includes('frau');
@@ -326,7 +326,7 @@ for (const clip of CLIPS) {
   animations.push({ name: clip.name, samplers, channels });
   sidecar.push({
     name: clip.name, pose: clip.pose, props: clip.props, phase_period: clip.period, phase_shift: clip.shift,
-    kneel: Boolean(clip.kneel), frames, duration,
+    kneel: Boolean(clip.kneel), strike: strikeTimes(clip, duration), frames, duration,
   });
 }
 
