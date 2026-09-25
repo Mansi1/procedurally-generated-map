@@ -7,7 +7,6 @@ import {
   visibleWorldRect,
   worldToGround,
   worldToScreen,
-  type IsoView,
 } from './gl/iso';
 import {
   MapRenderer,
@@ -16,7 +15,7 @@ import {
   Terrain,
 } from './map';
 import type { EntityInstance } from './gl/entityRenderer';
-import { SHAPE, TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
+import { TREES, modelSize, setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   BUILDINGS,
   ANIMALS,
@@ -27,7 +26,6 @@ import {
   YIELD,
   type DepositType,
   type ResourceKind,
-  FIELD_ROWS,
   player,
   PLAYER_COLORS,
   VILLAGER,
@@ -38,6 +36,7 @@ import { World, type Villager } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay';
 import { selectionView } from './game/selectionView';
 import type { UnitProducer } from './world/building';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
@@ -1287,37 +1286,7 @@ function invalidatePlacementCheck() {
   lastCheck.x = NaN;
 }
 
-/**
- * Minimap wie in AoE2: jedes Gebäude ein Quadrat, jede Einheit ein Punkt, in
- * der Spielerfarbe mit dunklem Rand - in fester Pixelgröße, damit man sie bei
- * jeder Zoomstufe sieht. Felder etwas blasser, sie sind groß und zahlreich.
- */
-function minimapDots(current: IsoView) {
-  minimapOverlay.length = 0;
-  const rect = minimap.viewRectOf(current);
-  const ppt = minimap.pixelsPerTile(current);
-  const color = player.color.toRGB();
-  const dark: [number, number, number] = [20, 20, 20];
-  const inside = (x: number, y: number) => x >= rect.x - 3 && x <= rect.x + rect.width + 3 && y >= rect.y - 3 && y <= rect.y + rect.height + 3;
-  const dot = (x: number, y: number, px: number, c: [number, number, number], alpha = 1) => {
-    const size = px / ppt;
-    const border = 2 / ppt;
-    minimapOverlay.push({ x, y, size: size + border, color: dark, shape: SHAPE.flat, alpha: 0.8 * alpha });
-    minimapOverlay.push({ x, y, size, color: c, shape: SHAPE.flat, alpha });
-  };
-  for (const b of world.allBuildings()) {
-    if (!inside(b.x, b.y)) continue;
-    const fp = b.definition.footprint;
-    // Größer von beidem: echte Fläche oder Mindestgröße in Pixeln.
-    dot(b.x, b.y, Math.max(fp * ppt, b.isFarm() ? 4 : 6), color, b.isFarm() ? 0.55 : 1);
-  }
-  for (const v of world.villagers) {
-    if (v.inside > 0 || !inside(v.x, v.y)) continue;
-    dot(v.x - 0.5, v.y - 0.5, 3, color);
-  }
-}
-
-/** Gebäude, erschöpfte Felder und - im Baumodus - die Vorschau. */
+/** Alles, was über dem Gelände gezeichnet wird: Vorkommen, Welt, Auswahl und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
   const visible = visibleWorldRect(camera.view());
@@ -1326,101 +1295,11 @@ function collectOverlay(blend: number) {
     resources.instances(visible, world, overlay, selection.resource, blend);
   }
   worldInstances(world, visible, overlay, blend, selection);
-
-  // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.
-  for (const v of world.villagers) {
-    if (!selection.villagers.has(v.id)) continue;
-    const p = v.positionAt(blend);
-    overlay.push({
-      x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 2,
-      color: [110, 231, 160], shape: SHAPE.ring, alpha: 1,
-      ground: world.groundAt!(p.x, p.y),
-    });
+  selectionOverlay(world, selection, blend, overlay);
+  if (selected !== null && mouseTileX !== undefined && mouseTileY !== undefined) {
+    const blocked = placementCheck(mouseTileX, mouseTileY, selected) !== null;
+    placementOverlay(world, selected, mouseTileX, mouseTileY, blocked, overlay);
   }
-  for (const building of selection.chosenBuildings()) {
-    if (building.isFarm()) {
-      // Ein Feldstück belegt nur seine Tiles - je Tile eine Fläche, etwas
-      // größer: unter dem Getreide sähe man sie sonst gar nicht, so bleibt
-      // ringsum ein schmaler grüner Rand.
-      for (const [x, y] of building.footprintTiles()) {
-        overlay.push({ x, y, size: 1.3, color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35 });
-      }
-    } else {
-      overlay.push({
-        x: building.x, y: building.y, size: building.definition.footprint + 0.4,
-        color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
-      });
-    }
-    // Sammelpunkt: Fahne in der Spielerfarbe, nur solange das Gebäude
-    // ausgewählt ist - sonst stünden überall Fahnen herum.
-    if (building.isUnitProducer() && building.rallyPoint) {
-      overlay.push({
-        // Etwas zur Kamera hin versetzt: auf einem Vorkommen steht sie so vor
-        // dem Baum oder Fels statt dahinter.
-        x: building.rallyPoint.x + 0.3, y: building.rallyPoint.y + 0.3, size: 0.54,
-        color: player.color.toRGB(), shape: SHAPE.rallyFlag, alpha: 1,
-      });
-      overlay.push({
-        x: building.rallyPoint.x, y: building.rallyPoint.y, size: 0.5,
-        color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
-      });
-    }
-  }
-  if (selection.resource) {
-    overlay.push({
-      x: selection.resource.x, y: selection.resource.y, size: 1,
-      color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.3,
-    });
-  }
-
-  if (selected === null || mouseTileX === undefined || mouseTileY === undefined) return;
-  const def = BUILDINGS[selected];
-
-  // Felder: rund um den Zeiger zeigen, wo gesät werden kann.
-  if (selected === 'farm') {
-    const R = 9;
-    for (let dy = -R; dy <= R; dy++) {
-      for (let dx = -R; dx <= R; dx++) {
-        if (dx * dx + dy * dy > R * R) continue;
-        const [x, y] = [mouseTileX + dx, mouseTileY + dy];
-        if (!world.sowable(x, y)) continue;
-        overlay.push({ x, y, size: 0.92, color: [150, 220, 90], shape: SHAPE.flat, alpha: 0.16 });
-      }
-    }
-  }
-  const blocked = placementCheck(mouseTileX, mouseTileY, selected);
-
-  // Die belegte Fläche wird mit eingefärbt: bei einem 3x3-Gebäude sieht man
-  // sonst nicht, welche Felder es tatsächlich beansprucht.
-  overlay.push({
-    x: mouseTileX,
-    y: mouseTileY,
-    size: def.footprint,
-    color: blocked ? [220, 70, 80] : [110, 231, 160],
-    shape: SHAPE.flat,
-    alpha: 0.22,
-  });
-  if (selected === 'farm') {
-    // Felder zeigen die Frucht, die gesät wird - Furche für Furche, nur auf
-    // den Tiles, die sie bekämen.
-    const outline = world.fieldOutline(mouseTileX, mouseTileY, world.farmTiles(mouseTileX, mouseTileY) || 16);
-    for (let row = 0; row < FIELD_ROWS; row++) {
-      overlay.push({
-        x: mouseTileX, y: mouseTileY, size: def.size, color: player.color.toRGB(),
-        shape: CROPS[world.nextFarmCrop].shape + row, alpha: 0.7, motion: [row, 3, 1, outline.mask],
-        accent: [outline.others, 0, 0],
-      });
-    }
-    return;
-  }
-  overlay.push({
-    x: mouseTileX,
-    y: mouseTileY,
-    size: def.size,
-    color: blocked ? [220, 70, 80] : player.color.toRGB(),
-    shape: def.model,
-    alpha: 0.7,
-  });
 }
 
 function loop(now: number) {
@@ -1489,7 +1368,7 @@ function loop(now: number) {
   renderer.render(camera.x, camera.y, mouseTileX, mouseTileY, overlay);
 
   const current = camera.view();
-  minimapDots(current);
+  minimapDots(world, minimap, current, minimapOverlay);
   minimap.render(current, minimapOverlay);
 
   const camCenterTileX = Math.round(camera.x);
