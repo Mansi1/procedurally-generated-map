@@ -6,7 +6,6 @@ import {
 import {
   MapRenderer,
   MiniMap,
-  TILE_TYPE_LABEL,
   Terrain,
 } from './map';
 import type { EntityInstance } from './gl/entityRenderer';
@@ -25,6 +24,7 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { DevPanel } from './game/DevPanel';
 import { Keyboard } from './game/keyboard';
 import { MouseInput } from './game/MouseInput';
 import { PlayerActions } from './game/actions';
@@ -55,22 +55,14 @@ mountGame(document.getElementById('app')!);
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement;
-const posEl = document.getElementById('pos')!;
-const sampleEl = document.getElementById('sampling')!;
-const hoverCoordsEl = document.getElementById('hover-coords')!;
-const camCoordsEl = document.getElementById('cam-coords')!;
-const cursorCoordsEl = document.getElementById('cursor-coords')!;
-const fpsEl = document.getElementById('fps')!;
-const tileInfoEl = document.getElementById('tile-info')!;
-const objectLabelEl = document.getElementById('object-label')!;
-const resourceInfoEl = document.getElementById('resource-info')!;
-const zoomEl = document.getElementById('zoom')!;
 const stockEl = document.getElementById('stock')!;
 const buildEl = document.getElementById('build')!;
 const hintEl = document.getElementById('hint')!;
 const selectionEl = document.getElementById('selection')!;
 const actionsEl = document.getElementById('actions')!;
 const boxEl = document.getElementById('select-box')!;
+/** Entwickler-Infos oben links (game/DevPanel.ts). */
+const devPanel = new DevPanel();
 
 /** Zoom beim Start: CSS-Pixel je Tile. */
 const DEFAULT_ZOOM = 32;
@@ -497,8 +489,7 @@ new MouseInput(canvas, boxEl, {
     mouseTileY = undefined;
     mousePixelX = undefined;
     mousePixelY = undefined;
-    cursorCoordsEl.textContent = '-, -';
-    tileInfoEl.textContent = '-';
+    devPanel.showTile();
     updateHoverInfo();
   },
 });
@@ -529,7 +520,7 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   if (mousePixelX !== undefined && mousePixelY !== undefined) {
     updateHoveredTile(mousePixelX, mousePixelY);
   }
-  zoomEl.textContent = `${camera.tileSize}px`;
+  devPanel.showZoom(camera.tileSize);
 }
 
 /** Tastatur: gehaltene Tasten und die Belegung (game/keyboard.ts) - hier, was sie im Spiel tut. */
@@ -579,14 +570,9 @@ minimapCanvas.addEventListener('click', (e) => {
 
 minimapCanvas.addEventListener('mousemove', (e) => {
   const rect = minimapCanvas.getBoundingClientRect();
-  const world = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view());
-
-  hoverCoordsEl.textContent = `${Math.floor(world.x)}, ${Math.floor(world.y)}`;
+  devPanel.showMinimapPointer(minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, camera.view()));
 });
-
-minimapCanvas.addEventListener('mouseleave', () => {
-  hoverCoordsEl.textContent = '-, -';
-});
+minimapCanvas.addEventListener('mouseleave', () => devPanel.showMinimapPointer());
 
 /** Markierung und Anzeige auf das Tile unter der angegebenen Canvas-Position setzen. */
 /** Vorkommen, auf dessen Objekt der Zeiger gerade zeigt - für den Sammel-Mauszeiger. */
@@ -607,12 +593,7 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   mouseTileY = tile.y;
   updateCursor();
 
-  cursorCoordsEl.textContent = `${mouseTileX}, ${mouseTileY}`;
-
-  const info = terrain.getTile(mouseTileX, mouseTileY);
-  tileInfoEl.textContent =
-    `${TILE_TYPE_LABEL[info.tileType]} | h ${info.height.toFixed(2)}` +
-    ` | Feuchte ${info.moisture.toFixed(2)} | Temp ${info.temperature.toFixed(2)}`;
+  devPanel.showTile({ ...terrain.getTile(mouseTileX, mouseTileY), x: mouseTileX, y: mouseTileY });
   updateHoverInfo();
 }
 
@@ -631,20 +612,10 @@ function updateHoverInfo() {
     target = villager ? { villager } : { animal: world.animalNear(at.x, at.y, 0.6), tile: { x: mouseTileX!, y: mouseTileY! } };
   }
   const { label, text } = hoverDescription(world, resources, target);
-  setText(objectLabelEl, label);
-  setText(resourceInfoEl, text);
+  devPanel.showObject(label, text);
 }
 
-/** Text nur setzen, wenn er sich ändert - getaktet sonst unnötige Layouts. */
-function setText(el: Element, text: string) {
-  if (el.textContent !== text) el.textContent = text;
-}
-
-// FPS Counter
 let lastTime = performance.now();
-let lastFpsUpdate = performance.now();
-let frames = 0;
-let fps = 0;
 let lastUiUpdate = 0;
 let lastSave = 0;
 /**
@@ -694,14 +665,6 @@ function loop(now: number) {
   const dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
-  // FPS berechnen
-  frames++;
-  if (now - lastFpsUpdate >= 500) {
-    fps = Math.round((frames * 1000) / (now - lastFpsUpdate));
-    fpsEl.textContent = fps.toString();
-    frames = 0;
-    lastFpsUpdate = now;
-  }
 
   // Gescrollt wird in Bildschirmrichtung, nicht entlang der Weltachsen - die
   // liegen in der Rautenansicht diagonal. Das Tempo ist in Tiles je Sekunde
@@ -756,11 +719,7 @@ function loop(now: number) {
   minimapDots(world, minimap, current, minimapOverlay);
   minimap.render(current, minimapOverlay);
 
-  const camCenterTileX = Math.round(camera.x);
-  const camCenterTileY = Math.round(camera.y);
-  posEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
-  sampleEl.textContent = (1 / (camera.tileSize * camera.pixelRatio)).toFixed(4);
-  camCoordsEl.textContent = `${camCenterTileX}, ${camCenterTileY}`;
+  devPanel.frame(now, camera);
 
   // Der Vorrat wächst kontinuierlich, aber fünfmal je Sekunde abzulesen reicht -
   // je Frame wäre es nur unruhig und würde das Layout ständig neu rechnen.
@@ -777,7 +736,7 @@ function loop(now: number) {
   requestAnimationFrame(loop);
 }
 
-zoomEl.textContent = `${camera.tileSize}px`;
+devPanel.showZoom(camera.tileSize);
 // Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
 // Feld aus der Adresse - gedreht wird nur die Ansicht.
 if (isDirection(settings.facing)) rotateToFace(settings.facing);
