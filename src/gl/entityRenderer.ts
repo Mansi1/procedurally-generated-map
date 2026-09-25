@@ -2507,6 +2507,8 @@ export class EntityRenderer {
    * ausgewählte Bäume bleiben Modelle.
    */
   billboardBelow = 0;
+  /** Ob im letzten Bild Bäume als Bild gezeichnet wurden (Entwickler-Infos). */
+  billboardsActive = false;
   /** Liefert die Bilder der Bäume für die jetzige Blickrichtung (components/billboards.ts). */
   private billboardSource: (() => BillboardAtlas | null) | null = null;
   private billboardAtlas: BillboardAtlas | null = null;
@@ -2778,6 +2780,7 @@ export class EntityRenderer {
       healthBars = false,
       batches: readonly StaticBatch[] = [],
   ) {
+    this.billboardsActive = false;
     if (instances.length === 0 && batches.length === 0) return;
     const gl = this.gl;
 
@@ -2855,6 +2858,7 @@ export class EntityRenderer {
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     const fieldLod = FIELD_LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     const billboards = batches.length > 0 && cssPixelsPerTile < this.billboardBelow && this.prepareBillboards();
+    this.billboardsActive = billboards;
     if (billboards) {
       gl.activeTexture(gl.TEXTURE0 + BILLBOARD_TEXTURE_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, this.billboardTexture);

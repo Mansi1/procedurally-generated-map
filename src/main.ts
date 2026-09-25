@@ -505,7 +505,7 @@ function loop(now: number) {
   minimapDots(world, minimap, seen, minimapOverlay);
   minimap.render(seen, minimapOverlay);
 
-  devPanel.frame(now, camera);
+  devPanel.frame(now, camera, renderer.billboardsActive);
 
   if (uiRefresh.due(now)) {
     ui.refreshResources();

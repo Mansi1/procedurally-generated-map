@@ -401,6 +401,11 @@ export class MapRenderer {
     this.entities.billboardBelow = cssPixelsPerTile;
   }
 
+  /** Ob im letzten Bild Bäume als Bild gezeichnet wurden. */
+  get billboardsActive(): boolean {
+    return this.entities.billboardsActive;
+  }
+
   /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */
   setFields(x: number, y: number, data: Uint8Array | null) {
     this.terrain.setFields(x, y, data);

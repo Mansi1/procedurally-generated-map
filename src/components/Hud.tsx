@@ -54,7 +54,11 @@ function DebugPanel() {
         Kamera <b id="cam-coords">-, -</b><span class="sep">|</span>
         MiniMap <b id="hover-coords">-, -</b>
       </div>
-      <div>FPS <b id="fps">0</b></div>
+      <div>
+        FPS <b id="fps">0</b><span class="sep">|</span>
+        {/* Bild = Billboards (Menü → Grafik → Bäume als Bild), 3D = Modelle. */}
+        Bäume <b id="billboards">3D</b>
+      </div>
     </div>
   );
 }
