@@ -39,7 +39,7 @@ import { mountGame } from './components/Hud';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
 import { treeBillboards } from './components/billboards';
-import { loadSettings, saveSettings } from './settings';
+import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound } from './audio';
 import { Music } from './music';
@@ -472,7 +472,8 @@ function collectOverlay(blend: number) {
     resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
   }
   const hovered = pointer.tile ? world.at(pointer.tile.x, pointer.tile.y)?.anchor : undefined;
-  worldInstances(world, visible, overlay, blend, selection, hovered);
+  worldInstances(world, visible, overlay, blend, selection, hovered,
+    (kind) => camera.tileSize < (settings.animalsBelow[kind] ?? ANIMALS_BELOW_DEFAULT));
   selectionOverlay(world, selection, blend, overlay);
   const tile = pointer.tile;
   if (placement.placingType !== null && tile) {

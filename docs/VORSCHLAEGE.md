@@ -16,6 +16,7 @@ offenen Punkte des Projekts stehen in docs/OFFEN.md.
 | Flachland weniger wellig | erledigt, Branch |
 | Feste Puffer für Bäume, Felsen, Sträucher | erledigt, Branch |
 | Bäume als Bild (Billboards), im Menü unter Grafik | erledigt, Branch |
+| Tiere weit draußen ausblenden, je Art einstellbar | erledigt, Branch |
 | Geringere Pixeldichte beim Herauszoomen | verworfen (zu pixelig) |
 | Baumenü im Stil der Minimap | verworfen |
 | Weit draußen Wald nur vom Boden malen | offen - der nächste Schritt |
@@ -191,6 +192,22 @@ Kamera zeigt.
   Standardansicht).
 - **Geprüft:** Nebeneinander (Modell und Bild, gleiche Ansicht) kaum zu
   unterscheiden; Drehen der Karte ohne Fehler; Tests, Build, Rauchtest.
+
+## 8. Tiere weit draußen ausblenden - Branch
+
+Weit draußen sind Tiere nur noch Punkte, kosten aber je Tier ein
+animiertes Modell. Jetzt werden sie ab 8 px je Tile nicht mehr gezeichnet -
+sie leben, grasen und fliehen trotzdem weiter.
+
+- **Je Tierart einstellbar** im Menü unter **Grafik → Tiere ausblenden**
+  (aufklappbar): Reh, Hase, Kuh, Schaf, Ziege, Wildschwein - je *Nie*,
+  *Weit* (Vorgabe, ab 8 px je Tile) oder *Mittel* (sobald man herauszoomt).
+- Gespeichert in `settings.animalsBelow` je Art; fehlt eine, gilt die
+  Vorgabe (`ANIMALS_BELOW_DEFAULT`).
+- `worldInstances()` (`world/render.ts`) überspringt die ausgeblendeten
+  Arten; die Minimap zeigt weiter alle.
+- Neben den FPS zeigen die Entwickler-Infos (Taste P), ob Bäume gerade als
+  Bild gezeichnet werden: „Bäume Bild“ bzw. „Bäume 3D“.
 
 ## Verworfen
 

@@ -9,7 +9,8 @@ import { createRef, render, type Ref } from 'defuss';
 import './SettingsMenu.css';
 import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/catalog';
-import { resetSettings, saveSettings, type Settings } from '../settings';
+import { ANIMALS_BELOW_DEFAULT, resetSettings, saveSettings, type Settings } from '../settings';
+import { ANIMAL_CLASSES } from '../world/unit';
 import { ShortcutList } from './Shortcuts';
 import { confirmDialog } from './ConfirmDialog';
 
@@ -42,6 +43,14 @@ const BILLBOARDS: [number, string, string][] = [
   [32, 'Mittel', 'Als Bild, sobald man herauszoomt'],
   [64, 'Immer', 'Auch in der Vorgabe-Zoomstufe als Bild - nur ganz nah als Modell'],
 ];
+/** Ab wann eine Tierart nicht mehr gezeichnet wird - Zoomstufen wie bei BILLBOARDS. */
+const HIDE_ANIMALS: [number, string, string][] = [
+  [0, 'Nie', 'Immer zeigen'],
+  [16, 'Weit', 'Ab zwei Zoomstufen unter der Vorgabe (8 px je Tile) ausblenden'],
+  [32, 'Mittel', 'Ausblenden, sobald man herauszoomt'],
+];
+/** Die Tierarten in der Reihenfolge der Klassen: Kennung und Name. */
+const ANIMAL_KINDS = ANIMAL_CLASSES.map((c) => [c.definition.type, c.definition.label] as const);
 
 /** Regler 0..100 % mit der Zahl daneben. */
 interface SliderRefs {
@@ -70,6 +79,7 @@ export class SettingsMenu {
   private soundButton = createRef<HTMLButtonElement>();
   private speedButtons = SPEEDS.map(() => createRef<HTMLButtonElement>());
   private billboardButtons = BILLBOARDS.map(() => createRef<HTMLButtonElement>());
+  private animalButtons = new Map(ANIMAL_KINDS.map(([kind]) => [kind, HIDE_ANIMALS.map(() => createRef<HTMLButtonElement>())]));
   private colorButtons = new Map(Object.keys(PLAYER_COLORS).map((key) => [key, createRef<HTMLButtonElement>()]));
   private volume = sliderRefs();
   private music = sliderRefs();
@@ -191,6 +201,20 @@ export class SettingsMenu {
               ))}
             </span>
           </div>
+          <details class="menu-keys-box">
+            <summary title="Weit draußen sind Tiere kaum zu sehen - ausgeblendet läuft das Spiel flüssiger. Sie leben trotzdem weiter.">Tiere ausblenden</summary>
+            {ANIMAL_KINDS.map(([kind, name]) => (
+              <div class="menu-row">
+                <span>{name}</span>
+                <span class="menu-choice">
+                  {HIDE_ANIMALS.map(([value, label, hint], i) => (
+                    <button type="button" class="wood-btn" title={hint} ref={this.animalButtons.get(kind)![i]}
+                      onClick={() => this.change({ animalsBelow: { ...this.settings.animalsBelow, [kind]: value } })}>{label}</button>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </details>
         </section>
         <section>
           <div class="menu-row">
@@ -258,6 +282,10 @@ export class SettingsMenu {
     this.soundButton.current.textContent = this.hooks.soundEnabled() ? 'An' : 'Aus';
     SPEEDS.forEach(([value], i) => this.speedButtons[i].current.classList.toggle('active', value === s.speed));
     BILLBOARDS.forEach(([value], i) => this.billboardButtons[i].current.classList.toggle('active', value === s.billboards));
+    for (const [kind, refs] of this.animalButtons) {
+      const below = s.animalsBelow[kind] ?? ANIMALS_BELOW_DEFAULT;
+      HIDE_ANIMALS.forEach(([value], i) => refs[i].current.classList.toggle('active', value === below));
+    }
     for (const [key, ref] of this.colorButtons) ref.current.classList.toggle('active', key === s.playerColor);
     const slider = (refs: SliderRefs, v: number) => {
       refs.input.current.value = String(Math.round(v * 100));
