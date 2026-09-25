@@ -1,55 +1,22 @@
 // buildings.ts
-// Die Gebäudetypen und der Dorfbewohner an einer Stelle: Aussehen, Bauplatz-
-// Regeln, Kosten, Arbeitstempo. Alles, was die Welt-Logik und die Oberfläche
-// darüber wissen müssen, steht hier - nicht verteilt über Renderer und UI.
+// Die Gebäudetypen und der Dorfbewohner: Aussehen, Bauplatz-Regeln, Kosten,
+// Arbeitstempo - was Welt-Logik und Oberfläche darüber wissen müssen. Die
+// Definition jedes Gebäudes steht in seiner Klasse (building/TownCenter.ts,
+// House.ts, ...); BUILDINGS sammelt sie hier für alle, die nach Art fragen.
 //
 // Gefördert wird wie in AoE2 von Dorfbewohnern: Sie sammeln am Vorkommen und
 // tragen die Ladung zum nächsten Lager, das diese Ressource annimmt.
 
 import { Color } from '../functions/Color';
 import { SHAPE } from '../gl/entityRenderer';
+import { GATHER_TYPES } from './building/common';
 import type { ResourceType } from '../map';
-import type { TileType } from '../noise';
-
-export type BuildingType =
-  | 'town_center'
-  | 'house'
-  | 'lumberjack'
-  | 'mine'
-  | 'forager'
-  | 'farm';
 
 export type Stock = Record<Exclude<ResourceType, 'none'>, number>;
 
-export interface BuildingDef {
-  label: string;
-  /** Taste, mit der der Typ ausgewählt wird. */
-  key: string;
-  color: Color;
-  shape: number;
-  /**
-   * Breite des Modells in Welt-Tiles - nur fürs Bild. Höchstens so groß wie
-   * `footprint`, sonst ragt es in Nachbarfelder, auf denen gebaut werden darf.
-   */
-  size: number;
-  /** Belegte Felder, als Kantenlänge in Tiles. Ungerade, damit es zentriert liegt. */
-  footprint: number;
-  /** Erlaubte Untergründe. */
-  terrain: readonly TileType[];
-  cost: Partial<Stock>;
-  /** Bevölkerungsplätze, die das Gebäude schafft. */
-  provides: number;
-  /** Ressourcen, die Dorfbewohner hier abliefern können. */
-  accepts: readonly GatherType[];
-  /** Bildet Dorfbewohner aus. */
-  trains: boolean;
-  /** Trefferpunkte, wenn es unbeschädigt ist - Werte wie in AoE2. */
-  hp: number;
-}
-
 /** Was ein Dorfbewohner sammeln kann. */
 export type GatherType = keyof Stock;
-export const GATHER_TYPES: readonly GatherType[] = ['wood', 'stone', 'gold', 'berries'];
+export { GATHER_TYPES };
 
 /**
  * Größter erlaubter Anstieg unter einem Gebäude, in Tiles Höhe je Tile Breite
@@ -57,114 +24,8 @@ export const GATHER_TYPES: readonly GatherType[] = ['wood', 'stone', 'gold', 'be
  */
 export const MAX_BUILD_SLOPE = 0.3;
 
-/** Untergründe, auf denen überhaupt gebaut werden kann. */
-const BUILDABLE = ['beach', 'desert', 'grass', 'forest', 'snow'] as const;
-
-export const BUILDINGS: Record<BuildingType, BuildingDef> = {
-  town_center: {
-    label: 'Hauptgebäude',
-    key: '1',
-    // Spielerfarbe - wie der Kittel der Dorfbewohner. Sie steht auf Fahne und
-    // Bannern des Modells (Material Paint).
-    color: Color.rgb(70, 110, 190),
-    shape: SHAPE.townCenter,
-    size: 2,
-    footprint: 3,
-    terrain: BUILDABLE,
-    cost: { wood: 200, stone: 100 },
-    provides: 10,
-    // Das Hauptgebäude nimmt alles an - wie in AoE2 reicht es am Anfang allein.
-    accepts: GATHER_TYPES,
-    hp: 2400,
-    trains: true,
-  },
-  house: {
-    label: 'Haus',
-    key: '2',
-    color: Color.rgb(214, 158, 96),
-    shape: SHAPE.house,
-    size: 0.8,
-    footprint: 1,
-    terrain: BUILDABLE,
-    cost: { wood: 30 },
-    provides: 5,
-    accepts: [],
-    hp: 550,
-    trains: false,
-  },
-  lumberjack: {
-    label: 'Holzlager',
-    key: '3',
-    color: Color.rgb(126, 92, 48),
-    shape: SHAPE.lumberCamp,
-    size: 1,
-    footprint: 1,
-    terrain: BUILDABLE,
-    cost: { wood: 50 },
-    provides: 0,
-    accepts: ['wood'],
-    hp: 600,
-    trains: false,
-  },
-  mine: {
-    label: 'Minenlager',
-    key: '4',
-    color: Color.rgb(150, 152, 162),
-    shape: SHAPE.miningCamp,
-    size: 1,
-    footprint: 1,
-    // Minenlager stehen am Fuß des Gebirges, nicht darauf - auf Fels selbst
-    // lässt sich nicht bauen, Stein und Gold liegen aber gleich daneben.
-    terrain: BUILDABLE,
-    cost: { wood: 60, stone: 20 },
-    provides: 0,
-    accepts: ['stone', 'gold'],
-    hp: 600,
-    trains: false,
-  },
-  forager: {
-    label: 'Mühle',
-    key: '5',
-    color: Color.rgb(198, 74, 84),
-    shape: SHAPE.mill,
-    size: 0.86,
-    footprint: 1,
-    terrain: BUILDABLE,
-    cost: { wood: 40 },
-    provides: 0,
-    accepts: ['berries'],
-    hp: 600,
-    trains: false,
-  },
-  farm: {
-    label: 'Feld',
-    key: '6',
-    color: Color.rgb(196, 168, 82),
-    shape: SHAPE.farmWheat,
-    // Felder werden Tile für Tile angelegt; nebeneinander wachsen sie zu einem
-    // großen Feld zusammen. Das Modell deckt 3x3 Tiles ab und zeigt nur die
-    // eigenen (siehe FarmState.tiles).
-    size: 3,
-    footprint: 1,
-    // Auf Sand und Schnee wächst nichts.
-    terrain: ['grass', 'forest'],
-    // Ein Neuntel eines AoE2-Felds (60 Holz für 3x3).
-    cost: { wood: 7 },
-    provides: 0,
-    accepts: [],
-    hp: 60,
-    trains: false,
-  },
-};
-
-export const BUILDING_ORDER: BuildingType[] = [
-  'town_center',
-  'house',
-  'lumberjack',
-  'mine',
-  'forager',
-  'farm',
-];
+// Gebäude: Arten, Definitionen und Reihenfolge kommen aus den Klassen (building/).
+export { BUILDINGS, BUILDING_ORDER, type BuildingType, type BuildingDefinition } from './building';
 
 export type CropType = 'wheat' | 'corn';
 

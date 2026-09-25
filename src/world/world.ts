@@ -22,13 +22,16 @@ import {
   HUNT,
   MAX_BUILD_SLOPE,
   MAX_GATHERERS,
-  MAX_TRAINING_QUEUE,
   player,
   VILLAGER,
   RESEED_COST,
   initialStock,
 } from './buildings';
 import type { AnimalKind, BuildingType, CropType, GatherType, Stock } from './buildings';
+import {
+  buildingFromSave, createBuilding, furrowFood, furrowPosition, maskCovers, CENTER_TILE,
+  type Building, type BuildingSave, type Farm, type Furrow, type UnitProducer,
+} from './building';
 
 /** Ein Tier: zieht umher, äst, flieht vor Dorfbewohnern; erlegt bleibt der Kadaver liegen. */
 export interface Animal {
@@ -61,52 +64,8 @@ const ANIMAL_CHUNK = 24;
 /** Tiere entstehen nur so nah an der Kamera (Tiles) - herausgezoomt sonst Tausende. */
 const ANIMAL_SPAWN_RADIUS = 60;
 
-/**
- * Eine Furche eines Felds. Sie wird umgepflügt, eingesät, wächst, wird
- * abgeerntet und danach wieder eingesät - jede für sich, mit eigenem Bauer.
- */
-export interface Furrow {
-  /** Die Frucht, die darin steht bzw. als Nächstes gesät wird. */
-  crop: CropType;
-  /** 0..1 - wie weit umgepflügt. Einmal gepflügt, bleibt es so. */
-  plough: number;
-  /** 0..1 - wie weit eingesät. */
-  sown: number;
-  /** 0..1 ab der vollständigen Aussaat - erst reif wird geerntet. */
-  growth: number;
-  /** Nahrung, die noch darin steht. */
-  food: number;
-  /** Aussaat schon bezahlt (die erste mit dem Feld, jede weitere einzeln). */
-  paid: boolean;
-}
-
-/** Was auf einem Feld wächst und wie weit. */
-export interface FarmState {
-  /** Die Frucht für neue Aussaaten. */
-  plan: CropType;
-  /**
-   * Welche der 3x3 Tiles zum Feld gehören: Bit i * 3 + j für Tile
-   * (x - 1 + i, y - 1 + j). Ein Feld kann auch kleiner sein.
-   */
-  tiles: number;
-  furrows: Furrow[];
-}
-
-export interface Building {
-  type: BuildingType;
-  x: number;
-  y: number;
-  /** Dorfbewohner, die noch ausgebildet werden (nur Hauptgebäude). */
-  queue: number;
-  /** Sekunden, die der vorderste in der Warteschlange schon ausgebildet wird. */
-  progress: number;
-  /** Verbleibende Trefferpunkte - höchstens BUILDINGS[type].hp. */
-  hp: number;
-  /** Sammelpunkt (Tile) für frisch Ausgebildete, oder null. */
-  rally: { x: number; y: number } | null;
-  /** Nur Felder. */
-  farm?: FarmState;
-}
+// Gebäude sind Klassen (building/) - hier weiter unter diesen Namen erreichbar.
+export type { Building };
 
 /**
  * Was ein Dorfbewohner gerade tun soll. Der Zustand (hingehen, sammeln,
@@ -222,88 +181,12 @@ export interface ViewRect {
   height: number;
 }
 
-/** Häuser, Mühlen und Holzlager gibt es in vier Varianten - welche, hängt fest am Bauplatz. */
-const VARIANTS: Partial<Record<BuildingType, number[]>> = {
-  house: [SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4],
-  lumberjack: [SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4],
-};
-
-function buildingShape(type: BuildingType, x: number, y: number): number {
-  const kinds = BUILDINGS[type].shape === SHAPE.mill
-    ? [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4]
-    : VARIANTS[type];
-  if (!kinds) return BUILDINGS[type].shape;
-  const h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663);
-  return kinds[((h >>> 0) % kinds.length)];
-}
-
-/** Modell eines Gebäudes - Felder zeigen die Frucht der ersten Furche. */
-function shapeOf(building: Building): number {
-  return building.farm ? CROPS[building.farm.furrows[0].crop].shape : buildingShape(building.type, building.x, building.y);
-}
-
-/** Alle neun Tiles - Felder aus älteren Spielständen. */
-const ALL_TILES = 511;
-/** Nur das mittlere Tile - ein neues Feld liegt auf dem Tile, wo es angelegt wurde. */
-const CENTER_TILE = 1 << 4;
-
-/**
- * Die Tiles (0..2 quer zur Furche) auf denen Furche `row` liegt - drei
- * Furchen je Tile-Reihe, jede läuft über die drei Tiles ihrer Reihe.
- */
-export function furrowCells(tiles: number, row: number): number[] {
-  const i = Math.floor(row / 3);
-  return [0, 1, 2].filter((j) => (tiles >> (i * 3 + j)) & 1);
-}
-
-/** Nahrung, die in einer vollen Furche steht - weniger, wenn sie nur über einen Teil der Tiles läuft. */
-const furrowFood = (crop: CropType, tiles: number, row: number) =>
-  (CROPS[crop].food / FIELD_ROWS) * (furrowCells(tiles, row).length / 3);
-
-/**
- * Fortschritt t (0..1) entlang einer Furche als Lage im Modell (0..1): er
- * überspringt die Tiles, die nicht zum Feld gehören.
- */
-function furrowQ(tiles: number, row: number, t: number): number {
-  const cells = furrowCells(tiles, row);
-  if (cells.length === 0) return 0;
-  const k = Math.min(cells.length - 1, Math.floor(t * cells.length));
-  return (cells[k] + (t * cells.length - k)) / 3;
-}
-
-/** Neues Feld auf diesen Tiles: abgesteckt, noch nicht gepflügt. */
-function newFarm(crop: CropType, tiles = ALL_TILES): FarmState {
-  return {
-    plan: crop,
-    tiles,
-    furrows: Array.from({ length: FIELD_ROWS }, (_, row) => ({
-      crop, plough: 0, sown: 0, growth: 0, food: furrowFood(crop, tiles, row), paid: true,
-    })),
-  };
-}
-
 /**
  * Was auf einem zusammenhängenden Feld gerade dran ist - alle Bauern darauf
  * arbeiten gemeinsam daran: erst alles pflügen, dann alles säen, warten, bis
  * alles reif ist, dann gemeinsam ernten. Abgeerntet wird alles neu gesät.
  */
 export type FarmPhase = 'plough' | 'sow' | 'grow' | 'harvest' | 'done';
-
-/** Stand einer Furche für den Shader: 0..1 gepflügt, 1..2 gesät, 2..3 gewachsen - als Lage im Modell. */
-function furrowStage(farm: FarmState, row: number): number {
-  const f = farm.furrows[row];
-  return f.plough < 1 ? furrowQ(farm.tiles, row, f.plough)
-    : f.sown < 1 ? 1 + furrowQ(farm.tiles, row, f.sown)
-    : 2 + f.growth;
-}
-
-/** Wie viel einer Furche noch steht (0..1). */
-function furrowShare(farm: FarmState, row: number): number {
-  const f = farm.furrows[row];
-  const full = furrowFood(f.crop, farm.tiles, row);
-  // Reste unter der Schwelle, ab der geerntet wird, sind leer.
-  return full > 0 && f.food > 1e-6 ? f.food / full : 0;
-}
 
 /**
  * Pflanzfläche eines Felds: halbe Kantenlänge in Metern wie im Modell
@@ -353,11 +236,7 @@ const INSIDE_TIME = 1.2;
 interface SaveData {
   version: 3;
   stock: Stock;
-  buildings: {
-    t: BuildingType; x: number; y: number; q?: number; hp?: number; r?: [number, number];
-    /** Felder: nächste Frucht und je Furche [Frucht, gepflügt, gesät, Wuchs, Nahrung, bezahlt]. */
-    f?: { p: CropType; t?: number; r: [CropType, number, number, number, number, boolean][] };
-  }[];
+  buildings: BuildingSave[];
   villagers: {
     x: number; y: number; c: number; ct: GatherType | null; task: Task; hp?: number;
     /** Name und Geschlecht - fehlen in älteren Speicherständen. */
@@ -398,7 +277,7 @@ export class World {
   /** Für sowable(): 0 nein, 1 ja, 2 erst wenn das Vorkommen abgebaut ist. */
   private sowableTiles = new Map<string, number>();
   /** Zusammenhängende Felder je Feldstück (farmGroup) - leer, sobald sich Gebäude ändern. */
-  private farmGroups = new Map<string, Building[]>();
+  private farmGroups = new Map<string, Farm[]>();
   /** Umriss und Geländehöhen je Feldstück fürs Zeichnen (fieldLook) - ebenso. */
   private fieldLooks = new Map<string, { outline: { mask: number; others: number }; ground: Float32Array | null }>();
   private ruins: Ruin[] = [];
@@ -415,7 +294,7 @@ export class World {
   /** Stücke (ANIMAL_CHUNK), in denen schon Tiere entstanden sind - erlegte kommen nicht wieder. */
   private spawnedChunks = new Set<string>();
   /** Was auf neu angelegten Feldern gesät wird - die zuletzt gewählte Frucht. */
-  farmCrop: CropType = 'wheat';
+  nextFarmCrop: CropType = 'wheat';
   onEvent: ((event: WorldEvent) => void) | null = null;
   /**
    * Länge des Baums auf Tile (x, y) in Tiles - kennt nur die Darstellung der
@@ -461,7 +340,7 @@ export class World {
   }
 
   anchorOf(building: Building): string {
-    return key(building.x, building.y);
+    return building.anchor;
   }
 
   /** Alle Hauptgebäude, in der Reihenfolge, in der sie gebaut wurden. */
@@ -475,11 +354,11 @@ export class World {
   }
 
   /** Das Hauptgebäude, das einem Welt-Punkt am nächsten liegt. */
-  nearestTownCenter(x: number, y: number): Building | undefined {
-    let best: Building | undefined;
+  nearestTownCenter(x: number, y: number): UnitProducer | undefined {
+    let best: UnitProducer | undefined;
     let bestDistance = Infinity;
     for (const b of this.buildings.values()) {
-      if (b.type !== 'town_center') continue;
+      if (b.type !== 'town_center' || !b.isUnitProducer()) continue;
       const d = Math.hypot(b.x + 0.5 - x, b.y + 0.5 - y);
       if (d < bestDistance) {
         bestDistance = d;
@@ -494,8 +373,8 @@ export class World {
     let cap = 0;
     let training = 0;
     for (const b of this.buildings.values()) {
-      cap += BUILDINGS[b.type].provides;
-      training += b.queue;
+      cap += b.definition.housing;
+      if (b.isUnitProducer()) training += b.queuedUnits;
     }
     return { used: this.villagers.length, cap, training };
   }
@@ -615,7 +494,7 @@ export class World {
     const tiles: [number, number][] = [];
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        if (type === 'farm' && !((farmTiles >> ((dx + 1) * 3 + dy + 1)) & 1)) continue;
+        if (type === 'farm' && !maskCovers(farmTiles, dx, dy)) continue;
         tiles.push([x + dx, y + dy]);
       }
     }
@@ -634,7 +513,7 @@ export class World {
     let others = 0;
     const other = (tx: number, ty: number) => {
       const b = this.at(tx, ty);
-      return b?.farm !== undefined && b !== self;
+      return b !== undefined && b.isFarm() && b !== self;
     };
     // Tiles der 3x3, die nicht zu diesem Feld gehören, aber zu einem anderen.
     for (let i = 0; i < 3; i++) {
@@ -661,8 +540,8 @@ export class World {
     out.fill(0);
     let any = false;
     for (const b of this.buildings.values()) {
-      const farm = b.farm;
-      if (!farm || b.x < x0 - 1 || b.y < y0 - 1 || b.x > x0 + size || b.y > y0 + size) continue;
+      if (!b.isFarm() || b.x < x0 - 1 || b.y < y0 - 1 || b.x > x0 + size || b.y > y0 + size) continue;
+      const farm = b;
       for (let i = 0; i < 3; i++) {
         for (let j = 0; j < 3; j++) {
           if (!((farm.tiles >> (i * 3 + j)) & 1)) continue;
@@ -672,7 +551,7 @@ export class World {
           for (let k = 0; k < 3; k++) {
             const row = i * 3 + k;
             const f = farm.furrows[row];
-            const q = f.plough >= 1 ? 1 : furrowQ(farm.tiles, row, f.plough);
+            const q = f.plough >= 1 ? 1 : furrowPosition(farm.tiles, row, f.plough);
             out[o + k] = Math.round(Math.max(0, Math.min(1, q * 3 - j)) * 255);
           }
           out[o + 3] = 255;
@@ -689,8 +568,8 @@ export class World {
    * Anfang, Mitte und Ende die Geländehöhe (Tiles, ohne Relief-Skalierung;
    * ab Index 0) und das Gefälle quer zur Furche (ab Index 27).
    */
-  private fieldLook(building: Building) {
-    const anchor = key(building.x, building.y);
+  private fieldLook(building: Farm) {
+    const anchor = building.anchor;
     let look = this.fieldLooks.get(anchor);
     if (!look) {
       let ground: Float32Array | null = null;
@@ -707,14 +586,14 @@ export class World {
           }
         }
       }
-      look = { outline: this.fieldOutline(building.x, building.y, building.farm!.tiles, building), ground };
+      look = { outline: this.fieldOutline(building.x, building.y, building.tiles, building), ground };
       this.fieldLooks.set(anchor, look);
     }
     return look;
   }
 
   /**
-   * Die Tiles, die ein Feld an (x, y) bekäme (siehe FarmState.tiles): das
+   * Die Tiles, die ein Feld an (x, y) bekäme (siehe Farm.tiles): das
    * Tile selbst, wenn dort gesät werden kann, sonst keins.
    */
   farmTiles(x: number, y: number): number {
@@ -800,14 +679,10 @@ export class World {
     if (reason) return reason;
 
     this.pay(BUILDINGS[type].cost);
-    const farm = type === 'farm' ? newFarm(this.farmCrop, this.farmTiles(x, y)) : undefined;
-    this.buildings.set(key(x, y), {
-      type, x, y, queue: 0, progress: 0, hp: BUILDINGS[type].hp, rally: null,
-      ...(farm ? { farm } : {}),
-    });
-    for (const [tx, ty] of this.footprintTiles(x, y, type, farm?.tiles)) {
-      this.occupied.set(key(tx, ty), key(x, y));
-    }
+    // Ein Feld bekommt die Frucht fürs nächste Feld und die Tiles, die hier frei sind.
+    const building = createBuilding(type, x, y, type === 'farm' ? { crop: this.nextFarmCrop, tiles: this.farmTiles(x, y) } : {});
+    this.buildings.set(building.anchor, building);
+    for (const [tx, ty] of building.footprintTiles()) this.occupied.set(key(tx, ty), building.anchor);
     this.farmGroups.clear();
     this.fieldLooks.clear();
     this.dirty = true;
@@ -816,14 +691,12 @@ export class World {
 
   /** Abriss. Die Hälfte der Kosten kommt zurück - sonst bestraft ein Fehlklick zu hart. */
   remove(building: Building) {
-    const def = BUILDINGS[building.type];
+    const def = building.definition;
     this.pay(def.cost, -0.5);
     // Wer noch in Ausbildung war, wird voll erstattet - er hat ja nie gearbeitet.
-    this.pay(VILLAGER.cost, -building.queue);
-    for (const [tx, ty] of this.footprintTiles(building.x, building.y, building.type, building.farm?.tiles)) {
-      this.occupied.delete(key(tx, ty));
-    }
-    const anchor = key(building.x, building.y);
+    if (building.isUnitProducer()) this.pay(VILLAGER.cost, -building.queuedUnits);
+    for (const [tx, ty] of building.footprintTiles()) this.occupied.delete(key(tx, ty));
+    const anchor = building.anchor;
     this.buildings.delete(anchor);
     this.farmGroups.clear();
     this.fieldLooks.clear();
@@ -838,7 +711,7 @@ export class World {
 
   /** Legt den Einsturz an: Schutt fliegt in alle Richtungen, landet auf dem Gelände. */
   private addRuin(building: Building) {
-    const def = BUILDINGS[building.type];
+    const def = building.definition;
     const cx = building.x + 0.5;
     const cy = building.y + 0.5;
     const debris: Ruin['debris'] = [];
@@ -858,7 +731,7 @@ export class World {
       });
     }
     this.ruins.push({
-      type: building.type, shape: shapeOf(building), x: building.x, y: building.y, at: this.time,
+      type: building.type, shape: building.model, x: building.x, y: building.y, at: this.time,
       clock: performance.now() / 1000, debris,
     });
     this.onEvent?.({ kind: 'collapse', x: cx, y: cy });
@@ -871,26 +744,26 @@ export class World {
    * Gebäude selbst hebt den Sammelpunkt auf.
    */
   setRally(building: Building, x: number, y: number): string | null {
-    if (!BUILDINGS[building.type].trains) return 'Nur ausbildende Gebäude haben einen Sammelpunkt';
+    if (!building.isUnitProducer()) return 'Nur ausbildende Gebäude haben einen Sammelpunkt';
     if (this.at(x, y) === building) {
-      building.rally = null;
+      building.setRallyPoint(null);
       this.dirty = true;
       return null;
     }
     const tile = this.probe.getTile(x, y);
     if (tile.tileType === 'water' || tile.tileType === 'deep_water') return 'Dorfbewohner können nicht schwimmen';
-    building.rally = { x, y };
+    building.setRallyPoint({ x, y });
     this.dirty = true;
     return null;
   }
 
   /** Stellt einen Dorfbewohner in die Warteschlange. Kosten werden sofort fällig. */
   train(building: Building): string | null {
-    if (!BUILDINGS[building.type].trains) return 'Nur das Hauptgebäude bildet Dorfbewohner aus';
-    if (building.queue >= MAX_TRAINING_QUEUE) return 'Die Warteschlange ist voll';
+    if (!building.isUnitProducer()) return 'Nur das Hauptgebäude bildet Dorfbewohner aus';
+    if (building.isQueueFull) return 'Die Warteschlange ist voll';
     if (!this.canAffordVillager()) return 'Zu wenig Nahrung';
-    this.pay(VILLAGER.cost);
-    building.queue++;
+    this.pay(building.unit.cost);
+    building.enqueueUnit();
     this.dirty = true;
     return null;
   }
@@ -906,7 +779,7 @@ export class World {
     for (const v of selected) v.inside = 0;
 
     const target = this.at(x, y);
-    if (target?.farm) {
+    if (target?.isFarm()) {
       // Je Furche ein Bauer - sind alle besetzt, geht es aufs nächste Feld
       // mit einer freien Furche.
       for (const v of selected) v.task = { kind: 'idle' };
@@ -924,8 +797,8 @@ export class World {
       return null;
     }
     if (target) {
-      const def = BUILDINGS[target.type];
-      if (def.accepts.length === 0) return `${def.label} ist kein Lager`;
+      const def = target.definition;
+      if (def.storedResources.length === 0) return `${def.label} ist kein Lager`;
       const anchor = key(target.x, target.y);
       for (const v of selected) {
         v.task = { kind: 'deliver', building: anchor };
@@ -979,7 +852,7 @@ export class World {
     this.time += dt;
     this.lastDt = dt;
     if (this.ruins.length > 0) this.ruins = this.ruins.filter((r) => this.time - r.at < RUIN_DURATION);
-    for (const b of this.buildings.values()) this.tickTraining(b, dt);
+    for (const b of this.buildings.values()) if (b.isUnitProducer()) this.tickTraining(b, dt);
     this.regrowBerries(dt);
     this.growFarms(dt);
     for (const a of this.animals) this.tickAnimal(a, dt);
@@ -997,19 +870,15 @@ export class World {
     }
   }
 
-  private tickTraining(building: Building, dt: number) {
-    if (building.queue === 0) return;
+  private tickTraining(building: UnitProducer, dt: number) {
+    if (building.queuedUnits === 0) return;
     const pop = this.population();
     // Bevölkerungsgrenze erreicht: die Ausbildung wartet, bis ein Haus steht.
     if (pop.used >= pop.cap) return;
+    if (!building.train(dt)) return;
 
-    building.progress += dt;
-    if (building.progress < VILLAGER.trainTime) return;
-
-    building.progress = 0;
-    building.queue--;
     // Er tritt an der Vorderkante des Gebäudes heraus - zur Kamera hin.
-    const r = BUILDINGS[building.type].footprint / 2 + 0.4;
+    const r = building.definition.footprint / 2 + 0.4;
     const spread = (this.nextId % 5) * 0.4 - 0.8;
     const x = building.x + 0.5 + r + spread * 0.5;
     const y = building.y + 0.5 + r - spread * 0.5;
@@ -1018,7 +887,7 @@ export class World {
     const villager = newVillager(this.nextId++, x, y, this.freeName(female), female);
     this.villagers.push(villager);
     this.onEvent?.({ kind: 'trained', x: villager.x, y: villager.y });
-    if (building.rally) this.command(new Set([villager.id]), building.rally.x, building.rally.y);
+    if (building.rallyPoint) this.command(new Set([villager.id]), building.rallyPoint.x, building.rallyPoint.y);
     this.dirty = true;
   }
 
@@ -1028,7 +897,7 @@ export class World {
     const k = key(x, y);
     const anchor = this.occupied.get(k);
     // Über Felder geht man hinweg - Bauern arbeiten ja darauf.
-    if (anchor !== undefined) return !this.buildings.get(anchor)?.farm;
+    if (anchor !== undefined) return !this.buildings.get(anchor)?.isFarm();
     let t = this.terrainBlock.get(k);
     if (t === undefined) {
       const found = this.probe.resourceAt(x, y);
@@ -1095,7 +964,7 @@ export class World {
     let best: Building | undefined;
     let bestDistance = Infinity;
     for (const b of this.buildings.values()) {
-      if (!BUILDINGS[b.type].accepts.includes(type)) continue;
+      if (!b.definition.storedResources.includes(type)) continue;
       const d = Math.hypot(b.x + 0.5 - v.x, b.y + 0.5 - v.y);
       if (d < bestDistance) {
         bestDistance = d;
@@ -1116,8 +985,8 @@ export class World {
     }
     // Zur Tür (im Modell markiert), sonst bis an die Kante des Modells bzw.
     // der belegten Felder - was größer ist.
-    const def = BUILDINGS[building.type];
-    const entry = modelEntry(buildingShape(building.type, building.x, building.y),
+    const def = building.definition;
+    const entry = modelEntry(building.model,
         building.x, building.y, def.size, BUILDING_HEADING);
     const reach = entry ? 0.08 : Math.max(def.footprint, def.size) / 2 + DELIVER_REACH;
     const [tx, ty] = entry ? [entry.x, entry.y] : [building.x + 0.5, building.y + 0.5];
@@ -1181,35 +1050,36 @@ export class World {
    * (über Tile-Kanten benachbart), es selbst eingeschlossen. Gemerkt, bis
    * sich an den Gebäuden etwas ändert.
    */
-  farmGroup(building: Building): Building[] {
-    const anchor = key(building.x, building.y);
+  farmGroup(building: Building): Farm[] {
+    if (!building.isFarm()) return [];
+    const anchor = building.anchor;
     const known = this.farmGroups.get(anchor);
     if (known) return known;
-    const group: Building[] = [];
+    const group: Farm[] = [];
     const seen = new Set<Building>([building]);
-    const queue = [building];
+    const queue: Farm[] = [building];
     while (queue.length > 0) {
       const b = queue.pop()!;
       group.push(b);
-      for (const [tx, ty] of this.footprintTiles(b.x, b.y, b.type, b.farm?.tiles)) {
+      for (const [tx, ty] of b.footprintTiles()) {
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
           const n = this.at(tx + dx, ty + dy);
-          if (n?.farm && !seen.has(n)) {
+          if (n?.isFarm() && !seen.has(n)) {
             seen.add(n);
             queue.push(n);
           }
         }
       }
     }
-    for (const b of group) this.farmGroups.set(key(b.x, b.y), group);
+    for (const b of group) this.farmGroups.set(b.anchor, group);
     return group;
   }
 
   /** Alle Furchen eines Felds, die es gibt (kleinere Feldstücke haben nicht alle neun). */
-  private groupFurrows(group: Building[]): { building: Building; row: number; f: Furrow }[] {
-    return group.flatMap((b) => b.farm!.furrows
+  private groupFurrows(group: Farm[]): { building: Farm; row: number; f: Furrow }[] {
+    return group.flatMap((b) => b.furrows
       .map((f, row) => ({ building: b, row, f }))
-      .filter(({ row }) => furrowCells(b.farm!.tiles, row).length > 0));
+      .filter(({ row }) => b.furrowCells(row).length > 0));
   }
 
   /** Was auf dem Feld, zu dem `building` gehört, gerade dran ist. */
@@ -1236,11 +1106,11 @@ export class World {
    * Die nächste Furche auf dem Feld, in der es in dieser Phase Arbeit gibt
    * und kein anderer Bauer arbeitet - die dem Bauern nächste.
    */
-  private nextFurrow(v: Villager, group: Building[], phase: FarmPhase): { building: Building; row: number; distance: number } | undefined {
+  private nextFurrow(v: Villager, group: Farm[], phase: FarmPhase): { building: Farm; row: number; distance: number } | undefined {
     const busy = new Set(this.villagers.flatMap((u) => (u !== v && u.task.kind === 'farm' ? [`${u.task.building}#${u.task.row}`] : [])));
-    let best: { building: Building; row: number; distance: number } | undefined;
+    let best: { building: Farm; row: number; distance: number } | undefined;
     for (const { building, row, f } of this.groupFurrows(group)) {
-      if (!this.furrowNeeds(f, phase) || busy.has(`${key(building.x, building.y)}#${row}`)) continue;
+      if (!this.furrowNeeds(f, phase) || busy.has(`${building.anchor}#${row}`)) continue;
       const spot = this.farmSpot(building, row, v);
       const distance = Math.hypot(spot.x - v.x, spot.y - v.y);
       if (!best || distance < best.distance) best = { building, row, distance };
@@ -1256,7 +1126,7 @@ export class World {
     const free = (b: Building) => {
       const phase = this.farmPhase(b);
       const rows = this.groupFurrows(this.farmGroup(b))
-        .filter(({ building, row }) => !busy.has(`${key(building.x, building.y)}#${row}`));
+        .filter(({ building, row }) => !busy.has(`${building.anchor}#${row}`));
       const pick = rows.find(({ f }) => this.furrowNeeds(f, phase)) ?? rows[0];
       return pick && { building: key(pick.building.x, pick.building.y), row: pick.row };
     };
@@ -1266,7 +1136,7 @@ export class World {
     let best: { building: string; row: number } | undefined;
     let bestDistance: number = VILLAGER.searchRadius;
     for (const b of this.buildings.values()) {
-      if (!b.farm || mine.has(b)) continue;
+      if (!b.isFarm() || mine.has(b)) continue;
       const d = Math.hypot(b.x - near.x, b.y - near.y);
       if (d >= bestDistance) continue;
       const spot = free(b);
@@ -1280,7 +1150,7 @@ export class World {
 
   /** Wer auf diesem Feld arbeitet, nach Furche. */
   farmers(building: Building): Villager[] {
-    const anchor = key(building.x, building.y);
+    const anchor = building.anchor;
     return this.villagers.filter((v) => v.task.kind === 'farm' && v.task.building === anchor);
   }
 
@@ -1289,23 +1159,17 @@ export class World {
    * nicht eingesät sind, bekommen sie gleich. Neue Felder bekommen sie auch.
    */
   setCrop(building: Building, crop: CropType) {
-    const farm = building.farm;
-    if (!farm) return;
-    farm.plan = crop;
-    farm.furrows.forEach((f, row) => {
-      if (f.sown > 0) return;
-      f.crop = crop;
-      f.food = furrowFood(crop, farm.tiles, row);
-    });
-    this.farmCrop = crop;
+    if (!building.isFarm()) return;
+    building.setPlan(crop);
+    this.nextFarmCrop = crop;
     this.dirty = true;
   }
 
   /** Eingesäte Furchen wachsen bis zur Reife - auch ohne Bauer. */
   private growFarms(dt: number) {
     for (const b of this.buildings.values()) {
-      if (!b.farm) continue;
-      for (const f of b.farm.furrows) {
+      if (!b.isFarm()) continue;
+      for (const f of b.furrows) {
         if (f.sown < 1 || f.growth >= 1) continue;
         f.growth = Math.min(1, f.growth + dt / CROPS[f.crop].growTime);
         this.dirty = true;
@@ -1319,14 +1183,14 @@ export class World {
    * der letzten Pflanze, die noch steht; solange es wächst, geht er die
    * Furche ab und jätet. Er steht neben der Furche, zur Kamera hin.
    */
-  private farmSpot(building: Building, row: number, v: Villager, wander = false): { x: number; y: number; aimX: number; aimY: number } {
-    const farm = building.farm!;
+  private farmSpot(building: Farm, row: number, v: Villager, wander = false): { x: number; y: number; aimX: number; aimY: number } {
+    const farm = building;
     const f = farm.furrows[row];
-    const q = furrowQ(farm.tiles, row, wander ? Math.abs(((this.time / 40 + v.id * 0.37) % 2) - 1)
+    const q = furrowPosition(farm.tiles, row, wander ? Math.abs(((this.time / 40 + v.id * 0.37) % 2) - 1)
       : f.plough < 1 ? f.plough
       : f.sown < 1 ? f.sown
       : f.growth < 1 ? Math.abs(((this.time / 40 + v.id * 0.37) % 2) - 1)
-      : furrowShare(farm, row));
+      : farm.furrowShare(row));
     const gap = (2 * FIELD_INNER) / FIELD_ROWS;
     // Modell: Furchen quer zur Blickrichtung (Welt-x), entlang Welt-y.
     const aimX = building.x + 0.5 + (-FIELD_INNER + (row + 0.5) * gap) / METERS_PER_TILE;
@@ -1361,11 +1225,12 @@ export class World {
    * nächste freie Furche, in der es noch etwas zu tun gibt.
    */
   private tickFarmer(v: Villager, task: Extract<Task, { kind: 'farm' }>, dt: number) {
-    let building = this.buildings.get(task.building);
-    if (!building?.farm?.furrows[task.row]) {
+    const found = this.buildings.get(task.building);
+    if (!found?.isFarm() || !found.furrows[task.row]) {
       v.task = { kind: 'idle' };
       return;
     }
+    let building: Farm = found;
     if (task.delivering) {
       const site = this.nearestDropSite(v, 'berries');
       if (!site) {
@@ -1387,7 +1252,7 @@ export class World {
     if (phase === 'done') {
       // Alles abgeerntet: alles wird neu gesät.
       for (const { building: b, row, f } of this.groupFurrows(group)) {
-        Object.assign(f, { crop: b.farm!.plan, sown: 0, growth: 0, food: furrowFood(b.farm!.plan, b.farm!.tiles, row), paid: false });
+        Object.assign(f, { crop: b.plan, sown: 0, growth: 0, food: furrowFood(b.plan, b.tiles, row), paid: false });
       }
       this.dirty = true;
       phase = 'sow';
@@ -1395,7 +1260,7 @@ export class World {
     // In der eigenen Furche nichts mehr zu tun: die nächste mit Arbeit. Beim
     // Ernten geht er immer zum nächsten reifen Getreide, auch in einer fremden
     // Furche - seine eigene behält er nur, solange sie kaum weiter weg ist.
-    const ownNeeds = this.furrowNeeds(building.farm.furrows[task.row], phase);
+    const ownNeeds = this.furrowNeeds(building.furrows[task.row], phase);
     if (!ownNeeds || phase === 'harvest') {
       const next = this.nextFurrow(v, group, phase);
       const own = this.farmSpot(building, task.row, v);
@@ -1404,7 +1269,7 @@ export class World {
         // Er bleibt, wo er ist.
       } else if (next) {
         building = next.building;
-        task.building = key(next.building.x, next.building.y);
+        task.building = next.building.anchor;
         task.row = next.row;
       } else if (phase === 'harvest' && v.carrying > 0) {
         // Die Ernte ist verteilt - mit dem, was er hat, zum Lager.
@@ -1412,7 +1277,7 @@ export class World {
         return;
       }
     }
-    const f = building.farm!.furrows[task.row];
+    const f = building.furrows[task.row];
     const working = this.furrowNeeds(f, phase);
     if (working && phase === 'sow' && !f.paid) {
       if (!this.canPay(RESEED_COST)) {
@@ -1432,7 +1297,7 @@ export class World {
     this.dirty = true;
 
     // Eine kürzere Furche (über weniger Tiles) ist schneller gepflügt und gesät.
-    const length = furrowCells(building.farm!.tiles, task.row).length / 3;
+    const length = building.furrowCells(task.row).length / 3;
     if (working && phase === 'plough') {
       // Pflügen: mit der Hacke, stehend.
       v.pose = POSE.work;
@@ -1466,7 +1331,7 @@ export class World {
   private animalBlocked(x: number, y: number): boolean {
     const k = key(x, y);
     const anchor = this.occupied.get(k);
-    if (anchor !== undefined && !this.buildings.get(anchor)?.farm) return true;
+    if (anchor !== undefined && !this.buildings.get(anchor)?.isFarm()) return true;
     const tile = this.probe.getTile(x, y);
     return tile.tileType === 'water' || tile.tileType === 'deep_water' || tile.tileType === 'mountain' || tile.tileType === 'snow';
   }
@@ -1859,7 +1724,7 @@ export class World {
       }
       case 'farm': {
         const building = this.buildings.get(v.task.building);
-        const f = building?.farm?.furrows[v.task.row];
+        const f = building?.isFarm() ? building.furrows[v.task.row] : undefined;
         if (!building || !f) return 'untätig' + load;
         const crop = CROPS[f.crop].label;
         if (v.task.delivering) return `bringt ${crop}${load}`;
@@ -1899,24 +1764,24 @@ export class World {
 
     for (const building of this.buildings.values()) {
       if (building.x < x0 || building.x > x1 || building.y < y0 || building.y > y1) continue;
-      const def = BUILDINGS[building.type];
-      if (building.farm) {
+      const def = building.definition;
+      if (building.isFarm()) {
         // Je Furche eine Instanz, jede mit ihrer Frucht und ihrem Stand.
-        const farm = building.farm;
+        const farm = building;
         const { outline, ground } = this.fieldLook(building);
         // Die erste Furche immer - an ihr hängen Pflöcke und Schnur, auch wenn
         // das Feldstück selbst keine Pflanzen in ihr hat.
-        farm.furrows.forEach((f, row) => (row === 0 || furrowCells(farm.tiles, row).length > 0) && out.push({
+        farm.furrows.forEach((f, row) => (row === 0 || farm.furrowCells(row).length > 0) && out.push({
           x: building.x, y: building.y, size: def.size,
           // Gefälle quer zur Furche an Anfang, Mitte und Ende (Tiles je Tile), * 255 wie unten.
           color: ground ? [ground[27 + row * 3] * 255, ground[27 + row * 3 + 1] * 255, ground[27 + row * 3 + 2] * 255] : player.color.toRGB(),
           shape: CROPS[f.crop].shape + row, alpha: 1,
-          motion: [row, furrowStage(farm, row), furrowQ(farm.tiles, row, furrowShare(farm, row)), outline.mask],
+          motion: [row, farm.furrowStage(row), furrowPosition(farm.tiles, row, farm.furrowShare(row)), outline.mask],
           // Geländehöhe am Anfang und Ende der Furche (Mitte in `ground`), * 255:
           // der Renderer teilt die Akzentfarbe durch 255.
           accent: [outline.others, ground ? ground[row * 3] * 255 : 0, ground ? ground[row * 3 + 2] * 255 : 0],
           ground: ground ? ground[row * 3 + 1] : undefined,
-          health: row === 0 && selection?.buildings.has(key(building.x, building.y)) ? building.hp / def.hp : undefined,
+          health: row === 0 && selection?.buildings.has(building.anchor) ? building.health : undefined,
         }));
         continue;
       }
@@ -1925,11 +1790,11 @@ export class World {
         y: building.y,
         size: def.size,
         color: player.color.toRGB(),
-        shape: shapeOf(building),
+        shape: building.model,
         alpha: 1,
         // Jede Mühle dreht in ihrem eigenen Takt; Felder zeigen Wuchs und Rest.
-        motion: def.shape === SHAPE.mill ? millMotion(building.x, building.y) : undefined,
-        health: selection?.buildings.has(key(building.x, building.y)) ? building.hp / def.hp : undefined,
+        motion: def.model === SHAPE.mill ? millMotion(building.x, building.y) : undefined,
+        health: selection?.buildings.has(building.anchor) ? building.health : undefined,
       });
     }
 
@@ -1998,7 +1863,7 @@ export class World {
       // Wackeln, bevor es nachgibt.
       const shake = t < RUIN_SHAKE ? Math.sin(t * 70) * 0.04 * def.size : 0;
       // Eine eingestürzte Mühle dreht nicht weiter.
-      const motion = def.shape === SHAPE.mill
+      const motion = def.model === SHAPE.mill
         ? frozenMillMotion(ruin.x, ruin.y, ruin.clock)
         : [buildingHeading(ruin.shape), 0, 0, 0] as [number, number, number, number];
       motion[3] = Math.max(0.001, collapse);
@@ -2068,17 +1933,7 @@ export class World {
       version: 3,
       savedAt: Date.now(),
       stock: this.stock,
-      buildings: [...this.buildings.values()].map((b) => ({
-        t: b.type, x: b.x, y: b.y, q: b.queue, hp: b.hp,
-        ...(b.rally ? { r: [b.rally.x, b.rally.y] as [number, number] } : {}),
-        ...(b.farm ? {
-          f: {
-            p: b.farm.plan,
-            t: b.farm.tiles,
-            r: b.farm.furrows.map((f) => [f.crop, f.plough, f.sown, f.growth, f.food, f.paid] as [CropType, number, number, number, number, boolean]),
-          },
-        } : {}),
-      })),
+      buildings: [...this.buildings.values()].map((b) => b.toSave()),
       villagers: this.villagers.map((v) => ({
         x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp, n: v.name, f: v.female,
       })),
@@ -2144,23 +1999,12 @@ export class World {
       }
     }
 
-    for (const b of data.buildings ?? []) {
-      if (!BUILDINGS[b.t]) continue;
-      // Ältere Speicherstände kennen keine Trefferpunkte - dann unbeschädigt.
-      const hp = Math.min(b.hp ?? BUILDINGS[b.t].hp, BUILDINGS[b.t].hp);
-      const rally = b.r ? { x: b.r[0] * scale, y: b.r[1] * scale } : null;
-      const [x, y] = [b.x * scale, b.y * scale];
-      let farm: FarmState | undefined;
-      if (b.t === 'farm') {
-        farm = newFarm(b.f && CROPS[b.f.p] ? b.f.p : 'wheat', b.f?.t ?? ALL_TILES);
-        (b.f?.r ?? []).slice(0, FIELD_ROWS).forEach(([crop, plough, sown, growth, food, paid], i) => {
-          if (CROPS[crop]) farm!.furrows[i] = { crop, plough, sown, growth, food, paid };
-        });
-      }
-      this.buildings.set(key(x, y), { type: b.t, x, y, queue: b.q ?? 0, progress: 0, hp, rally, ...(farm ? { farm } : {}) });
-      for (const [tx, ty] of this.footprintTiles(x, y, b.t, farm?.tiles)) {
-        this.occupied.set(key(tx, ty), key(x, y));
-      }
+    for (const saved of data.buildings ?? []) {
+      // Unbekannte Arten fallen weg; umbenannte schreibt buildingFromSave um.
+      const building = buildingFromSave(saved, scale);
+      if (!building) continue;
+      this.buildings.set(building.anchor, building);
+      for (const [tx, ty] of building.footprintTiles()) this.occupied.set(key(tx, ty), building.anchor);
     }
 
     if (data.version === 3) {

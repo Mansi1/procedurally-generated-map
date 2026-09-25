@@ -26,10 +26,10 @@ function describe(type: BuildingType): string {
   const cost = COST_ORDER.filter((r) => def.cost[r])
     .map((r) => `${def.cost[r]} ${RESOURCE_TYPE_LABEL[r]}`)
     .join(', ');
-  const use = def.provides > 0
-    ? `+${def.provides} Platz`
-    : def.accepts.length > 0
-      ? `Lager: ${def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join('/')}`
+  const use = def.housing > 0
+    ? `+${def.housing} Platz`
+    : def.storedResources.length > 0
+      ? `Lager: ${def.storedResources.map((r) => RESOURCE_TYPE_LABEL[r]).join('/')}`
       : type === 'farm' ? 'Nahrung' : '';
   return [cost || 'kostenlos', use].filter(Boolean).join(' · ');
 }

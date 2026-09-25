@@ -58,8 +58,8 @@ export type SelectionView =
       label: string;
       hp: number;
       maxHp: number;
-      accepts?: string;
-      provides?: number;
+      storedResources?: string;
+      housing?: number;
       farm?: FarmView & { plan: CropType };
       trainer?: {
         queue: number;
@@ -181,8 +181,8 @@ function Building({ v }: { v: Extract<SelectionView, { kind: 'building' }> }) {
       <div class="sel-body">
         <Portrait src={buildingIcon(v.type, rgb())} hp={v.hp} maxHp={v.maxHp} />
         <div class="sel-info">
-          {v.accepts ? <div class="muted">Lager für {v.accepts}</div> : null}
-          {v.provides ? <div class="muted">+{v.provides} Bevölkerung</div> : null}
+          {v.storedResources ? <div class="muted">Lager für {v.storedResources}</div> : null}
+          {v.housing ? <div class="muted">+{v.housing} Bevölkerung</div> : null}
           {v.farm ? <FarmDetails farm={v.farm} /> : null}
           {t && t.queue > 0 ? (
             <>

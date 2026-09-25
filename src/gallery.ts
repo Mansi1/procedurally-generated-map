@@ -165,7 +165,7 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
     items: [
       model('Hauptgebäude', SHAPE.townCenter, BUILDINGS.town_center.size),
       ...[SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4].map((s, i) => model(`Haus ${i + 1}`, s, BUILDINGS.house.size)),
-      model('Minenlager', SHAPE.miningCamp, BUILDINGS.mine.size),
+      model('Minenlager', SHAPE.miningCamp, BUILDINGS.mining_camp.size),
       model('Sammelpunkt', SHAPE.rallyFlag, 0.54),
       collapse('Abriss', SHAPE.house, BUILDINGS.house.size),
     ],
@@ -173,8 +173,8 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
   {
     title: 'Mühlen und Holzlager', gap: 2.4, depth: 5.2,
     items: [
-      ...[SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4].map((s, i) => model(`Mühle ${i + 1}`, s, BUILDINGS.forager.size, millMotion(i, 7))),
-      ...[SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4].map((s, i) => model(`Holzlager ${i + 1}`, s, BUILDINGS.lumberjack.size)),
+      ...[SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4].map((s, i) => model(`Mühle ${i + 1}`, s, BUILDINGS.mill.size, millMotion(i, 7))),
+      ...[SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4].map((s, i) => model(`Holzlager ${i + 1}`, s, BUILDINGS.lumber_camp.size)),
     ],
   },
   {
@@ -262,10 +262,11 @@ const SHOWCASE: Showcase[] = [
     animal(kind, 'erlegt', ANIMAL_POSE.dead),
   ], kind === 'hare' ? 420 : 240, kind === 'hare' ? 0.3 : 0.6)),
   building('Hauptgebäude', [SHAPE.townCenter], BUILDINGS.town_center.size, 150, 1.1),
-  building('Haus', [SHAPE.house, SHAPE.house2, SHAPE.house3, SHAPE.house4], BUILDINGS.house.size, 220, 0.7),
-  building('Holzlager', [SHAPE.lumberCamp, SHAPE.lumberCamp2, SHAPE.lumberCamp3, SHAPE.lumberCamp4], BUILDINGS.lumberjack.size, 220, 0.6),
-  building('Minenlager', [SHAPE.miningCamp], BUILDINGS.mine.size, 200, 0.7),
-  building('Mühle', [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4], BUILDINGS.forager.size, 150, 1.4, (i) => millMotion(i, 7)),
+  // Die Varianten, wie sie die Gebäude im Spiel zeigen (BuildingDef.variants).
+  building('Haus', BUILDINGS.house.models!, BUILDINGS.house.size, 220, 0.7),
+  building('Holzlager', BUILDINGS.lumber_camp.models!, BUILDINGS.lumber_camp.size, 220, 0.6),
+  building('Minenlager', [SHAPE.miningCamp], BUILDINGS.mining_camp.size, 200, 0.7),
+  building('Mühle', BUILDINGS.mill.models!, BUILDINGS.mill.size, 150, 1.4, (i) => millMotion(i, 7)),
   showcase('Gebäude', 'Sammelpunkt', [model('weht', SHAPE.rallyFlag, 0.54)], 420, 0.4),
   ...TREES.map(([label, sh]) => showcase('Bäume', label, [
     model('steht', sh, 0.6, [0.4, 0, 0, 1]),

@@ -59,9 +59,9 @@ const wood = nearest('wood'), berries = nearest('berries'), stone = nearest('sto
 console.log({ wood, berries, stone, gold });
 
 for (const [dx, dy] of [[-4, 0], [0, -4], [-4, -4]]) place('house', { x: tc.x + dx, y: tc.y + dy }, 6);
-if (wood) place('lumberjack', wood, 8, 2);
-if (berries) place('forager', berries, 8, 2);
-if (stone ?? gold) place('mine', (stone ?? gold)!, 8, 2);
+if (wood) place('lumber_camp', wood, 8, 2);
+if (berries) place('mill', berries, 8, 2);
+if (stone ?? gold) place('mining_camp', (stone ?? gold)!, 8, 2);
 // Felder nebeneinander.
 const firstFarm = place('farm', { x: tc.x + 4, y: tc.y + 4 }, 8);
 // Bis zu drei weitere Feldstücke im 3er-Raster daneben - sie wachsen zu einem Feld zusammen.

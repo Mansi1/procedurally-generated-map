@@ -36,7 +36,8 @@ import {
   type CropType,
   type Stock,
 } from './world/buildings';
-import { World, furrowCells, type Villager } from './world/world';
+import { World, type Villager } from './world/world';
+import type { UnitProducer } from './world/building';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './components/ResourceBar';
 import { BuildMenu } from './components/BuildMenu';
@@ -173,7 +174,7 @@ const buildMenu = new BuildMenu(buildEl, player.color.toRGB(), {
   build: (type) => select(selected === type ? null : type),
   // Feld aus dem Untermenü: mit dieser Frucht abstecken.
   crop: (crop) => {
-    world.farmCrop = crop;
+    world.nextFarmCrop = crop;
     select('farm');
   },
   back: () => {
@@ -188,7 +189,7 @@ function select(type: BuildingType | null) {
   if (type) clearSelection();
   // Kein Feld mehr: zurück vom Untermenü der Felder zum Baumenü.
   if (type !== 'farm') buildMenu.showFarms(false);
-  buildMenu.setPressed(type, world.farmCrop);
+  buildMenu.setPressed(type, world.nextFarmCrop);
   updateCursor();
 }
 
@@ -202,7 +203,7 @@ function updateCursor() {
   const trainer = selectedBuilding ? world.building(selectedBuilding) : undefined;
   if (selected) {
     cursor = 'copy';
-  } else if (trainer && BUILDINGS[trainer.type].trains) {
+  } else if (trainer?.isUnitProducer()) {
     cursor = RALLY_CURSOR;
   } else if (selectedVillagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
     // Zeigt der Zeiger auf ein Objekt (Baumkrone, Fels), gilt dessen Feld.
@@ -615,7 +616,7 @@ function clickSelect(px: number, py: number, add: boolean, same = false) {
       const anchor = world.anchorOf(building);
       if (same) {
         // Felder: das ganze zusammenhängende Feld, sonst gleichartige in der Nähe.
-        const near = building.farm ? world.farmGroup(building) : [...world.allBuildings()].filter((b) => b.type === building.type
+        const near = building.isFarm() ? world.farmGroup(building) : [...world.allBuildings()].filter((b) => b.type === building.type
           && Math.hypot(b.x - building.x, b.y - building.y) <= SAME_TYPE_RADIUS);
         selectBuildings([...(add ? selectedBuildings : []), ...near.map((b) => world.anchorOf(b))], anchor);
       } else if (add) {
@@ -765,7 +766,7 @@ function rightClick(p: { x: number; y: number }) {
 
   // Ausbildende Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt - bei
   // mehreren für alle.
-  const trainers = chosenBuildings().filter((b) => BUILDINGS[b.type].trains);
+  const trainers = chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
   if (trainers.length > 0) {
     let reason: string | null = null;
     for (const t of trainers) reason = world.setRally(t, x, y) ?? reason;
@@ -796,7 +797,7 @@ function rightClick(p: { x: number; y: number }) {
 function trainVillager(count = 1) {
   // Ausgewählte Hauptgebäude, sonst das nächstgelegene. Bei mehreren kommt
   // jeder Dorfbewohner in die kürzeste Warteschlange.
-  const selectedTrainers = chosenBuildings().filter((b) => BUILDINGS[b.type].trains);
+  const selectedTrainers = chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
   const nearest = world.nearestTownCenter(camX, camY);
   const trainers = selectedTrainers.length > 0 ? selectedTrainers : nearest ? [nearest] : [];
   if (trainers.length === 0) {
@@ -806,8 +807,8 @@ function trainVillager(count = 1) {
   let reason: string | null = null;
   let queued = 0;
   for (let i = 0; i < count; i++) {
-    const open = trainers.filter((b) => b.queue < MAX_TRAINING_QUEUE);
-    const building = (open.length > 0 ? open : trainers).reduce((a, b) => (b.queue < a.queue ? b : a));
+    const open = trainers.filter((b) => !b.isQueueFull);
+    const building = (open.length > 0 ? open : trainers).reduce((a, b) => (b.queuedUnits < a.queuedUnits ? b : a));
     reason = world.train(building);
     if (reason) break;
     queued++;
@@ -926,7 +927,7 @@ actionsEl.addEventListener('mousedown', (e) => {
     const crop = (e.target as HTMLElement).closest('button')?.dataset.crop as CropType | undefined;
     if (!crop || !CROPS[crop]) return;
     // Für das ganze Feld - darauf wird gemeinsam gesät.
-    const fields = new Set(chosenBuildings().flatMap((b) => (b.farm ? world.farmGroup(b) : [])));
+    const fields = new Set(chosenBuildings().flatMap((b) => world.farmGroup(b)));
     for (const b of fields) world.setCrop(b, crop);
     sound.play('click');
     updateSelectionUI();
@@ -949,7 +950,7 @@ const FARM_PHASE_TEXT = {
 function farmView(building: NonNullable<ReturnType<typeof world.building>>): FarmView {
   const group = world.farmGroup(building);
   // Nur die Furchen, die es gibt - ein Feldstück hat drei.
-  const furrows = group.flatMap((b) => b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0));
+  const furrows = group.flatMap((b) => b.activeFurrows());
   const count = (test: (f: (typeof furrows)[number]) => boolean) => furrows.filter(test).length;
   const growing = furrows.filter((f) => f.sown >= 1 && f.growth < 1);
   return {
@@ -983,33 +984,33 @@ function selectionView(): SelectionView {
   if (many.length > 1) {
     // Mehrere Gebäude: Anzahl je Art, Trefferpunkte zusammen, Ausbildung und Abriss für alle.
     const kinds = new Map<string, number>();
-    for (const b of many) kinds.set(BUILDINGS[b.type].label, (kinds.get(BUILDINGS[b.type].label) ?? 0) + 1);
-    const trainers = many.filter((b) => BUILDINGS[b.type].trains);
-    const plans = new Set(many.map((b) => b.farm?.plan));
+    for (const b of many) kinds.set(b.label, (kinds.get(b.label) ?? 0) + 1);
+    const trainers = many.filter((b): b is UnitProducer => b.isUnitProducer());
+    const plans = new Set(many.map((b) => (b.isFarm() ? b.plan : undefined)));
     const plan = plans.size === 1 ? [...plans][0] : undefined;
     // Fürs Porträt die häufigste Art.
     const common = [...kinds].sort((a, b) => b[1] - a[1])[0][0];
     return {
       kind: 'buildings',
-      type: many.find((b) => BUILDINGS[b.type].label === common)!.type,
+      type: many.find((b) => b.label === common)!.type,
       title: kinds.size === 1 ? `${many.length} × ${[...kinds.keys()][0]}` : `${many.length} Gebäude`,
       kinds: kinds.size > 1 ? [...kinds].map(([l, n]) => `${n}× ${l}`).join(', ') : undefined,
       hp: many.reduce((sum, b) => sum + b.hp, 0),
-      maxHp: many.reduce((sum, b) => sum + BUILDINGS[b.type].hp, 0),
+      maxHp: many.reduce((sum, b) => sum + b.maxHp, 0),
       training: trainers.length > 0
-        ? { queued: trainers.reduce((sum, b) => sum + b.queue, 0), capacity: trainers.length * MAX_TRAINING_QUEUE, train: trainView() }
+        ? { queued: trainers.reduce((sum, b) => sum + b.queuedUnits, 0), capacity: trainers.length * MAX_TRAINING_QUEUE, train: trainView() }
         : undefined,
-      farms: many.every((b) => b.farm)
+      farms: many.every((b) => b.isFarm())
         ? {
             farmers: many.reduce((sum, b) => sum + world.farmers(b).length, 0),
-            rows: many.reduce((sum, b) => sum + b.farm!.furrows.filter((_, row) => furrowCells(b.farm!.tiles, row).length > 0).length, 0),
+            rows: many.reduce((sum, b) => sum + (b.isFarm() ? b.activeFurrows().length : 0), 0),
             plan: plan ?? null,
           }
         : undefined,
     };
   }
   if (building) {
-    const def = BUILDINGS[building.type];
+    const def = building.definition;
     const pop = world.population();
     return {
       kind: 'building',
@@ -1017,16 +1018,16 @@ function selectionView(): SelectionView {
       label: def.label,
       hp: building.hp,
       maxHp: def.hp,
-      accepts: def.accepts.length > 0 ? def.accepts.map((r) => RESOURCE_TYPE_LABEL[r]).join(', ') : undefined,
-      provides: def.provides > 0 ? def.provides : undefined,
-      farm: building.farm ? { ...farmView(building), plan: building.farm.plan } : undefined,
-      trainer: def.trains
+      storedResources: def.storedResources.length > 0 ? def.storedResources.map((r) => RESOURCE_TYPE_LABEL[r]).join(', ') : undefined,
+      housing: def.housing > 0 ? def.housing : undefined,
+      farm: building.isFarm() ? { ...farmView(building), plan: building.plan } : undefined,
+      trainer: building.isUnitProducer()
         ? {
-            queue: building.queue,
+            queue: building.queuedUnits,
             max: MAX_TRAINING_QUEUE,
             full: pop.used >= pop.cap,
-            percent: Math.floor((building.progress / VILLAGER.trainTime) * 100),
-            rally: building.rally !== null,
+            percent: Math.floor(building.trainingProgress() * 100),
+            rally: building.rallyPoint !== null,
             train: trainView(),
           }
         : undefined,
@@ -1170,8 +1171,8 @@ function updateFlatZones() {
   const zones: FlatZone[] = [];
   for (const b of world.allBuildings()) {
     // Felder bleiben, wie das Gelände ist - Pflanzen wachsen auch am Hang.
-    if (b.farm) continue;
-    const fp = BUILDINGS[b.type].footprint;
+    if (b.isFarm()) continue;
+    const fp = b.definition.footprint;
     const k = `${b.type}:${b.x},${b.y}`;
     let z = flatHeights.get(k);
     if (z === undefined) {
@@ -1306,7 +1307,7 @@ window.addEventListener('keydown', (e) => {
   if (buildMenu.farmsOpen) {
     const crop = CROP_ORDER[Number(e.key) - 1];
     if (crop && world.affordable('farm')) {
-      world.farmCrop = crop;
+      world.nextFarmCrop = crop;
       select('farm');
     }
     return;
@@ -1430,7 +1431,7 @@ function updateHoverInfo() {
   }
   const building = hovered ? world.at(mouseTileX!, mouseTileY!) : undefined;
   if (building) {
-    const def = BUILDINGS[building.type];
+    const def = building.definition;
     setText(objectLabelEl, 'Gebäude');
     setText(resourceInfoEl, `${def.label} | Leben ${Math.ceil(building.hp)}/${def.hp}`);
     return;
@@ -1540,9 +1541,9 @@ function minimapDots(current: IsoView) {
   };
   for (const b of world.allBuildings()) {
     if (!inside(b.x, b.y)) continue;
-    const fp = BUILDINGS[b.type].footprint;
+    const fp = b.definition.footprint;
     // Größer von beidem: echte Fläche oder Mindestgröße in Pixeln.
-    dot(b.x, b.y, Math.max(fp * ppt, b.farm ? 4 : 6), color, b.farm ? 0.55 : 1);
+    dot(b.x, b.y, Math.max(fp * ppt, b.isFarm() ? 4 : 6), color, b.isFarm() ? 0.55 : 1);
   }
   for (const v of world.villagers) {
     if (v.inside > 0 || !inside(v.x, v.y)) continue;
@@ -1572,36 +1573,30 @@ function collectOverlay(blend: number) {
     });
   }
   for (const building of chosenBuildings()) {
-    if (building.farm) {
-      // Ein Feldstück belegt nur die Tiles seiner Maske in den 3x3 - je Tile eine
-      // Fläche, etwas größer: unter dem Getreide sähe man sie sonst gar nicht,
-      // so bleibt ringsum ein schmaler grüner Rand.
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (!((building.farm.tiles >> ((dx + 1) * 3 + dy + 1)) & 1)) continue;
-          overlay.push({
-            x: building.x + dx, y: building.y + dy, size: 1.3,
-            color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
-          });
-        }
+    if (building.isFarm()) {
+      // Ein Feldstück belegt nur seine Tiles - je Tile eine Fläche, etwas
+      // größer: unter dem Getreide sähe man sie sonst gar nicht, so bleibt
+      // ringsum ein schmaler grüner Rand.
+      for (const [x, y] of building.footprintTiles()) {
+        overlay.push({ x, y, size: 1.3, color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35 });
       }
     } else {
       overlay.push({
-        x: building.x, y: building.y, size: BUILDINGS[building.type].footprint + 0.4,
+        x: building.x, y: building.y, size: building.definition.footprint + 0.4,
         color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
       });
     }
     // Sammelpunkt: Fahne in der Spielerfarbe, nur solange das Gebäude
     // ausgewählt ist - sonst stünden überall Fahnen herum.
-    if (building.rally) {
+    if (building.isUnitProducer() && building.rallyPoint) {
       overlay.push({
         // Etwas zur Kamera hin versetzt: auf einem Vorkommen steht sie so vor
         // dem Baum oder Fels statt dahinter.
-        x: building.rally.x + 0.3, y: building.rally.y + 0.3, size: 0.54,
+        x: building.rallyPoint.x + 0.3, y: building.rallyPoint.y + 0.3, size: 0.54,
         color: player.color.toRGB(), shape: SHAPE.rallyFlag, alpha: 1,
       });
       overlay.push({
-        x: building.rally.x, y: building.rally.y, size: 0.5,
+        x: building.rallyPoint.x, y: building.rallyPoint.y, size: 0.5,
         color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.35,
       });
     }
@@ -1647,7 +1642,7 @@ function collectOverlay(blend: number) {
     for (let row = 0; row < FIELD_ROWS; row++) {
       overlay.push({
         x: mouseTileX, y: mouseTileY, size: def.size, color: player.color.toRGB(),
-        shape: CROPS[world.farmCrop].shape + row, alpha: 0.7, motion: [row, 3, 1, outline.mask],
+        shape: CROPS[world.nextFarmCrop].shape + row, alpha: 0.7, motion: [row, 3, 1, outline.mask],
         accent: [outline.others, 0, 0],
       });
     }
@@ -1658,7 +1653,7 @@ function collectOverlay(blend: number) {
     y: mouseTileY,
     size: def.size,
     color: blocked ? [220, 70, 80] : player.color.toRGB(),
-    shape: def.shape,
+    shape: def.model,
     alpha: 0.7,
   });
 }

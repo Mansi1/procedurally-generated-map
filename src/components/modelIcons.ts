@@ -157,7 +157,7 @@ function cached(key: string, player: RGB, instances: () => EntityInstance[]): st
 export function buildingIcon(type: BuildingType, player: RGB): string {
   if (type === 'farm') return cropIcon('wheat');
   return cached(`building:${type}`, player, () =>
-    [{ x: -0.5, y: -0.5, size: BUILDINGS[type].size, color: player, shape: BUILDINGS[type].shape, alpha: 1 }]);
+    [{ x: -0.5, y: -0.5, size: BUILDINGS[type].size, color: player, shape: BUILDINGS[type].model, alpha: 1 }]);
 }
 
 /** Dorfbewohner(in) in Spielerfarbe. */
