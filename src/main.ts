@@ -9,7 +9,7 @@ import {
   MiniMap,
   Terrain,
 } from './map';
-import type { EntityInstance } from './gl/entityRenderer';
+import type { EntityInstance, StaticBatch } from './gl/entityRenderer';
 import { setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   player,
@@ -39,7 +39,8 @@ import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay'
 import { mountGame } from './components/Hud';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
-import { loadSettings, saveSettings } from './settings';
+import { treeBillboards } from './components/billboards';
+import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound } from './audio';
 import { Music } from './music';
@@ -282,6 +283,7 @@ function applyFacing(dir: string) {
 window.addEventListener('beforeunload', () => world.save());
 
 const renderer = new MapRenderer(canvas, seed, camera.tileSize, camera.pixelRatio);
+renderer.setBillboards(treeBillboards);
 const minimap = new MiniMap(minimapCanvas, seed, camera.pixelRatio);
 
 camera.moveTo(startX, startY);
@@ -356,7 +358,13 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
 
   refreshPointer();
-  devPanel.showZoom(camera.tileSize);
+  showZoom();
+}
+
+/** Zoomstufe unter der Minimap ("Zoom 1" bis "Zoom 5") und in den Entwickler-Infos. */
+function showZoom() {
+  document.getElementById('zoom-level')!.textContent = `Zoom ${camera.zoomNumber}`;
+  devPanel.showZoom(camera);
 }
 
 /** Tastatur: gehaltene Tasten und die Belegung (game/keyboard.ts) - hier, was sie im Spiel tut. */
@@ -469,6 +477,8 @@ const autosave = new Interval(60_000);
 
 /** Wird je Frame neu befüllt statt neu angelegt. */
 const overlay: EntityInstance[] = [];
+/** Feste Puffer der Vorkommen, an denen niemand arbeitet (world/resources.ts). */
+const staticBatches: StaticBatch[] = [];
 const minimapOverlay: EntityInstance[] = [];
 
 /**
@@ -480,13 +490,15 @@ const minimapOverlay: EntityInstance[] = [];
 /** Alles, was über dem Gelände gezeichnet wird: Vorkommen, Welt, Auswahl und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
+  staticBatches.length = 0;
   const visible = visibleWorldRect(camera.view());
   if (camera.tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camera.x, camera.y);
-    resources.instances(visible, world, overlay, selection.resource, blend);
+    resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
   }
   const hovered = pointer.tile ? world.at(pointer.tile.x, pointer.tile.y)?.anchor : undefined;
-  worldInstances(world, visible, overlay, blend, selection, hovered);
+  worldInstances(world, visible, overlay, blend, selection, hovered,
+    (kind) => camera.tileSize < (settings.animalsBelow[kind] ?? ANIMALS_BELOW_DEFAULT));
   selectionOverlay(world, selection, blend, overlay);
   const tile = pointer.tile;
   if (placement.placingType !== null && tile) {
@@ -512,7 +524,8 @@ function loop(now: number) {
   if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
   collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
-  renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
+  renderer.billboardBelow = settings.billboards;
+  renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay, staticBatches);
   if (pendingFacing) {
     turnAnimation.capture();
     const before = northAngle();
@@ -527,7 +540,7 @@ function loop(now: number) {
   minimapDots(world, minimap, seen, minimapOverlay);
   minimap.render(seen, minimapOverlay);
 
-  devPanel.frame(now, camera);
+  devPanel.frame(now, camera, renderer.billboardsActive);
 
   if (uiRefresh.due(now)) {
     ui.refreshResources();
@@ -538,7 +551,7 @@ function loop(now: number) {
   requestAnimationFrame(loop);
 }
 
-devPanel.showZoom(camera.tileSize);
+showZoom();
 // Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
 // Feld aus der Adresse - gedreht wird nur die Ansicht.
 if (isDirection(settings.facing)) rotateToFace(settings.facing);

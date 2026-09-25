@@ -5,7 +5,7 @@
 // ausgerechnet und gemerkt, verteilt über mehrere Bilder. Ein Wald hat
 // Tausende Tiles; je Bild neu zu rechnen wäre viel zu teuer.
 
-import type { EntityInstance } from '../gl/entityRenderer';
+import type { EntityInstance, StaticBatch } from '../gl/entityRenderer';
 import { SHAPE, TREES, modelSize } from '../gl/entityRenderer';
 import type { Terrain } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
@@ -32,7 +32,7 @@ const LOOK: Record<DepositType, { shape: number; size: number; color: [number, n
     variants: [SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3],
   },
   berries: {
-    shape: SHAPE.berryBush, size: 0.45, color: [62, 115, 52],
+    shape: SHAPE.berryBush, size: 0.55, color: [62, 115, 52],
     variants: [SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4],
   },
 };
@@ -122,8 +122,37 @@ function hash(x: number, y: number, channel: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+/** Legt feste Puffer auf der Grafikkarte an (MapRenderer.createBatch). */
+export interface Batcher {
+  createBatch(instances: readonly EntityInstance[]): StaticBatch;
+  deleteBatch(batch: StaticBatch): void;
+}
+
+/** Kantenlänge einer Region in Stücken - ihre Vorkommen teilen sich einen festen Puffer. */
+const REGION = 4;
+const REGION_TILES = REGION * CHUNK;
+/** Zeitbudget je Bild für Regionen, die nur neue Stücke dazubekommen haben. */
+const REGION_BUDGET_MS = 3;
+
+interface Region {
+  batch: StaticBatch | null;
+  /** Stücke kamen hinzu - der Puffer ist unvollständig, zeigt aber nichts Falsches. */
+  stale: boolean;
+  /** Ein Tile wurde angefasst oder frei, oder die Auswahl wechselte - der Puffer zeigt Falsches. */
+  wrong: boolean;
+}
+
 export class ResourceField {
   private chunks = new Map<string, ResourceNode[]>();
+  private regions = new Map<string, Region>();
+  private batcher?: Batcher;
+  /** Angefasste Tiles ("x,y") - sie laufen Bild für Bild einzeln, nicht im festen Puffer. */
+  private touchedKeys = new Set<string>();
+  /** Dieselben je Region. */
+  private touched = new Map<string, { x: number; y: number }[]>();
+  private seenDeposits: unknown = null;
+  private seenRevision = -1;
+  private selectedKey: string | null = null;
 
   constructor(private terrain: Terrain, private mapGen: MapGenerator) {}
 
@@ -191,6 +220,8 @@ export class ResourceField {
     const start = performance.now();
     for (const [cx, cy] of missing) {
       this.chunks.set(`${cx},${cy}`, this.generate(cx, cy));
+      const region = this.regions.get(`${Math.floor(cx / REGION)},${Math.floor(cy / REGION)}`);
+      if (region) region.stale = true;
       if (performance.now() - start > budgetMs) break;
     }
 
@@ -201,7 +232,12 @@ export class ResourceField {
         return { k, d: distance([cx, cy]) };
       });
       keys.sort((a, b) => b.d - a.d);
-      for (let i = 0; i < this.chunks.size - MAX_CHUNKS; i++) this.chunks.delete(keys[i].k);
+      const drop = this.chunks.size - MAX_CHUNKS;
+      for (let i = 0; i < drop; i++) {
+        this.chunks.delete(keys[i].k);
+        const [cx, cy] = keys[i].k.split(',').map(Number);
+        this.dropRegion(cx, cy);
+      }
     }
   }
 
@@ -216,8 +252,9 @@ export class ResourceField {
         // besteht: Größe, Drehung, Farbton und Lage im Tile.
         const size = look.size * (0.8 + 0.4 * hash(x, y, 1));
         const shade = 0.82 + 0.3 * hash(x, y, 2);
-        const ox = x + (hash(x, y, 3) - 0.5) * 0.35;
-        const oy = y + (hash(x, y, 4) - 0.5) * 0.35;
+        const [px, py] = found.type === 'berries' ? this.towardGroup(x, y) : [0, 0];
+        const ox = x + px + (hash(x, y, 3) - 0.5) * 0.35;
+        const oy = y + py + (hash(x, y, 4) - 0.5) * 0.35;
         const shape = shapeAt(x, y, found.type as DepositType, found.height);
         nodes.push({
           x,
@@ -242,6 +279,26 @@ export class ResourceField {
   }
 
   /**
+   * Verschiebung eines Beerenstrauchs zur Mitte seiner Gruppe (Tiles): ein
+   * Stück hin zum Schwerpunkt der Beeren-Tiles ringsum. Die Sträucher am Rand
+   * rücken so an die inneren heran, und eine Gruppe steht dicht wie ein Busch.
+   */
+  private towardGroup(x: number, y: number): [number, number] {
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (this.terrain.resourceAt(x + dx, y + dy).type !== 'berries') continue;
+        sx += dx;
+        sy += dy;
+        n++;
+      }
+    }
+    return [(sx / n) * 0.45, (sy / n) * 0.45];
+  }
+
+  /**
    * Tiefster Punkt des Geländes unter einem Objekt (Mitte und vier Punkte am
    * Rand). Am Hang steht es so mit der Talseite auf dem Boden und mit der
    * Bergseite im Hang - auf der Mitte oder gar der Tile-Ecke abgestellt
@@ -258,46 +315,158 @@ export class ResourceField {
   /**
    * Die Objekte im Rechteck. Was abgebaut wird, schrumpft, was leer ist,
    * verschwindet. Das ausgewählte Vorkommen bekommt einen Balken mit dem Rest.
+   *
+   * Mit `statics`: Alles, woran niemand arbeitet, liegt je Region in einem
+   * festen Puffer auf der Grafikkarte (statics.out) - einmal gebaut, danach
+   * nur gezeichnet. Nach `out` kommen dann nur die angefassten Tiles und die
+   * Auswahl. Weit herausgezoomt sind das Zehntausende Bäume weniger je Bild.
    */
   instances(view: ViewRect, world: World, out: EntityInstance[],
-            selected: { x: number; y: number } | null = null, blend = 1) {
+            selected: { x: number; y: number } | null = null, blend = 1,
+            statics?: { batcher: Batcher; out: StaticBatch[] }) {
     const x1 = view.x + view.width;
     const y1 = view.y + view.height;
-    for (let cy = Math.floor(view.y / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
-      for (let cx = Math.floor(view.x / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++) {
-        const nodes = this.chunks.get(`${cx},${cy}`);
-        if (!nodes) continue;
-        for (const node of nodes) {
-          if (node.x < view.x || node.x > x1 || node.y < view.y || node.y > y1) continue;
-          const share = world.remainingShare(node.x, node.y, node.total);
-          // Beerensträucher bleiben stehen und verlieren nur ihre Beeren
-          // (motion[3] = Rest, siehe P_BERRY im Shader). Felsen schrumpfen
-          // und verschwinden, wenn sie leer sind.
-          const bush = BUSHES.includes(node.shape);
-          // Bäume behalten ihre Größe: sie werden im Shader von der Spitze her
-          // abgesägt (motion[3] = Rest), leer bleibt ein Stumpf stehen.
-          const tree = TREES.includes(node.shape);
-          if (share <= 0 && !bush && !tree) continue;
-          // Liegt auf dem Tile ein Feld, ist der Stumpf ausgegraben - Felder
-          // gibt es nur auf abgebauten Vorkommen, gefragt wird also nur dort.
-          if (share <= 0 && world.at(node.x, node.y)?.isFarm()) continue;
-          node.instance.size = bush || tree ? node.size : node.size * (0.45 + 0.55 * share);
-          // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
-          // Falls stecken in motion[1] und motion[2].
-          const motion = node.instance.motion!;
-          const fall = TREES.includes(node.shape) ? world.fall(node.x, node.y, blend) : null;
-          // Ganz verbraucht steht der Stumpf wieder aufrecht - der liegende
-          // Stamm ist abgesägt und weggetragen.
-          motion[1] = fall && share > 0 ? fall.angle : 0;
-          motion[2] = fall ? fall.dir : 0;
-          motion[3] = share;
-          // Die Instanzen werden wiederverwendet - der Balken muss also auch
-          // wieder weg, wenn die Auswahl wechselt.
-          node.instance.health =
-            selected && selected.x === node.x && selected.y === node.y ? share : undefined;
-          out.push(node.instance);
+    const inView = (n: ResourceNode) => n.x >= view.x && n.x <= x1 && n.y >= view.y && n.y <= y1;
+    if (!statics) {
+      for (let cy = Math.floor(view.y / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
+        for (let cx = Math.floor(view.x / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++) {
+          for (const node of this.chunks.get(`${cx},${cy}`) ?? []) {
+            if (inView(node)) this.pushNode(node, world, out, selected, blend);
+          }
+        }
+      }
+      return;
+    }
+
+    this.batcher = statics.batcher;
+    this.syncTouched(world, selected);
+    const start = performance.now();
+    for (let ry = Math.floor(view.y / REGION_TILES); ry <= Math.floor(y1 / REGION_TILES); ry++) {
+      for (let rx = Math.floor(view.x / REGION_TILES); rx <= Math.floor(x1 / REGION_TILES); rx++) {
+        const key = `${rx},${ry}`;
+        let region = this.regions.get(key);
+        if (!region) this.regions.set(key, (region = { batch: null, stale: true, wrong: false }));
+        // Falsch (angefasst, Auswahl) muss sofort neu - sonst stünde ein Baum
+        // doppelt da. Nur unvollständig (neue Stücke) darf warten.
+        if (region.wrong || (region.stale && (!region.batch || performance.now() - start < REGION_BUDGET_MS))) {
+          this.rebuild(rx, ry, region, statics.batcher);
+        }
+        if (region.batch) statics.out.push(region.batch);
+        for (const t of this.touched.get(key) ?? []) {
+          const node = this.nodeAt(t.x, t.y);
+          if (node && inView(node)) this.pushNode(node, world, out, selected, blend);
         }
       }
     }
+    if (selected && !this.touchedKeys.has(`${selected.x},${selected.y}`)) {
+      const node = this.nodeAt(selected.x, selected.y);
+      if (node && inView(node)) this.pushNode(node, world, out, selected, blend);
+    }
+  }
+
+  /** Ein Vorkommen so, wie es gerade ist - abgebaut, gefällt, ausgewählt. */
+  private pushNode(node: ResourceNode, world: World, out: EntityInstance[],
+                   selected: { x: number; y: number } | null, blend: number) {
+    const share = world.remainingShare(node.x, node.y, node.total);
+    // Beerensträucher bleiben stehen und verlieren nur ihre Beeren
+    // (motion[3] = Rest, siehe P_BERRY im Shader). Felsen schrumpfen
+    // und verschwinden, wenn sie leer sind.
+    const bush = BUSHES.includes(node.shape);
+    // Bäume behalten ihre Größe: sie werden im Shader von der Spitze her
+    // abgesägt (motion[3] = Rest), leer bleibt ein Stumpf stehen.
+    const tree = TREES.includes(node.shape);
+    if (share <= 0 && !bush && !tree) return;
+    // Liegt auf dem Tile ein Feld, ist der Stumpf ausgegraben - Felder
+    // gibt es nur auf abgebauten Vorkommen, gefragt wird also nur dort.
+    if (share <= 0 && world.at(node.x, node.y)?.isFarm()) return;
+    node.instance.size = bush || tree ? node.size : node.size * (0.45 + 0.55 * share);
+    // Gefällte Bäume kippen um bzw. liegen: Winkel und Richtung des
+    // Falls stecken in motion[1] und motion[2].
+    const motion = node.instance.motion!;
+    const fall = tree ? world.fall(node.x, node.y, blend) : null;
+    // Ganz verbraucht steht der Stumpf wieder aufrecht - der liegende
+    // Stamm ist abgesägt und weggetragen.
+    motion[1] = fall && share > 0 ? fall.angle : 0;
+    motion[2] = fall ? fall.dir : 0;
+    motion[3] = share;
+    // Die Instanzen werden wiederverwendet - der Balken muss also auch
+    // wieder weg, wenn die Auswahl wechselt.
+    node.instance.health =
+      selected && selected.x === node.x && selected.y === node.y ? share : undefined;
+    out.push(node.instance);
+  }
+
+  private nodeAt(x: number, y: number): ResourceNode | undefined {
+    return this.chunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`)?.find((n) => n.x === x && n.y === y);
+  }
+
+  private regionKeyOfTile(x: number, y: number): string {
+    return `${Math.floor(x / REGION_TILES)},${Math.floor(y / REGION_TILES)}`;
+  }
+
+  /**
+   * Liest die angefassten Tiles neu, wenn sich an den Vorkommen etwas geändert
+   * hat, und markiert die Regionen, deren Puffer dadurch falsch sind - ebenso
+   * beim Wechsel der Auswahl.
+   */
+  private syncTouched(world: World, selected: { x: number; y: number } | null) {
+    const wrong = (k: string) => {
+      const comma = k.indexOf(',');
+      const region = this.regions.get(this.regionKeyOfTile(Number(k.slice(0, comma)), Number(k.slice(comma + 1))));
+      if (region) region.wrong = true;
+    };
+    const selectedKey = selected ? `${selected.x},${selected.y}` : null;
+    if (selectedKey !== this.selectedKey) {
+      if (this.selectedKey) wrong(this.selectedKey);
+      if (selectedKey) wrong(selectedKey);
+      this.selectedKey = selectedKey;
+    }
+    const deposits = world.deposits;
+    if (deposits === this.seenDeposits && deposits.revision === this.seenRevision) return;
+    this.seenDeposits = deposits;
+    this.seenRevision = deposits.revision;
+    const next = new Set(deposits.touched());
+    for (const k of next) if (!this.touchedKeys.has(k)) wrong(k);
+    for (const k of this.touchedKeys) if (!next.has(k)) wrong(k);
+    this.touchedKeys = next;
+    this.touched.clear();
+    for (const k of next) {
+      const comma = k.indexOf(',');
+      const x = Number(k.slice(0, comma));
+      const y = Number(k.slice(comma + 1));
+      const region = this.regionKeyOfTile(x, y);
+      let list = this.touched.get(region);
+      if (!list) this.touched.set(region, (list = []));
+      list.push({ x, y });
+    }
+  }
+
+  /** Baut den festen Puffer einer Region: alle Vorkommen ihrer Stücke, an denen niemand arbeitet. */
+  private rebuild(rx: number, ry: number, region: Region, batcher: Batcher) {
+    const list: EntityInstance[] = [];
+    for (let cy = ry * REGION; cy < (ry + 1) * REGION; cy++) {
+      for (let cx = rx * REGION; cx < (rx + 1) * REGION; cx++) {
+        for (const node of this.chunks.get(`${cx},${cy}`) ?? []) {
+          const key = `${node.x},${node.y}`;
+          if (this.touchedKeys.has(key) || key === this.selectedKey) continue;
+          // So, wie pushNode() ein unberührtes Vorkommen zeigt: volle Größe,
+          // steht, voller Rest, kein Balken.
+          list.push({ ...node.instance, size: node.size, motion: [node.instance.motion![0], 0, 0, 1], health: undefined });
+        }
+      }
+    }
+    if (region.batch) batcher.deleteBatch(region.batch);
+    region.batch = list.length > 0 ? batcher.createBatch(list) : null;
+    region.stale = false;
+    region.wrong = false;
+  }
+
+  /** Fallen Stücke weg, wird die Region beim nächsten Zeigen neu gebaut; ihr Puffer ist frei. */
+  private dropRegion(cx: number, cy: number) {
+    const key = `${Math.floor(cx / REGION)},${Math.floor(cy / REGION)}`;
+    const region = this.regions.get(key);
+    if (!region) return;
+    if (region.batch) this.batcher?.deleteBatch(region.batch);
+    this.regions.delete(key);
   }
 }

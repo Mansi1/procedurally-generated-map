@@ -63,8 +63,8 @@ const NAMES: IconName[] = ['wood', 'food', 'gold', 'stone', 'population', 'idle'
 
 let stage: { canvas: HTMLCanvasElement; gl: WebGL2RenderingContext; renderer: EntityRenderer } | null = null;
 
-/** Bühne beim ersten Aufruf anlegen - ein WebGL-Kontext für alle Symbole. */
-function getStage() {
+/** Bühne beim ersten Aufruf anlegen - ein WebGL-Kontext für alle Symbole (und die Bilder der Bäume, billboards.ts). */
+export function getStage() {
   if (stage) return stage;
   const canvas = document.createElement('canvas');
   canvas.width = STAGE_W;

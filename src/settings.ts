@@ -22,11 +22,25 @@ export interface Settings {
   paused: boolean;
   /** Spielerfarbe - Schlüssel in PLAYER_COLORS. */
   playerColor: string;
+  /**
+   * Bäume als Bild statt als Modell unter so vielen CSS-Pixeln je Tile (0:
+   * nie) - weit draußen spart das die meiste Arbeit (components/billboards.ts).
+   */
+  billboards: number;
+  /**
+   * Je Tierart ("deer", "hare" ...): ausblenden unter so vielen CSS-Pixeln je
+   * Tile (0: nie) - weit draußen sind Tiere kaum zu sehen und kosten
+   * trotzdem. Fehlt eine Art, gilt ANIMALS_BELOW_DEFAULT.
+   */
+  animalsBelow: Record<string, number>;
 }
+
+/** Vorgabe für animalsBelow: bei Zoom 1 (8 px je Tile) keine Tiere. */
+export const ANIMALS_BELOW_DEFAULT = 16;
 
 const DEFAULTS: Settings = {
   volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', paused: false,
-  playerColor: 'green',
+  playerColor: 'green', billboards: 16, animalsBelow: {},
 };
 const STORAGE_KEY = 'pgm.settings';
 
@@ -35,17 +49,21 @@ const STORAGE_KEY = 'pgm.settings';
  * Blickrichtung und Pause bleiben, sie gehören zum laufenden Spiel.
  */
 export function resetSettings(s: Settings) {
-  Object.assign(s, { ...DEFAULTS, facing: s.facing, paused: s.paused });
+  Object.assign(s, { ...DEFAULTS, animalsBelow: {}, facing: s.facing, paused: s.paused });
 }
 
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) };
+    if (raw) {
+      const s = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) };
+      if (typeof s.animalsBelow !== 'object' || s.animalsBelow === null) s.animalsBelow = {};
+      return s;
+    }
   } catch {
     // Kein Speicher oder kaputter Eintrag - dann die Vorgaben.
   }
-  return { ...DEFAULTS };
+  return { ...DEFAULTS, animalsBelow: {} };
 }
 
 export function saveSettings(s: Settings) {

@@ -7,12 +7,12 @@
 import { centerFor, panDelta, type IsoView } from '../gl/iso';
 
 /**
- * Zoomstufen in CSS-Pixeln je Welt-Tile. Verdopplung je Stufe: die
- * Schrittweite der Abtastung ist damit immer eine Zweierpotenz, und von einem
- * Ende zum anderen sind es sieben Rasten statt Dutzender Ein-Pixel-Schritte.
- * Erst die letzte Stufe (128) zeigt die Dorfbewohner groß genug für ihre Details.
+ * Zoomstufen in CSS-Pixeln je Welt-Tile - im Spiel "Zoom 1" (weit draußen)
+ * bis "Zoom 5" (ganz nah), angezeigt unter der Minimap. Verdopplung je Stufe:
+ * die Schrittweite der Abtastung ist damit immer eine Zweierpotenz. Erst die
+ * letzte Stufe (128) zeigt die Dorfbewohner groß genug für ihre Details.
  */
-export const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128];
+export const ZOOM_LEVELS = [8, 16, 32, 64, 128];
 
 /** Die Zoomstufe, die `pixelsPerTile` am nächsten kommt. */
 export function nearestZoomIndex(pixelsPerTile: number): number {
@@ -41,6 +41,11 @@ export class Camera {
   /** CSS-Pixel je Tile bei der jetzigen Zoomstufe. */
   get tileSize(): number {
     return ZOOM_LEVELS[this.zoomIndex];
+  }
+
+  /** Die Zoomstufe, wie das Spiel sie zeigt: 1 (weit draußen) bis 5 (ganz nah). */
+  get zoomNumber(): number {
+    return this.zoomIndex + 1;
   }
 
   /** Zoomstufe setzen (begrenzt). false, wenn sie schon so war. */

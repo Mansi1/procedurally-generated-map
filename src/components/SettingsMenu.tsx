@@ -1,7 +1,7 @@
 // SettingsMenu.tsx
 // Menü als Holztafel in der Bildmitte (Zahnrad an der Rohstoffleiste oder
 // F10, wie in AoE2): Spielerfarbe, Pause, Tempo, Ton und Musik, Kamera-Tempo,
-// Anzeigen, Speichern, zurück ins Hauptmenü. Einmal gerendert; refresh()
+// Anzeigen, Grafik, Speichern, zurück ins Hauptmenü. Einmal gerendert; refresh()
 // setzt über Refs, was sich auch von außen ändert (Pause, Ton, laufendes
 // Musikstück).
 
@@ -9,7 +9,8 @@ import { createRef, render, type Ref } from 'defuss';
 import './SettingsMenu.css';
 import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/catalog';
-import { resetSettings, saveSettings, type Settings } from '../settings';
+import { ANIMALS_BELOW_DEFAULT, resetSettings, saveSettings, type Settings } from '../settings';
+import { ANIMAL_CLASSES } from '../world/unit';
 import { ShortcutList } from './Shortcuts';
 import { confirmDialog } from './ConfirmDialog';
 
@@ -31,6 +32,25 @@ export interface MenuHooks {
 }
 
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
+/**
+ * Ab wann Bäume als Bild gezeichnet werden: unter so vielen CSS-Pixeln je
+ * Tile. Die Zoomstufen sind 8, 16, 32, 64, 128 px - im Spiel Zoom 1 bis 5,
+ * Vorgabe Zoom 3. 16 = nur bei Zoom 1, dort sind Bäume nur wenige Pixel groß.
+ */
+const BILLBOARDS: [number, string, string][] = [
+  [0, 'Nie', 'Bäume immer als 3D-Modell'],
+  [16, 'Weit', 'Als Bild bei Zoom 1 - dort sind Bäume nur noch wenige Pixel groß'],
+  [32, 'Mittel', 'Als Bild bei Zoom 1 und 2'],
+  [64, 'Immer', 'Als Bild bei Zoom 1 bis 3 - nur bei Zoom 4 und 5 als Modell'],
+];
+/** Ab wann eine Tierart nicht mehr gezeichnet wird - Zoomstufen wie bei BILLBOARDS. */
+const HIDE_ANIMALS: [number, string, string][] = [
+  [0, 'Nie', 'Immer zeigen'],
+  [16, 'Weit', 'Bei Zoom 1 ausblenden'],
+  [32, 'Mittel', 'Bei Zoom 1 und 2 ausblenden'],
+];
+/** Die Tierarten in der Reihenfolge der Klassen: Kennung und Name. */
+const ANIMAL_KINDS = ANIMAL_CLASSES.map((c) => [c.definition.type, c.definition.label] as const);
 
 /** Regler 0..100 % mit der Zahl daneben. */
 interface SliderRefs {
@@ -58,6 +78,8 @@ export class SettingsMenu {
   private pauseButton = createRef<HTMLButtonElement>();
   private soundButton = createRef<HTMLButtonElement>();
   private speedButtons = SPEEDS.map(() => createRef<HTMLButtonElement>());
+  private billboardButtons = BILLBOARDS.map(() => createRef<HTMLButtonElement>());
+  private animalButtons = new Map(ANIMAL_KINDS.map(([kind]) => [kind, HIDE_ANIMALS.map(() => createRef<HTMLButtonElement>())]));
   private colorButtons = new Map(Object.keys(PLAYER_COLORS).map((key) => [key, createRef<HTMLButtonElement>()]));
   private volume = sliderRefs();
   private music = sliderRefs();
@@ -170,6 +192,31 @@ export class SettingsMenu {
           </label>
         </section>
         <section>
+          <h3>Grafik</h3>
+          <div class="menu-row">
+            <span title="Bäume als flaches Bild statt als 3D-Modell - weit draußen sieht man kaum einen Unterschied, das Spiel läuft aber flüssiger.">Bäume als Bild</span>
+            <span class="menu-choice">
+              {BILLBOARDS.map(([value, label, hint], i) => (
+                <button type="button" class="wood-btn" title={hint} ref={this.billboardButtons[i]} onClick={() => this.change({ billboards: value })}>{label}</button>
+              ))}
+            </span>
+          </div>
+          <details class="menu-keys-box">
+            <summary title="Weit draußen sind Tiere kaum zu sehen - ausgeblendet läuft das Spiel flüssiger. Sie leben trotzdem weiter.">Tiere ausblenden</summary>
+            {ANIMAL_KINDS.map(([kind, name]) => (
+              <div class="menu-row">
+                <span>{name}</span>
+                <span class="menu-choice">
+                  {HIDE_ANIMALS.map(([value, label, hint], i) => (
+                    <button type="button" class="wood-btn" title={hint} ref={this.animalButtons.get(kind)![i]}
+                      onClick={() => this.change({ animalsBelow: { ...this.settings.animalsBelow, [kind]: value } })}>{label}</button>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </details>
+        </section>
+        <section>
           <div class="menu-row">
             <span>Alle Einstellungen</span>
             <button type="button" class="wood-btn menu-btn" onClick={() => this.reset()}>Zurücksetzen</button>
@@ -234,6 +281,11 @@ export class SettingsMenu {
     this.pauseButton.current.textContent = this.hooks.paused() ? 'Fortsetzen' : 'Anhalten';
     this.soundButton.current.textContent = this.hooks.soundEnabled() ? 'An' : 'Aus';
     SPEEDS.forEach(([value], i) => this.speedButtons[i].current.classList.toggle('active', value === s.speed));
+    BILLBOARDS.forEach(([value], i) => this.billboardButtons[i].current.classList.toggle('active', value === s.billboards));
+    for (const [kind, refs] of this.animalButtons) {
+      const below = s.animalsBelow[kind] ?? ANIMALS_BELOW_DEFAULT;
+      HIDE_ANIMALS.forEach(([value], i) => refs[i].current.classList.toggle('active', value === below));
+    }
     for (const [key, ref] of this.colorButtons) ref.current.classList.toggle('active', key === s.playerColor);
     const slider = (refs: SliderRefs, v: number) => {
       refs.input.current.value = String(Math.round(v * 100));
