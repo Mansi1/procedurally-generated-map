@@ -10,7 +10,8 @@
 // rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot,
+  ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, animationTime, buildingHeading,
+  frozenMillMotion, millMotion, modelWorkSpot,
   type EntityInstance,
 } from './gl/entityRenderer';
 import {
@@ -96,15 +97,26 @@ function withWorker(label: string, shape: number, size: number, female: boolean,
   };
 }
 
+const MILLS: number[] = [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4];
+
 /** Einsturz beim Abriss, in einer Schleife: stehen, zusammensacken, stehen. */
 function collapse(label: string, shape: number, size: number): Exhibit {
+  const mill = MILLS.includes(shape);
+  // Mühle: bis zum Einsturz drehen die Flügel, dann stehen sie - wie im Spiel.
+  let frozen: [number, number, number, number] | null = null;
   return {
     label,
     draw: (t, x, y, out) => {
       const f = loop(t, 4);
       const c = f < 0.3 ? 0 : f < 0.7 ? (f - 0.3) / 0.4 : 1;
-      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: f > 0.9 ? 1 - (f - 0.9) * 10 : 1,
-        motion: [BUILDING_HEADING, 0, 0, Math.max(0.001, c * c * (3 - 2 * c))] });
+      let motion: [number, number, number, number] = [BUILDING_HEADING, 0, 0, 0];
+      if (mill) {
+        if (c === 0) frozen = null;
+        else frozen ??= frozenMillMotion(0, 7, animationTime());
+        motion = frozen ? [...frozen] : millMotion(0, 7);
+      }
+      motion[3] = Math.max(0.001, c * c * (3 - 2 * c));
+      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: f > 0.9 ? 1 - (f - 0.9) * 10 : 1, motion });
     },
   };
 }

@@ -71,9 +71,12 @@ def clip_entry(a):
         'props': listed(a.get('props')),
         'kneel': bool(a.get('kneel', 0)),
     }
-    # Ersetzt der Clip eine Pose des Spiels: welche, und welcher Phasenbereich.
+    # Ersetzt der Clip eine Pose des Spiels: welche.
     if 'pose' in a:
         entry['pose'] = int(a['pose'])
+    # Welcher Zeit- bzw. Phasenbereich eine Schleife ist - auch ohne Pose
+    # (Mühlenflügel, Fahne: Spielzeit statt Phase).
+    if 'phase_period' in a:
         entry['phase_period'] = float(a['phase_period'])
         entry['phase_shift'] = float(a.get('phase_shift', 0.0))
     return entry

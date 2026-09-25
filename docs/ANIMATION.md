@@ -100,6 +100,7 @@ Die Migration läuft auf dem Branch `animation-migration`.
 | Ich will … | Wo | Danach |
 |---|---|---|
 | eine Bewegung ändern | `humanoid.blend` → die Action gleichen Namens | `npm run gen:anim` |
+| Mühlenflügel oder Fahne ändern | `mill.blend` → Action `sails`, `flag.blend` → Action `wave` | `npm run gen:anim` |
 | einen neuen Clip | neue Action am Skelett `humanoid`, Custom Properties siehe unten | `npm run gen:anim`, erscheint in der Galerie |
 | festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
 | die Form eines Körpers ändern | `tools/models/villagers.mjs` | `npm run gen:models` |
@@ -416,14 +417,34 @@ Bildrate mit 500 Dorfbewohnern gleich bleibt.
 4. **Weg damit:** der Tier-Zweig im Shader (`beast`, `uLegs`, `uNeck`,
    `uGraze`, `uSide`).
 
-### Phase 4: Mühle und Fahne (klein)
+### Phase 4: Mühle und Fahne (klein) - erledigt
 
-1. **Mühle:** ein Knochen an der Nabe, Clip `sails` mit gebackenen Böen über
-   20 s als Schleife. `millMotion()` liefert nur noch Zeitversatz und Tempo.
-   Bei einem Einsturz bleibt die Zeit stehen.
-2. **Fahne:** eine Knochenkette durchs Tuch, Clip `wave`.
-3. **Weg damit:** `P_SAILS`, `P_CLOTH`, `uHub`, `SAIL_SPEED`,
-   `GUST_AMOUNT`, `GUST_RATE`.
+Mühlenflügel und die Fahne am Sammelpunkt kommen als Clips aus Blender
+(`assets/blender/mill.blend`, `flag.blend`; eingerichtet mit
+`npm run export:props` und `tools/blender/bootstrap_rig.py`).
+
+- **Mühle:** Skelett `mill` (`root`, `sails` an der Nabe), Clip `sails`:
+  125,7 s bei 10 Bildern je Sekunde, das sind 7 Böen-Takte und genau
+  16 Umdrehungen. Die Zeit ist „Mühlenzeit“ (Spielzeit × Drehzahl der
+  Mühle), versetzt je Mühle (`millClipOffset`). Eine eingestürzte Mühle
+  bleibt mit der Mühlenzeit beim Abriss stehen (`frozenMillMotion`,
+  gemessen an der Animations-Uhr wie `uTime`). Die Böen treffen genau wie
+  bei der Formel, Abweichung der Drehzahl 0,005 rad/s. Die Stellung
+  der Flügel weicht bis zu 6,4° ab (an der Flügelspitze bis 47 cm bei
+  4,65 m Breite). Das kommt daher, dass eine Schleife mit gemeinsamen Böen
+  nicht jede Startstellung erreicht. Man sieht es nicht: jede Mühle dreht in
+  ihrem eigenen Takt, und nach einer Vierteldrehung sehen die Flügel gleich aus.
+- **Fahne:** Skelett `flag` (`root`, `cloth.0` bis `cloth.6` gleichmäßig
+  längs des Tuchs, wo seine Eckpunkte liegen). Die Knochen verschieben sich
+  seitwärts, der Shader mischt je Eckpunkt die beiden Nachbarn nach der Lage.
+  Clip `wave`: 39 Bilder, eine Welle. Abweichung an den Eckpunkten 0,03 cm.
+- **Neu im Rückweg:** Knochen dürfen sich auch verschieben (`Clip.moves`),
+  nicht nur drehen. Clips ohne Pose laufen nach der Spielzeit:
+  (Zeit − `phase_shift`) × Dauer / `phase_period`.
+- **Rückfall:** Die Formeln (`P_SAILS`, `P_CLOTH`) bleiben im Shader, falls
+  eine Bibliothek fehlt. Die Fahne auf dem Hauptgebäude weht weiter über die
+  Formel, sie hat kein eigenes Skelett.
+- **Galerie:** Beim Abriss bleiben die Flügel jetzt auch dort stehen.
 
 ### Phase 5: Zustands-Teile Blender-fest machen (klein bis mittel)
 

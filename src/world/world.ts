@@ -5,7 +5,7 @@
 // werden, während das Gelände jederzeit neu berechnet werden kann.
 
 import { uniqueName } from './names';
-import { POSE } from '../gl/entityRenderer';
+import { POSE, animationTime } from '../gl/entityRenderer';
 import type { Terrain } from '../map';
 import { reliefZ } from '../noise';
 import { BUILDINGS, FIELD_ROWS, RESOURCE_KINDS, YIELD, MAX_BUILD_SLOPE, VILLAGER, initialResources } from './catalog';
@@ -525,7 +525,7 @@ export class World {
     }
     this.ruins.push({
       type: building.type, shape: building.model, x: building.x, y: building.y, at: this.time,
-      clock: performance.now() / 1000, debris,
+      clock: animationTime(), debris,
     });
     this.onEvent?.({ kind: 'collapse', x: cx, y: cy });
   }

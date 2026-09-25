@@ -15,7 +15,13 @@ import MOW from '../models/mow_pose.json';
 import CARVE from '../models/carve_pose.json';
 import humanoidClipsGlb from '../models/humanoid_clips.glb?inline';
 import humanoidClipsManifest from '../models/humanoid_clips.json';
-import { BONE, HUMANOID, KNEEL_BIT, MAX_BONES, TEXELS_PER_BONE, bakeClip, loadClips, type Clip, type Rig } from './clips';
+import millClipsGlb from '../models/mill_clips.glb?inline';
+import millClipsManifest from '../models/mill_clips.json';
+import flagClipsGlb from '../models/flag_clips.glb?inline';
+import flagClipsManifest from '../models/flag_clips.json';
+import {
+  BONE, FLAG, FLAG_SEGMENTS, HUMANOID, KNEEL_BIT, MAX_BONES, MILL, TEXELS_PER_BONE, bakeClip, loadClips, type Clip, type Rig,
+} from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseObj, type ObjTriangle } from './obj';
@@ -251,7 +257,30 @@ const GUST_RATE = 0.35;
 export function frozenMillMotion(x: number, y: number, t: number): [number, number, number, number] {
   const [heading, phase, speed] = millMotion(x, y);
   const angle = t * SAIL_SPEED * speed + phase + GUST_AMOUNT * Math.sin(t * GUST_RATE * speed + phase * 3.1);
-  return [heading, angle, -1, 0];
+  // motion[2] < 0: steht still. Die Formel liest den Winkel (motion[1]), der
+  // Clip "sails" die Mühlenzeit: -motion[2] - 1.
+  return [heading, angle, -1 - (t * speed + millClipOffset(phase)), 0];
+}
+
+/**
+ * Wo in der Schleife des Clips "sails" eine Mühle mit dieser Startstellung
+ * steht - wie millClipOffset im Shader: die Böen genau wie bei der Formel,
+ * die Drehung bis auf eine Vierteldrehung (die Flügel sehen dann gleich aus)
+ * und höchstens 6.4 Grad.
+ */
+function millClipOffset(phase: number): number {
+  let best = 0;
+  let err = Infinity;
+  for (let k = 0; k < 7; k++) {
+    const o = (3.1 * phase + 2 * Math.PI * k) / GUST_RATE;
+    const quarter = Math.PI / 2;
+    const e = Math.abs(((((SAIL_SPEED * o - phase + quarter / 2) % quarter) + quarter) % quarter) - quarter / 2);
+    if (e < err) {
+      err = e;
+      best = o;
+    }
+  }
+  return best;
 }
 
 export function millMotion(x: number, y: number): [number, number, number, number] {
@@ -303,6 +332,11 @@ function readClips(name: string, load: () => Clip[]): Clip[] {
  */
 const CLIP_LIBRARIES: { rig: Rig<any>; clips: Clip[]; shapes: readonly number[] }[] = [
   { rig: HUMANOID, clips: CLIPS, shapes: [SHAPE.villager, SHAPE.villagerFemale] },
+  // Mühlenflügel (assets/blender/mill.blend): ein Clip "sails" für alle vier Mühlen.
+  { rig: MILL, clips: readClips('mill', () => loadClips(millClipsGlb, millClipsManifest, MILL)),
+    shapes: [SHAPE.mill, SHAPE.mill2, SHAPE.mill3, SHAPE.mill4] },
+  // Fahne am Sammelpunkt (assets/blender/flag.blend): Clip "wave".
+  { rig: FLAG, clips: readClips('flag', () => loadClips(flagClipsGlb, flagClipsManifest, FLAG)), shapes: [SHAPE.rallyFlag] },
 ];
 
 /** Höchstens so viele Clips je Figur (Uniform-Arrays im Shader). */
@@ -329,11 +363,15 @@ interface ClipUniforms {
   poseClip: Int32Array;
   poseRate: Float32Array;
   poseShift: Float32Array;
+  /** Je Clip: Clip-Zeit = (Zeit - shift) * rate - für Clips ohne Pose (Mühle, Fahne). */
+  rate: Float32Array;
+  shift: Float32Array;
 }
 /** Für Modelle ohne Clips. */
 const NO_CLIPS: ClipUniforms = {
   rows: new Int32Array(MAX_CLIPS).fill(-1), frames: new Int32Array(MAX_CLIPS).fill(2), fps: new Float32Array(MAX_CLIPS).fill(30),
   props: new Int32Array(MAX_CLIPS), poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
+  rate: new Float32Array(MAX_CLIPS).fill(1), shift: new Float32Array(MAX_CLIPS),
 };
 /** Kantenlänge der Blatt-Textur in Pixeln (textures/birch_leaf.png). */
 const LEAF_TEX_SIZE = 256;
@@ -408,7 +446,8 @@ export function setAnimationSpeed(speed: number) {
   animationSpeed = speed;
 }
 
-function animationTime(): number {
+/** Stand dieser Uhr (Sekunden) - wie uTime im Shader. Für eingestürzte Mühlen (frozenMillMotion). */
+export function animationTime(): number {
   const now = performance.now() / 1000;
   if (!animationPaused) animationClock += (now - animationLast) * animationSpeed;
   animationLast = now;
@@ -543,6 +582,12 @@ uniform int   uClipRow[${MAX_CLIPS}];
 uniform int   uClipFrames[${MAX_CLIPS}];
 uniform float uClipFps[${MAX_CLIPS}];
 uniform int   uClipProps[${MAX_CLIPS}];
+// Clips ohne Pose (Mühle, Fahne): Clip-Zeit = (Zeit - uClipShift) * uClipRate.
+uniform float uClipRate[${MAX_CLIPS}];
+uniform float uClipShift[${MAX_CLIPS}];
+// Fahnentuch: vom Mast (x) bis zum Ende (y) in Modell-y, Höhe (z) - die Knochen
+// cloth.0-${FLAG_SEGMENTS} liegen gleichmäßig darauf (FLAG in clips.ts).
+uniform vec3  uCloth;
 uniform int   uPoseClip[8];
 uniform float uPoseRate[8];
 uniform float uPoseShift[8];
@@ -712,6 +757,25 @@ vec3 clipSkin(vec3 p, int clip, float time, int bone) {
   int f0 = int(floor(f));
   int row = uClipRow[clip] + f0;
   return mix(clipBone(p, row, bone), clipBone(p, row + 1, bone), f - float(f0));
+}
+
+// Mühlenzeit für den Clip "sails" (mill_clips.glb): wo in der Schleife eine
+// Mühle mit Startstellung "phase" (millMotion) steht. Die Böen treffen genau
+// wie bei der Formel (Böen-Takt 3.1 * phase); die Drehung passt bis auf
+// höchstens 6.4 Grad - die vier Flügel sind nach einer Vierteldrehung gleich,
+// gesucht wird die nächste von sieben Stellungen (millClipOffset in TS).
+float millClipOffset(float phase) {
+  float best = 0.0;
+  float err = 10.0;
+  for (int k = 0; k < 7; k++) {
+    float o = (3.1 * phase + 6.2831853 * float(k)) / ${GUST_RATE.toFixed(3)};
+    float e = abs(mod(${SAIL_SPEED.toFixed(3)} * o - phase + 0.7853982, 1.5707963) - 0.7853982);
+    if (e < err) {
+      err = e;
+      best = o;
+    }
+  }
+  return best;
 }
 
 void main() {
@@ -1152,13 +1216,29 @@ void main() {
       }
     }
 
-    if (part == P_CLOTH) {
+    if (part == P_CLOTH && !figure && uClipRow[0] >= 0) {
+      // Fahne am Sammelpunkt: Clip "wave" aus Blender. Die Knochen cloth.0-N
+      // liegen gleichmäßig längs des Tuchs; dazwischen die beiden Nachbarn
+      // nach der Lage gemischt (an den Eckpunkten genau einer).
+      float time = (uTime - uClipShift[0]) * uClipRate[0];
+      float s = clamp((p.y - uCloth.x) / (uCloth.y - uCloth.x), 0.0, 1.0) * ${FLAG_SEGMENTS}.0;
+      int j = min(int(floor(s)), ${FLAG_SEGMENTS - 1});
+      p = mix(clipSkin(p, 0, time, 1 + j), clipSkin(p, 0, time, 2 + j), s - float(j));
+    } else if (part == P_CLOTH) {
       // Fahnentuch weht: eine Welle läuft vom Mast zum freien Ende, das
-      // weiter ausschlägt als die Seite am Mast.
+      // weiter ausschlägt als die Seite am Mast. (Rückfall ohne Clip, und
+      // die Fahne auf dem Hauptgebäude.)
       p.x += sin(uTime * 5.0 - p.y * 14.0) * 0.12 * p.y;
     }
 
-    if (part == P_SAILS) {
+    if (part == P_SAILS && uClipRow[0] >= 0) {
+      // Mühlenflügel: Clip "sails" aus Blender, in Mühlenzeit (Spielzeit *
+      // Drehzahl + Stellung der Mühle). aMotion.z < 0: eingestürzt, die Zeit
+      // steht bei -aMotion.z - 1 (frozenMillMotion).
+      float speed = aMotion.z > 0.0 ? aMotion.z : 1.0;
+      float t = aMotion.z < 0.0 ? -aMotion.z - 1.0 : uTime * speed + millClipOffset(aMotion.y);
+      p = clipSkin(p, 0, (t - uClipShift[0]) * uClipRate[0], 1);
+    } else if (part == P_SAILS) {
       // Muehlenfluegel drehen sich um die Nabe, die Achse zeigt nach vorn.
       // aMotion.y = Startstellung, aMotion.z = Drehzahl (millMotion), dazu Böen.
       // Drehzahl < 0: steht still - aMotion.y ist dann der feste Winkel
@@ -1941,6 +2021,8 @@ interface Model {
   loadAnchor: [number, number, number];
   /** Mitte der Flügel (links, oben). */
   hub: [number, number];
+  /** Fahnentuch (Teil Cloth): vom Mast bis zum Ende in Modell-y, seine Höhe - für die Fahne (FLAG). */
+  cloth: [number, number, number];
   /** Bäume, Sträucher: Mitte und halbe Ausdehnung der Krone (Modell-Einheiten). */
   canopy: [number, number, number];
   canopyHalf: [number, number, number];
@@ -2130,6 +2212,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   let mouth: [number, number] = [-Infinity, 0];
   let side = 0;
   const sails = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
+  const cloth = { y: [Infinity, -Infinity], z: [Infinity, -Infinity] };
 
   // Bäume: Oberkante des Stumpfs in Datei-Einheiten - dort liegen die beiden
   // Schnittflächen (Deckel des Stumpfs, Boden des Stamms), siehe P_STUMP.
@@ -2242,6 +2325,10 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
         load.y = [Math.min(load.y[0], y), Math.max(load.y[1], y)];
         load.z = [Math.min(load.z[0], z), Math.max(load.z[1], z)];
       }
+      if (part === 8) {
+        cloth.y = [Math.min(cloth.y[0], y), Math.max(cloth.y[1], y)];
+        cloth.z = [Math.min(cloth.z[0], z), Math.max(cloth.z[1], z)];
+      }
       if (part === 7) {
         sails.y = [Math.min(sails.y[0], y), Math.max(sails.y[1], y)];
         sails.z = [Math.min(sails.z[0], z), Math.max(sails.z[1], z)];
@@ -2275,6 +2362,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
       ? [load.back, (load.y[0] + load.y[1]) / 2, (load.z[0] + load.z[1]) / 2]
       : [0, 0, 0],
     hub: [(sails.y[0] + sails.y[1]) / 2, (sails.z[0] + sails.z[1]) / 2],
+    cloth: Number.isFinite(cloth.y[0]) ? [cloth.y[0], cloth.y[1], (cloth.z[0] + cloth.z[1]) / 2] : [0, 1, 0],
     canopy: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (l + crown.hi[i]) / 2) as [number, number, number] : [0, 0, 0.5],
     canopyHalf: Number.isFinite(crown.lo[0]) ? crown.lo.map((l, i) => (crown.hi[i] - l) / 2) as [number, number, number] : [0.5, 0.5, 0.5],
     legs: [legSum[0] / Math.max(1, legCount[0]), legSum[1] / Math.max(1, legCount[1])],
@@ -2570,12 +2658,15 @@ export class EntityRenderer {
           rows: new Int32Array(MAX_CLIPS).fill(-1),
           frames: Int32Array.from(NO_CLIPS.frames), fps: Float32Array.from(NO_CLIPS.fps), props: new Int32Array(MAX_CLIPS),
           poseClip: new Int32Array(8).fill(-1), poseRate: new Float32Array(8), poseShift: new Float32Array(8),
+          rate: new Float32Array(MAX_CLIPS).fill(1), shift: new Float32Array(MAX_CLIPS),
         };
         clips.forEach((clip, i) => {
           u.rows[i] = rows;
           u.frames[i] = clip.frames;
           u.fps[i] = clip.fps;
           u.props[i] = clip.props | (clip.kneel ? KNEEL_BIT : 0);
+          u.rate[i] = clip.phaseRate;
+          u.shift[i] = clip.phaseShift;
           // Welche Pose ein Clip ersetzt, steht im Clip selbst (Custom Property
           // "pose" der Action in Blender). Die Phase (motion[1]) wird zur
           // Clip-Zeit: (Phase - phaseShift) * phaseRate.
@@ -2806,6 +2897,9 @@ export class EntityRenderer {
       gl.uniform1iv(this.location('uClipFrames'), clips.frames);
       gl.uniform1fv(this.location('uClipFps'), clips.fps);
       gl.uniform1iv(this.location('uClipProps'), clips.props);
+      gl.uniform1fv(this.location('uClipRate'), clips.rate);
+      gl.uniform1fv(this.location('uClipShift'), clips.shift);
+      gl.uniform3fv(this.location('uCloth'), m.model.cloth);
       gl.uniform1iv(this.location('uPoseClip'), clips.poseClip);
       gl.uniform1fv(this.location('uPoseRate'), clips.poseRate);
       gl.uniform1fv(this.location('uPoseShift'), clips.poseShift);
