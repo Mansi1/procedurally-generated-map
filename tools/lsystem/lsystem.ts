@@ -324,7 +324,7 @@ function pipeRadii(segments: readonly Segment[], spec: TreeSpec): [number, numbe
 }
 
 /** Eckenzahl eines Astes: dicke rund, dünne dreieckig. */
-const sides = (r: number) => (r > 0.08 ? 7 : r > 0.03 ? 5 : 3);
+const sides = (r: number) => (r > 0.18 ? 12 : r > 0.08 ? 9 : r > 0.03 ? 5 : 3);
 
 /**
  * Ast als Prisma mit Texturkoordinaten: der Mantel abgewickelt, u läuft um den
@@ -341,21 +341,33 @@ function barkBeam(m: Model, name: string, mtl: string, a: Vec3, b: Vec3, r0: num
   const up: Vec3 = Math.abs(h[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
   const s1 = normalize(cross(h, up));
   const s2 = cross(s1, h);
-  const ring = (c: Vec3, r: number) => Array.from({ length: n + 1 }, (_, k): Vec3 => {
-    const t = Math.PI / n + ((k % n) * 2 * Math.PI) / n; // k = n schließt den Mantel (gleicher Punkt, volles u)
-    return add(add(c, s1, Math.cos(t) * r), s2, Math.sin(t) * r);
-  });
+  const angle = (k: number) => Math.PI / n + ((k % n) * 2 * Math.PI) / n; // k = n schließt den Mantel
+  const ring = (c: Vec3, r: number) => Array.from({ length: n + 1 }, (_, k): Vec3 =>
+    add(add(c, s1, Math.cos(angle(k)) * r), s2, Math.sin(angle(k)) * r));
+  const radial = (k: number): Vec3 => add(add([0, 0, 0], s1, Math.cos(angle(k))), s2, Math.sin(angle(k)));
   const vertices = [...ring(a, r0), ...ring(b, r1)];
+  // Runde Schattierung: die Normale zeigt radial nach außen, nicht flach je Seite.
+  const normals = [...Array.from({ length: n + 1 }, (_, k) => radial(k)), ...Array.from({ length: n + 1 }, (_, k) => radial(k))];
   const u = (k: number) => uOff + (k / n) * ((Math.PI * (r0 + r1)) / tile); // mittlerer Umfang
   const uvs: [number, number][] = [
     ...Array.from({ length: n + 1 }, (_, k): [number, number] => [u(k), dist / tile]),
     ...Array.from({ length: n + 1 }, (_, k): [number, number] => [u(k), (dist + len) / tile]),
   ];
   const faces: number[][] = Array.from({ length: n }, (_, k) => [k, k + 1, n + 2 + k, n + 1 + k]);
-  // Deckel nur, wo man sie sehen kann: am Boden und an Astspitzen ohne Kinder.
-  if (caps.bottom) faces.push(Array.from({ length: n }, (_, k) => n - 1 - k));
-  if (caps.top) faces.push(Array.from({ length: n }, (_, k) => n + 1 + k));
-  m.mesh(name, mtl, vertices, faces, uvs);
+  // Deckel nur, wo man sie sehen kann: am Boden und an Astspitzen ohne Kinder -
+  // mit eigener, flacher Normale entlang des Astes.
+  const cap = (offset: number, normal: Vec3, flip: boolean) => {
+    const start = vertices.length;
+    for (let k = 0; k < n; k++) {
+      vertices.push(vertices[offset + k]);
+      normals.push(normal);
+      uvs.push([0, 0]);
+    }
+    faces.push(Array.from({ length: n }, (_, k) => start + (flip ? n - 1 - k : k)));
+  };
+  if (caps.bottom) cap(0, [-h[0], -h[1], -h[2]], true);
+  if (caps.top) cap(n + 1, h, false);
+  m.mesh(name, mtl, vertices, faces, uvs, normals);
 }
 
 /** Wie das Laub gebaut wird. */
@@ -469,12 +481,18 @@ function drawLeaves(drawing: Drawing, organ: Organ, leaf: LeafName, material: Ma
   const count = card ? Math.max(1, Math.round(leaves / LEAVES_PER_CARD)) : leaves;
   // Eine Ebene reicht weiter als ein Blatt: ihr Fuß sitzt näher am Ast, sie ist länger.
   const reach = card ? 2 : 1;
+  // Büschel als Fächer: alle setzen am Astende an und führen die Astrichtung
+  // schräg nach außen fort - keines zeigt zurück in die Krone oder durch den Ast.
+  const start = rnd() * Math.PI * 2;
   for (let i = 0; i < count; i++) {
-    const out = randomUnit(rnd);
-    const dir = normalize(add(add(out, heading, 0.5), [0, 1, 0], 0.35));
-    const side = normalize(cross(dir, randomUnit(rnd)));
-    const base = add(p, out, size * (card ? -0.2 : 0.3));
-    placeLeaf(m, mode, leaf, card, name, base, dir, side, size * reach * (0.75 + rnd() * 0.4));
+    const around = start + (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.8;
+    const axis = rotate(left, heading, around);
+    // 20°..70° von der Astrichtung weg, dazu ein leichter Zug zum Licht.
+    const tilted = rotate(heading, axis, 0.35 + rnd() * 0.85);
+    const dir = normalize(add(tilted, GRAVITY, -0.2));
+    // axis steht senkrecht auf dir - als Blattfläche zufällig um dir gerollt.
+    const side = rotate(axis, dir, (rnd() - 0.5) * 1.6);
+    placeLeaf(m, mode, leaf, card, name, add(p, dir, -size * 0.1), dir, side, size * reach * (0.75 + rnd() * 0.4));
   }
 }
 

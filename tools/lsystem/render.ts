@@ -56,7 +56,8 @@ const GROUND_SCALE = 1.2;
 export function sceneFromObj(lines: readonly string[], look: (material: string) => Look | undefined): Scene {
   const vertices: Vec3[] = [];
   const uvList: [number, number][] = [];
-  interface Face { look: Look; verts: Vec3[]; uvs: ([number, number] | undefined)[] }
+  const normalList: Vec3[] = [];
+  interface Face { look: Look; verts: Vec3[]; uvs: ([number, number] | undefined)[]; normals: (Vec3 | undefined)[] }
   const faces: Face[] = [];
   let current: Look = { color: FALLBACK };
   const names = new Map<Look, string>();
@@ -65,6 +66,7 @@ export function sceneFromObj(lines: readonly string[], look: (material: string) 
     const [kind, ...rest] = line.split(' ');
     if (kind === 'v') vertices.push([Number(rest[0]), Number(rest[1]), Number(rest[2])]);
     else if (kind === 'vt') uvList.push([Number(rest[0]), Number(rest[1])]);
+    else if (kind === 'vn') normalList.push([Number(rest[0]), Number(rest[1]), Number(rest[2])]);
     else if (kind === 'usemtl') {
       current = look(rest[0]) ?? { color: FALLBACK };
       if (!names.has(current)) names.set(current, rest[0]);
@@ -75,6 +77,7 @@ export function sceneFromObj(lines: readonly string[], look: (material: string) 
         look: current,
         verts: refs.map((r) => vertices[Number(r[0]) - 1]),
         uvs: refs.map((r) => uvList[Number(r[1]) - 1]),
+        normals: refs.map((r) => normalList[Number(r[2]) - 1]),
       });
       triangles += refs.length - 2;
     }
@@ -110,7 +113,8 @@ export function sceneFromObj(lines: readonly string[], look: (material: string) 
     for (let i = 1; i + 1 < f.verts.length; i++) {
       for (const k of [0, i, i + 1]) {
         positions.set(f.verts[k], at * 3);
-        normals.set(n, at * 3);
+        // vn aus dem OBJ (runde Stämme), sonst die flache Flächennormale.
+        normals.set(f.normals[k] ?? n, at * 3);
         uvs.set(f.uvs[k] ?? [0, 0], at * 2);
         at++;
       }

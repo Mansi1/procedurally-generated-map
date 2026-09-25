@@ -27,6 +27,7 @@ export function model() {
   const out = [];
   let base = 0;
   let uvBase = 0;
+  let normalBase = 0;
   const used = new Set();
 
   /** Two outlines of equal length joined by side faces, both capped. */
@@ -88,18 +89,21 @@ export function model() {
 
   /**
    * Free-form surface: vertices plus faces as index lists into them (0-based).
-   * With `uvs` (one [u, v] per vertex) the faces carry texture coordinates.
+   * With `uvs` (one [u, v] per vertex) the faces carry texture coordinates,
+   * with `normals` (one per vertex) smooth shading.
    */
-  function mesh(name, mtl, vertices, faces, uvs) {
+  function mesh(name, mtl, vertices, faces, uvs, normals) {
     used.add(mtl);
     out.push(`o ${name}`);
     for (const p of vertices) out.push(`v ${p.map((v) => +v.toFixed(3)).join(' ')}`);
     if (uvs) for (const [u, v] of uvs) out.push(`vt ${+u.toFixed(4)} ${+v.toFixed(4)}`);
-    out.push(`usemtl ${mtl}`, 's off');
-    const ref = (i) => (uvs ? `${base + 1 + i}/${uvBase + 1 + i}` : `${base + 1 + i}`);
+    if (normals) for (const n of normals) out.push(`vn ${n.map((v) => +v.toFixed(3)).join(' ')}`);
+    out.push(`usemtl ${mtl}`, normals ? 's 1' : 's off');
+    const ref = (i) => `${base + 1 + i}${uvs || normals ? `/${uvs ? uvBase + 1 + i : ''}` : ''}${normals ? `/${normalBase + 1 + i}` : ''}`;
     for (const f of faces) out.push(`f ${f.map(ref).join(' ')}`);
     base += vertices.length;
     if (uvs) uvBase += uvs.length;
+    if (normals) normalBase += normals.length;
   }
 
   /**
