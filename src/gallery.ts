@@ -5,14 +5,15 @@
 // und dreht die Ansicht. "Alle auf einmal" zeigt alle Modelle und
 // Animationen nebeneinander. Ohne Gelände, auf ruhigem Hintergrund,
 // gezeichnet mit demselben EntityRenderer wie im Spiel; die Bewegungen
-// laufen in Schleifen. Ziehen dreht das gewählte Modell (Q/E auch), rechts
-// ziehen verschiebt, das Mausrad zoomt.
+// laufen in Schleifen. Ziehen dreht das gewählte Modell in alle Richtungen -
+// seitlich um sich selbst (Q/E), hoch und runter neigt die Kamera (W/S) -,
+// rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
   ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, buildingHeading, millMotion, modelWorkSpot, type EntityInstance,
 } from './gl/entityRenderer';
 import {
-  groundToWorld, setViewRotation, snapCamera, viewRotation, worldToGround, worldToScreen, type IsoView,
+  groundToWorld, setViewElevation, setViewRotation, snapCamera, viewElevation, viewRotation, worldToGround, worldToScreen, type IsoView,
 } from './gl/iso';
 import { mountGallery, type GalleryItem } from './components/GalleryOverlay';
 import { ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, VILLAGER, type AnimalKind, type CropType } from './world/catalog';
@@ -396,10 +397,11 @@ const LIST_WIDTH = 224;
 
 /** Modell `i` (-1 = Übersicht) mit Animation `a` zeigen, bei einem Wechsel die Kamera darauf, Adresse merken. */
 function choose(i: number, a: number, reframe = i !== current) {
-  // Ein anderes Modell beginnt ohne Abriss und ungedreht.
+  // Ein anderes Modell beginnt ohne Abriss, ungedreht und im Blickwinkel des Spiels.
   if (i !== current) {
     demolishing = false;
     spin = 0;
+    setViewElevation(Math.PI / 6);
   }
   current = Math.max(-1, Math.min(SHOWCASE.length - 1, i));
   animation = current < 0 ? 0 : Math.max(0, Math.min(SHOWCASE[current].exhibits.length - 1, a));
@@ -504,8 +506,10 @@ window.addEventListener('mouseup', () => {
 window.addEventListener('mousemove', (e) => {
   if (!dragging) return;
   if (dragging.turn) {
-    // Nach rechts ziehen dreht rechts herum - eine Bildschirmbreite etwa zweimal.
+    // Nach rechts ziehen dreht rechts herum - eine Bildschirmbreite etwa
+    // zweimal; nach unten ziehen schaut mehr von oben.
     spin -= (e.clientX - dragging.x) * 0.01;
+    setViewElevation(viewElevation() + (e.clientY - dragging.y) * 0.006);
     dragging = { ...dragging, x: e.clientX, y: e.clientY };
     return;
   }
@@ -522,10 +526,13 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   zoom = Math.min(900, Math.max(12, zoom * Math.exp(-e.deltaY * 0.0015)));
 }, { passive: false });
-// Pfeiltasten: hoch/runter das Modell, links/rechts die Animation; Q/E drehen.
+// Pfeiltasten: hoch/runter das Modell, links/rechts die Animation; Q/E drehen,
+// W/S neigen (W = mehr von oben).
 window.addEventListener('keydown', (e) => {
   if (e.key === 'q' || e.key === 'e') {
     spin += (e.key === 'q' ? 1 : -1) * (Math.PI / 12);
+  } else if (e.key === 'w' || e.key === 's') {
+    setViewElevation(viewElevation() + (e.key === 'w' ? 1 : -1) * (Math.PI / 24));
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     choose(current + (e.key === 'ArrowDown' ? 1 : -1), 0);

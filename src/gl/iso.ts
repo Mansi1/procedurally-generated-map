@@ -20,6 +20,28 @@ import { TERRAIN_PARAMS } from '../noise';
  */
 export const Z_SCREEN = Math.sqrt(6) / 2;
 
+/**
+ * Blickwinkel über dem Horizont (Radiant). Im Spiel immer 30° wie in AoE2 -
+ * nur die Galerie neigt die Kamera, um Modelle auch von oben oder flach von
+ * der Seite zu zeigen. Daraus folgen zwei Maße: wie stark der Boden
+ * senkrecht gestaucht wird (groundV, bei 30° genau 1/2) und wie hoch eine
+ * senkrechte Tile-Länge im Bild ist (zScreen, bei 30° genau Z_SCREEN).
+ */
+let elevation = Math.PI / 6;
+let groundV = 0.5;
+let zScreen = Z_SCREEN;
+
+export function viewElevation(): number {
+  return elevation;
+}
+
+/** Blickwinkel setzen - zwischen fast waagerecht und fast senkrecht. */
+export function setViewElevation(rad: number) {
+  elevation = Math.min(Math.PI / 2 - 0.02, Math.max(0.05, rad));
+  groundV = Math.sin(elevation);
+  zScreen = Math.SQRT2 * Math.cos(elevation);
+}
+
 /** Höchster möglicher Punkt des Geländes in Tiles. */
 export const MAX_RELIEF = TERRAIN_PARAMS.reliefHeight;
 
@@ -73,11 +95,12 @@ function rotate(x: number, y: number, k: number): [number, number] {
 /** Welt -> Boden-Koordinaten (u, v) in der aktuellen Blickrichtung. */
 export function worldToGround(x: number, y: number): { u: number; v: number } {
   const [a, b] = rotate(x, y, rotation);
-  return { u: a - b, v: (a + b) / 2 };
+  return { u: a - b, v: (a + b) * groundV };
 }
 
 export function groundToWorld(u: number, v: number): { x: number; y: number } {
-  const [x, y] = rotate(v + u / 2, v - u / 2, (4 - rotation) % 4);
+  const s = v / groundV;
+  const [x, y] = rotate((s + u) / 2, (s - u) / 2, (4 - rotation) % 4);
   return { x, y };
 }
 
@@ -87,7 +110,7 @@ export function groundToWorld(u: number, v: number): { x: number; y: number } {
  */
 export function cameraDirection(): [number, number, number] {
   const [x, y] = rotate(1, 1, (4 - rotation) % 4);
-  return [x, y, 1 / Z_SCREEN];
+  return [x, y, Math.SQRT2 * Math.tan(elevation)];
 }
 
 /** Welt -> Bildschirm (CSS-Pixel ab links oben). */
@@ -98,7 +121,7 @@ export function worldToScreen(view: IsoView, x: number, y: number, z: number) {
   const dv = p.v - c.v;
   return {
     x: view.width / 2 + du * view.tileSize,
-    y: view.height / 2 + (dv - Z_SCREEN * z) * view.tileSize,
+    y: view.height / 2 + (dv - zScreen * z) * view.tileSize,
   };
 }
 
@@ -124,7 +147,7 @@ export function pickWorld(
   const du = (px - view.width / 2) / view.tileSize;
   const dv = (py - view.height / 2) / view.tileSize;
   const at = (z: number) => {
-    const d = groundToWorld(du, dv + Z_SCREEN * z);
+    const d = groundToWorld(du, dv + zScreen * z);
     return { x: view.centerX + d.x, y: view.centerY + d.y };
   };
   const above = (z: number) => {
@@ -161,7 +184,7 @@ export function pickWorld(
  */
 export function centerFor(view: IsoView, x: number, y: number, z: number, px: number, py: number) {
   const du = (px - view.width / 2) / view.tileSize;
-  const dv = (py - view.height / 2) / view.tileSize + Z_SCREEN * z;
+  const dv = (py - view.height / 2) / view.tileSize + zScreen * z;
   const d = groundToWorld(du, dv);
   return { x: x - d.x, y: y - d.y };
 }
@@ -218,6 +241,16 @@ export function snapCamera(camera: GpuCamera, widthPx: number, heightPx: number)
   return { ...camera, centerX: center.x, centerY: center.y };
 }
 
+/**
+ * Blickrichtung und Blickwinkel für PROJECT_GLSL - auch für Durchgänge ohne
+ * Kamera (der Gelände-Cache): ohne uGroundV teilte groundToWorld durch null.
+ */
+export function setViewUniforms(gl: WebGL2RenderingContext, location: (name: string) => WebGLUniformLocation | null) {
+  gl.uniform1i(location('uRotation'), rotation);
+  gl.uniform1f(location('uGroundV'), groundV);
+  gl.uniform1f(location('uZScreen'), zScreen);
+}
+
 /** Kamera-Uniforms für PROJECT_GLSL. */
 export function setCameraUniforms(
     gl: WebGL2RenderingContext,
@@ -228,7 +261,7 @@ export function setCameraUniforms(
   gl.uniform2f(location('uResolution'), width, height);
   const g = worldToGround(camera.centerX, camera.centerY);
   gl.uniform2f(location('uCameraGround'), g.u, g.v);
-  gl.uniform1i(location('uRotation'), rotation);
+  setViewUniforms(gl, location);
   gl.uniform1f(location('uPixelsPerTile'), camera.pixelsPerTile);
   gl.uniform1f(location('uReliefScale'), camera.reliefScale);
   gl.uniform1f(location('uDepthRange'), depthRange(camera, height));
@@ -242,8 +275,8 @@ uniform float uPixelsPerTile;  // Geraete-Pixel je u/v-Einheit
 uniform float uDepthRange;
 uniform float uReliefScale;    // 1 = volles Relief, 0 = flach
 uniform int   uRotation;       // Blickrichtung in Vierteldrehungen, siehe viewRotation()
-
-const float Z_SCREEN = ${Z_SCREEN.toFixed(8)};
+uniform float uGroundV;        // Stauchung des Bodens, bei 30° Blickwinkel 1/2 (viewElevation)
+uniform float uZScreen;        // Bildhöhe einer senkrechten Tile-Länge, bei 30° Z_SCREEN
 
 // Welt um k Vierteldrehungen drehen - wie rotate() in iso.ts.
 vec2 rotateQuarter(vec2 p, int k) {
@@ -255,15 +288,16 @@ vec2 rotateQuarter(vec2 p, int k) {
 
 // Boden-Koordinaten (u, v) -> Welt, in der aktuellen Blickrichtung.
 vec2 groundToWorld(vec2 g) {
-  return rotateQuarter(vec2(g.y + g.x * 0.5, g.y - g.x * 0.5), (4 - uRotation) % 4);
+  float s = g.y / uGroundV;
+  return rotateQuarter(vec2((s + g.x) * 0.5, (s - g.x) * 0.5), (4 - uRotation) % 4);
 }
 
 vec4 project(vec2 world, float z) {
   vec2 r = rotateQuarter(world, uRotation);
-  vec2 g = vec2(r.x - r.y, (r.x + r.y) * 0.5) - uCameraGround;
-  vec2 px = vec2(g.x, g.y - Z_SCREEN * z) * uPixelsPerTile;
+  vec2 g = vec2(r.x - r.y, (r.x + r.y) * uGroundV) - uCameraGround;
+  vec2 px = vec2(g.x, g.y - uZScreen * z) * uPixelsPerTile;
   // Naeher an der Kamera = weiter unten im Bild und hoeher.
-  float depth = -(g.y + Z_SCREEN * z) / uDepthRange;
+  float depth = -(g.y + uZScreen * z) / uDepthRange;
   return vec4(px.x / (uResolution.x * 0.5), -px.y / (uResolution.y * 0.5), depth, 1.0);
 }
 `;

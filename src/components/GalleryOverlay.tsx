@@ -86,7 +86,7 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
           <button type="button" class="wood-btn" title="Rechts herum drehen" onClick={() => hooks.rotate(1)}>⟳</button>
         </div>
       </div>
-      <div class="gal-help">Ziehen dreht · rechts ziehen verschiebt · Mausrad zoomt · Q/E drehen · ↑/↓ Modell · ←/→ Animation</div>
+      <div class="gal-help">Ziehen dreht in alle Richtungen · rechts ziehen verschiebt · Mausrad zoomt · Q/E drehen · W/S neigen · ↑/↓ Modell · ←/→ Animation</div>
     </>,
     root,
   );

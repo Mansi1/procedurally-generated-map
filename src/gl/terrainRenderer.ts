@@ -16,6 +16,7 @@ import {
   MAX_RELIEF,
   Z_SCREEN,
   setCameraUniforms,
+  setViewUniforms,
   viewRotation,
   worldToGround,
   type GpuCamera,
@@ -545,7 +546,7 @@ export class TerrainRenderer {
     const f = (name: string) => this.fillLocation(name);
     gl.uniform1f(f('uPixelsPerTile'), ppt);
     gl.uniform1f(f('uReliefScale'), camera.reliefScale > 0 ? 1 : 0);
-    gl.uniform1i(f('uRotation'), viewRotation());
+    setViewUniforms(gl, f);
     gl.uniform1i(f('uDebug'), this.debugMode);
     gl.uniform2f(f('uWindowStart'), win.u / ppt, win.v / ppt);
     gl.uniform2f(f('uWindowMod'), mod(win.u, W), mod(win.v, H));
