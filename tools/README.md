@@ -32,5 +32,5 @@ zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
   (Standard `tools/lsystem/out`, nicht eingecheckt).
 - `lsystem.ts` - Regeln lesen, ersetzen, Schildkröte in 3D (mit Tropismus), Astdicke
   nach dem Pipe-Modell, Modell über `models/primitives.mjs`
-- `presets.ts` - Beispiele: Busch (ABOP 1.25), Laubbaum, Fichte, Hängebirke, Pappel, sympodial
+- `presets.ts` - Beispiele: Busch (ABOP 1.25), Laubbaum, Fichte, Tanne, Hängebirke, Pappel, sympodial
 - `render.ts` + `viewer.ts` + `index.html` - die Spielwiese

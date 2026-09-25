@@ -41,6 +41,7 @@ import {
 } from './world/catalog';
 import { World, type Villager } from './world/world';
 import { worldInstances } from './world/render';
+import { Selection } from './game/Selection';
 import type { UnitProducer } from './world/building';
 import { FIELD_WINDOW } from './gl/terrainRenderer';
 import { ResourceBar } from './components/ResourceBar';
@@ -204,12 +205,12 @@ function select(type: BuildingType | null) {
  */
 function updateCursor() {
   let cursor = 'crosshair';
-  const trainer = selectedBuilding ? world.building(selectedBuilding) : undefined;
+  const trainer = selection.focused();
   if (selected) {
     cursor = 'copy';
   } else if (trainer?.isUnitProducer()) {
     cursor = RALLY_CURSOR;
-  } else if (selectedVillagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
+  } else if (selection.villagers.size > 0 && mouseTileX !== undefined && mouseTileY !== undefined) {
     // Zeigt der Zeiger auf ein Objekt (Baumkrone, Fels), gilt dessen Feld.
     const own = world.resourceInfo(mouseTileX, mouseTileY);
     const t = world.at(mouseTileX, mouseTileY) || (own && own.type !== 'wood') ? undefined : hoverObject;
@@ -479,44 +480,14 @@ compassEl.addEventListener('click', (e) => {
 
 // --- Auswahl ---------------------------------------------------------------
 
-/**
- * Ausgewählte Dorfbewohner (IDs), ein ausgewähltes Gebäude oder ein
- * ausgewähltes Vorkommen - immer nur eine der drei Arten.
- */
-const selectedVillagers = new Set<number>();
-/**
- * Ausgewählte Gebäude (Anker). `selectedBuilding` ist das zuletzt angeklickte
- * - dessen Einzelheiten zeigt das Panel, wenn nur eines ausgewählt ist.
- */
-const selectedBuildings = new Set<string>();
-let selectedBuilding: string | null = null;
-let selectedResource: { x: number; y: number } | null = null;
-
-/** Keine Gebäude mehr ausgewählt. */
-function clearBuildingSelection() {
-  selectedBuildings.clear();
-  selectedBuilding = null;
-}
-
-/** Genau diese Gebäude auswählen, `primary` als Hauptgebäude der Auswahl. */
-function selectBuildings(anchors: Iterable<string>, primary: string | null) {
-  selectedBuildings.clear();
-  for (const a of anchors) selectedBuildings.add(a);
-  selectedBuilding = primary && selectedBuildings.has(primary) ? primary : ([...selectedBuildings][0] ?? null);
-}
-
-/** Die ausgewählten Gebäude, die es noch gibt. */
-function chosenBuildings() {
-  return [...selectedBuildings].map((a) => world.building(a)).filter((b) => b !== undefined);
-}
+/** Was ausgewählt ist: Dorfbewohner, Gebäude oder ein Vorkommen (game/Selection.ts). */
+const selection = new Selection(world);
 
 /** Doppelklick: alle gleichartigen Gebäude in diesem Umkreis (Tiles). */
 const SAME_TYPE_RADIUS = 15;
 
 function clearSelection() {
-  selectedVillagers.clear();
-  clearBuildingSelection();
-  selectedResource = null;
+  selection.clear();
   updateSelectionUI();
 }
 
@@ -606,34 +577,34 @@ function targetTileAt(px: number, py: number): { x: number; y: number } {
  */
 function clickSelect(px: number, py: number, add: boolean, same = false) {
   const villager = villagerAt(px, py);
-  selectedResource = null;
+  selection.resource = null;
   if (villager) {
-    clearBuildingSelection();
-    if (!add) selectedVillagers.clear();
-    if (add && selectedVillagers.has(villager.id)) selectedVillagers.delete(villager.id);
-    else selectedVillagers.add(villager.id);
+    selection.clearBuildings();
+    if (!add) selection.villagers.clear();
+    if (add && selection.villagers.has(villager.id)) selection.villagers.delete(villager.id);
+    else selection.villagers.add(villager.id);
   } else {
     const { x, y } = targetTileAt(px, py);
     const building = world.at(x, y);
-    selectedVillagers.clear();
+    selection.villagers.clear();
     if (building) {
       const anchor = world.anchorOf(building);
       if (same) {
         // Felder: das ganze zusammenhängende Feld, sonst gleichartige in der Nähe.
         const near = building.isFarm() ? world.farmGroup(building) : [...world.allBuildings()].filter((b) => b.type === building.type
           && Math.hypot(b.x - building.x, b.y - building.y) <= SAME_TYPE_RADIUS);
-        selectBuildings([...(add ? selectedBuildings : []), ...near.map((b) => world.anchorOf(b))], anchor);
+        selection.selectBuildings([...(add ? selection.buildings : []), ...near.map((b) => world.anchorOf(b))], anchor);
       } else if (add) {
-        const set = new Set(selectedBuildings);
+        const set = new Set(selection.buildings);
         if (set.has(anchor)) set.delete(anchor);
         else set.add(anchor);
-        selectBuildings(set, set.has(anchor) ? anchor : selectedBuilding);
+        selection.selectBuildings(set, set.has(anchor) ? anchor : selection.focusedBuilding);
       } else {
-        selectBuildings([anchor], anchor);
+        selection.selectBuildings([anchor], anchor);
       }
     } else if (!add) {
-      clearBuildingSelection();
-      if (world.resourceInfo(x, y)) selectedResource = { x, y };
+      selection.clearBuildings();
+      if (world.resourceInfo(x, y)) selection.resource = { x, y };
     }
   }
   updateSelectionUI();
@@ -643,12 +614,12 @@ function clickSelect(px: number, py: number, add: boolean, same = false) {
 function boxSelect(x0: number, y0: number, x1: number, y1: number, add: boolean) {
   const [left, right] = x0 < x1 ? [x0, x1] : [x1, x0];
   const [top, bottom] = y0 < y1 ? [y0, y1] : [y1, y0];
-  if (!add) selectedVillagers.clear();
-  clearBuildingSelection();
-  selectedResource = null;
+  if (!add) selection.villagers.clear();
+  selection.clearBuildings();
+  selection.resource = null;
   for (const v of world.villagers) {
     const s = villagerScreen(v);
-    if (s.x >= left && s.x <= right && s.y >= top && s.y <= bottom) selectedVillagers.add(v.id);
+    if (s.x >= left && s.x <= right && s.y >= top && s.y <= bottom) selection.villagers.add(v.id);
   }
   updateSelectionUI();
 }
@@ -770,7 +741,7 @@ function rightClick(p: { x: number; y: number }) {
 
   // Ausbildende Gebäude ausgewählt: Rechtsklick setzt den Sammelpunkt - bei
   // mehreren für alle.
-  const trainers = chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
+  const trainers = selection.chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
   if (trainers.length > 0) {
     let reason: string | null = null;
     for (const t of trainers) reason = world.setRally(t, x, y) ?? reason;
@@ -780,17 +751,17 @@ function rightClick(p: { x: number; y: number }) {
     return;
   }
 
-  if (selectedVillagers.size === 0) return;
+  if (selection.villagers.size === 0) return;
   // Auf ein Tier (lebend oder erlegt): jagen bzw. zerlegen.
   const at = pick(p.x, p.y);
   const prey = world.animalNear(at.x, at.y, 0.6);
   if (prey) {
-    world.hunt(selectedVillagers, prey);
+    world.hunt(selection.villagers, prey);
     sound.play('click', 0.7);
     updateSelectionUI();
     return;
   }
-  const reason = world.command(selectedVillagers, x, y);
+  const reason = world.command(selection.villagers, x, y);
   if (reason) hint(reason);
   else sound.play('click', 0.7);
   updateSelectionUI();
@@ -801,7 +772,7 @@ function rightClick(p: { x: number; y: number }) {
 function trainVillager(count = 1) {
   // Ausgewählte Hauptgebäude, sonst das nächstgelegene. Bei mehreren kommt
   // jeder Dorfbewohner in die kürzeste Warteschlange.
-  const selectedTrainers = chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
+  const selectedTrainers = selection.chosenBuildings().filter((b): b is UnitProducer => b.isUnitProducer());
   const nearest = world.nearestTownCenter(camX, camY);
   const trainers = selectedTrainers.length > 0 ? selectedTrainers : nearest ? [nearest] : [];
   if (trainers.length === 0) {
@@ -838,12 +809,12 @@ function selectIdleVillager(all = true) {
     hint('Kein Dorfbewohner ist untätig');
     return;
   }
-  clearBuildingSelection();
-  selectedResource = null;
+  selection.clearBuildings();
+  selection.resource = null;
   let target: { x: number; y: number };
   if (all) {
-    selectedVillagers.clear();
-    for (const v of idle) selectedVillagers.add(v.id);
+    selection.villagers.clear();
+    for (const v of idle) selection.villagers.add(v.id);
     // Zur Mitte der Gruppe - verteilt über die Karte zum ersten.
     const mx = idle.reduce((sum, v) => sum + v.x, 0) / idle.length;
     const my = idle.reduce((sum, v) => sum + v.y, 0) / idle.length;
@@ -852,12 +823,12 @@ function selectIdleVillager(all = true) {
   } else {
     // Nach dem gerade ausgewählten weitermachen, damit wiederholtes Klicken
     // alle der Reihe nach durchgeht.
-    const current = selectedVillagers.size === 1 ? [...selectedVillagers][0] : -1;
+    const current = selection.villagers.size === 1 ? [...selection.villagers][0] : -1;
     const index = idle.findIndex((v) => v.id === current);
     const next = idle[(index + 1) % idle.length];
     target = next;
-    selectedVillagers.clear();
-    selectedVillagers.add(next.id);
+    selection.villagers.clear();
+    selection.villagers.add(next.id);
   }
   const center = centerFor(view(), target.x, target.y, zAt(target.x, target.y),
       viewWidth / 2, viewHeight / 2);
@@ -889,12 +860,12 @@ function cycleTownCenter() {
     hint('Baue zuerst ein Hauptgebäude');
     return;
   }
-  const current = centers.findIndex((b) => world.anchorOf(b) === selectedBuilding);
+  const current = centers.findIndex((b) => world.anchorOf(b) === selection.focusedBuilding);
   const next = centers[(current + 1) % centers.length];
 
-  selectedVillagers.clear();
-  selectedResource = null;
-  selectBuildings([world.anchorOf(next)], world.anchorOf(next));
+  selection.villagers.clear();
+  selection.resource = null;
+  selection.selectBuildings([world.anchorOf(next)], world.anchorOf(next));
   // Mitte des Gebäudes in die Bildmitte - mit seiner Geländehöhe, sonst
   // säße es auf einem Hügel ein gutes Stück über der Mitte.
   const x = next.x + 0.5;
@@ -909,10 +880,10 @@ function cycleTownCenter() {
 }
 
 function demolishSelected() {
-  const buildings = chosenBuildings();
+  const buildings = selection.chosenBuildings();
   if (buildings.length === 0) return;
   for (const b of buildings) world.remove(b);
-  clearBuildingSelection();
+  selection.clearBuildings();
   invalidatePlacementCheck();
   updateResourceUI();
 }
@@ -932,7 +903,7 @@ actionsEl.addEventListener('mousedown', (e) => {
     const crop = (e.target as HTMLElement).closest('button')?.dataset.crop as CropType | undefined;
     if (!crop || !CROPS[crop]) return;
     // Für das ganze Feld - darauf wird gemeinsam gesät.
-    const fields = new Set(chosenBuildings().flatMap((b) => world.farmGroup(b)));
+    const fields = new Set(selection.chosenBuildings().flatMap((b) => world.farmGroup(b)));
     for (const b of fields) world.setCrop(b, crop);
     sound.play('click');
     updateSelectionUI();
@@ -983,8 +954,8 @@ function trainView(): TrainView {
 
 /** Was das Auswahl-Panel zeigt - als reine Daten, gezeichnet von SelectionPanel. */
 function selectionView(): SelectionView {
-  const building = selectedBuilding ? world.building(selectedBuilding) : undefined;
-  const many = chosenBuildings();
+  const building = selection.focused();
+  const many = selection.chosenBuildings();
 
   if (many.length > 1) {
     // Mehrere Gebäude: Anzahl je Art, Trefferpunkte zusammen, Ausbildung und Abriss für alle.
@@ -1038,15 +1009,15 @@ function selectionView(): SelectionView {
         : undefined,
     };
   }
-  if (selectedResource) {
-    const info = world.resourceInfo(selectedResource.x, selectedResource.y);
+  if (selection.resource) {
+    const info = world.resourceInfo(selection.resource.x, selection.resource.y);
     if (!info) {
       // Leer gesammelt, während es ausgewählt war.
-      selectedResource = null;
+      selection.resource = null;
       return { kind: 'empty' };
     }
     const left = Math.ceil(info.remaining);
-    const kind = resources.kindAt(selectedResource.x, selectedResource.y);
+    const kind = resources.kindAt(selection.resource.x, selection.resource.y);
     return {
       kind: 'resource',
       type: info.type,
@@ -1061,8 +1032,8 @@ function selectionView(): SelectionView {
       max: MAX_GATHERERS,
     };
   }
-  if (selectedVillagers.size > 0) {
-    const chosen = world.villagers.filter((v) => selectedVillagers.has(v.id));
+  if (selection.villagers.size > 0) {
+    const chosen = selection.chosenVillagers();
     // Gleiche Tätigkeiten zusammenfassen: "3x sammelt Holz, 1x untätig".
     const counts = new Map<string, number>();
     for (const v of chosen) {
@@ -1091,12 +1062,7 @@ function selectionView(): SelectionView {
 
 /** Zeigt, was ausgewählt ist und was man damit tun kann. Läuft getaktet mit dem Vorrat. */
 function updateSelectionUI() {
-  // Wer inzwischen nicht mehr existiert, fällt aus der Auswahl.
-  for (const id of selectedVillagers) {
-    if (!world.villagers.some((v) => v.id === id)) selectedVillagers.delete(id);
-  }
-  for (const a of [...selectedBuildings]) if (!world.building(a)) selectedBuildings.delete(a);
-  if (selectedBuilding && !selectedBuildings.has(selectedBuilding)) selectedBuilding = [...selectedBuildings][0] ?? null;
+  selection.prune();
   // Hat die Auswahl Befehle (ein Gebäude), zeigt die Steintafel sie statt des Baumenüs.
   const hasCommands = renderSelection(selectionEl, actionsEl, selectionView());
   actionsEl.hidden = !hasCommands;
@@ -1385,7 +1351,7 @@ function updateHoveredTile(mouseX: number, mouseY: number) {
   mousePixelX = mouseX;
   mousePixelY = mouseY;
   // Nur mit ausgewählten Dorfbewohnern zählt, worauf der Zeiger zeigt.
-  const object = selectedVillagers.size > 0 ? resourceObjectAt(mouseX, mouseY) : undefined;
+  const object = selection.villagers.size > 0 ? resourceObjectAt(mouseX, mouseY) : undefined;
   if (object?.x !== hoverObject?.x || object?.y !== hoverObject?.y) {
     hoverObject = object;
     updateCursor();
@@ -1562,14 +1528,13 @@ function collectOverlay(blend: number) {
   const visible = visibleWorldRect(view());
   if (tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camX, camY);
-    resources.instances(visible, world, overlay, selectedResource, blend);
+    resources.instances(visible, world, overlay, selection.resource, blend);
   }
-  worldInstances(world, visible, overlay, blend,
-      { villagers: selectedVillagers, buildings: selectedBuildings });
+  worldInstances(world, visible, overlay, blend, selection);
 
   // Auswahl: grüner Ring unter jedem Dorfbewohner, Fläche unter dem Gebäude.
   for (const v of world.villagers) {
-    if (!selectedVillagers.has(v.id)) continue;
+    if (!selection.villagers.has(v.id)) continue;
     const p = v.positionAt(blend);
     overlay.push({
       x: p.x - 0.5, y: p.y - 0.5, size: VILLAGER.size * 2,
@@ -1577,7 +1542,7 @@ function collectOverlay(blend: number) {
       ground: world.groundAt!(p.x, p.y),
     });
   }
-  for (const building of chosenBuildings()) {
+  for (const building of selection.chosenBuildings()) {
     if (building.isFarm()) {
       // Ein Feldstück belegt nur seine Tiles - je Tile eine Fläche, etwas
       // größer: unter dem Getreide sähe man sie sonst gar nicht, so bleibt
@@ -1606,9 +1571,9 @@ function collectOverlay(blend: number) {
       });
     }
   }
-  if (selectedResource) {
+  if (selection.resource) {
     overlay.push({
-      x: selectedResource.x, y: selectedResource.y, size: 1,
+      x: selection.resource.x, y: selection.resource.y, size: 1,
       color: [110, 231, 160], shape: SHAPE.flat, alpha: 0.3,
     });
   }

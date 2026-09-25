@@ -36,6 +36,18 @@ B -> "FL[-(40)C][+(40)C]B
 C -> "FLC`,
     leaves: 'BCT', leafShape: 'needle', leafSize: 0.35, leafMaterials: ['IvyDark', 'Ivy'], tip: 0.025, pipe: 2.4,
   }),
+  tanne: preset({
+    label: 'Tanne (Etagen)', axiom: 'FT', iterations: 13, angle: 50, length: 0.6, lengthFactor: 0.93, jitter: 0.06,
+    tropism: -0.02,
+    rules: `# Anders als die Fichte: Äste fast waagrecht und steif (leicht nach oben statt hängend),
+# die Seitenzweige flach in einer Ebene - wie ein Fächer. Dadurch klare Etagen.
+# Die Äste werden beim Wachsen schnell kürzer (0.8) - die Krone bleibt schlank.
+T -> FF"[W]/(36)T
+W -> [&(86)B]/(72)[&(86)B]/(72)[&(86)B]/(72)[&(86)B]/(72)[&(86)B]
+B -> "(0.8)FL[+C][-C]B
+C -> "(0.7)FLC`,
+    leaves: 'BCT', leafShape: 'needle', leafSize: 0.3, leafMaterials: ['IvyDark'], tip: 0.022, pipe: 2.5,
+  }),
   haengebirke: preset({
     label: 'Hängebirke (Tropismus)', axiom: 'FFFFFA', iterations: 7, angle: 34, length: 1.4, lengthFactor: 0.85,
     jitter: 0.2, tropism: 0.45,
