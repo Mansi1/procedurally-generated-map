@@ -44,6 +44,8 @@ Non-trivial logic leaves one cheap runnable invariant/check behind. No testing f
 
 Assume **WebGL 1 / OpenGL ES 2.0 / GLSL ES 1.00** unless the project explicitly says otherwise.
 
+**Soliva nutzt WebGL 2 / GLSL ES 3.00** (`getContext('webgl2')`, Shader mit `#version 300 es`) – die ES2-Einschränkungen unten (NPOT, `OES_element_index_uint`, GLSL-ES-1.00-Schleifen) gelten hier nicht. Kein Rückweg auf WebGL 1 einbauen.
+
 Do not introduce WebGL 2 / ES3 features into an ES2 path.
 
 Extension-backed functionality requires runtime detection and either an existing fallback, a minimal fallback, or explicit failure.
