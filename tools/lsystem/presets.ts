@@ -48,6 +48,16 @@ B -> "(0.8)FL[+C][-C]B
 C -> "(0.7)FLC`,
     leaves: 'BCT', leafShape: 'needle', leafSize: 0.3, leafMaterials: ['IvyDark'], tip: 0.022, pipe: 2.5,
   }),
+  ahorn: preset({
+    label: 'Ahorn (gegenständig)', axiom: 'FFFA', iterations: 7, angle: 36, length: 1.3, lengthFactor: 0.83,
+    jitter: 0.2, tropism: 0.04,
+    rules: `# Ahorn verzweigt gegenständig: je Knoten zwei Äste gegenüber (/(180)), der nächste
+# Knoten um 90° dazu gedreht. Oft endet der Leittrieb in einer Gabel - so wird die
+# Krone breit und rund statt spitz.
+A 0.65 -> "/(90)F[&A]/(180)[&A]
+A 0.35 -> "/(90)F[&(30)A]/(180)[&(30)A]^(5)A`,
+    leaves: 'A', leafSize: 0.85, tip: 0.03,
+  }),
   haengebirke: preset({
     label: 'Hängebirke (Tropismus)', axiom: 'FFFFFA', iterations: 7, angle: 34, length: 1.4, lengthFactor: 0.85,
     jitter: 0.2, tropism: 0.45,
