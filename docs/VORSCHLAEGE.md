@@ -1,74 +1,314 @@
-# Vorschläge
+# Vorschläge - und was daraus wurde
 
-Ideen, die beim Umbau der Landschaft (Branch `feat/landscape-reshape`,
-September 2026) aufkamen - was erledigt ist, was offen ist und was verworfen
-wurde. Die übrigen offenen Punkte des Projekts stehen in docs/OFFEN.md.
+Stand 25.09.2026. Diese Datei sammelt, was in einer langen Arbeitssitzung
+gemacht wurde (Modelle nach glTF, Landschaft, Leistung) und welche
+Vorschläge dabei aufkamen - erledigt, offen oder verworfen. Die übrigen
+offenen Punkte des Projekts stehen in docs/OFFEN.md.
 
-## Herauszoomen ohne FPS zu verlieren
+Übersicht:
 
-Beim Herauszoomen wächst die sichtbare Fläche quadratisch. Bäume, Sträucher
-und Felsen werden bis 4 px je Tile gezeichnet (`RESOURCE_OBJECTS_MIN_ZOOM`),
-und seit jeder Wald Holz trägt, sind es doppelt so viele Bäume.
+| Thema | Stand |
+|---|---|
+| Modelle als `.glb` statt `.blend` + OBJ | erledigt, in `main` |
+| Clip-Bibliotheken ohne `.blend`, kein Python mehr | erledigt, in `main` |
+| Jeder Wald trägt Holz | erledigt, Branch |
+| Beeren in dichten Gruppen, halb so viele | erledigt, Branch |
+| Flachland weniger wellig | erledigt, Branch |
+| Feste Puffer für Bäume, Felsen, Sträucher | erledigt, Branch |
+| Geringere Pixeldichte beim Herauszoomen | verworfen (zu pixelig) |
+| Baumenü im Stil der Minimap | verworfen |
+| Weit draußen Wald nur vom Boden malen | offen - der nächste Schritt |
+| Billboards für mittlere Entfernung | offen |
+| Herauszoomen begrenzen, Nebel | offen |
+| Waldrand zwischen Shader und Logik angleichen | offen |
+| Beeren-Gruppen natürlicher verteilen | offen |
+| Berghänge ruhiger | offen |
+| Clips über Blender bearbeiten (Export-Einstellungen) | offen |
 
-| Idee | Stand | Aufwand |
-|---|---|---|
-| Feste Puffer für Vorkommen | **erledigt** (`2b9473a`) | - |
-| Weit draußen keine Baum-Modelle, der Boden malt den Wald | offen, als Nächstes | klein |
-| Billboards für mittlere Entfernung | offen | mittel |
-| Grenzen: weniger weit herauszoomen, Nebel am Rand | offen | sehr klein |
-| Geringere Pixeldichte weit draußen | **verworfen** - zu pixelig | - |
+„Branch“ heißt: `feat/landscape-reshape`, Worktree unter `.agents/landscape`,
+noch nicht gepusht und nicht in `main`.
 
-- **Feste Puffer (erledigt):** Unberührte Bäume, Felsen und Sträucher liegen
-  je Region (64 x 64 Tiles) in einem festen Puffer auf der Grafikkarte
-  (`world/resources.ts`, `gl/entityRenderer.ts`). Bild für Bild laufen nur
-  noch angefasste Tiles und die Auswahl. Der Gewinn ist noch nicht gemessen:
-  `npm run dev`, ganz herauszoomen, FPS im Entwickler-Panel mit `main`
-  vergleichen.
-- **Boden malt den Wald:** Der Gelände-Shader hat schon einen Waldboden mit
-  gemalten Kronen (`forestTexture`, `forestProp`). Unter etwa 8-12 px je
-  Tile die Baum-Modelle ausblenden und den gemalten Wald voll einblenden -
-  auf diese Entfernung kaum zu unterscheiden, und die teuerste Last fällt
-  weg. So machen es viele Strategiespiele.
-- **Billboards:** Zwischen nah (3D-Modell) und fern (gemalter Boden) jeder
-  Baum als flaches Bild aus zwei Dreiecken, vorgerendert aus dem Modell -
-  `tools/ui/icons.mjs` rendert Modelle schon zu Bildern.
-- **Grenzen:** Weniger weit herauszoomen lassen oder am Rand Nebel bzw.
-  Wolken wie in AoE. Ändert, wie sich das Spiel anfühlt.
-- **Geringere Pixeldichte (verworfen):** Weit draußen mit weniger Pixeln
-  rendern und hochskalieren - war zu pixelig. Eine feinere Variante wäre,
-  nur das Gelände in geringerer Auflösung zu rendern und die Objekte scharf
-  darüber; dafür bräuchte es einen eigenen Framebuffer mit Tiefenpuffer.
+---
 
-## Landschaft
+# Was wir gemacht haben
 
-- **Waldrand angleichen:** Der Shader blendet Waldboden schon ab Feuchte
-  0,02 ein, die Spiel-Logik zählt ein Tile erst ab 0,1 als Wald
-  (`classify()` in `noise.ts`). An jedem Waldrand liegt deshalb ein schmaler
-  Saum Waldboden ohne Bäume. Wirkt wie ein natürlicher Waldrand; stört er,
-  den Übergang im Shader (`smoothstep(0.02, 0.18, moisture)`) an die Logik
-  angleichen.
-- **Beeren-Gruppen natürlicher verteilen:** Die Gruppen liegen in einem
-  Raster aus Zellen von 12 Tiles und wirken dadurch recht gleichmäßig. Das
-  Raster ließe sich auflockern (versetzte Zellen, schwankender Abstand).
-  Menge und Dichte: `chance` und `cell` in `RESOURCE_RULES` (`map.ts`).
-- **Noch flachere Wiesen:** `LOWLAND_RELIEF` (jetzt 2) und `LOWLAND_SHADE`
-  (jetzt 0,35) in `noise.ts` - kleinere Werte machen das Flachland ebener.
-- **Ruhigere Berghänge:** Die Streifen an Hängen sind echte Grate und
-  Rinnen (Warp- und Grat-Rauschen), keine Bodenwellen. Glätten hieße, die
-  Form der Berge zu ändern - das verschiebt Gelände und damit Biome.
+## 1. Modelle als glTF (`.glb`) - in `main`
 
-## Oberfläche
+**Ausgangslage:** Jedes Modell war eine `.blend`-Datei unter
+`assets/blender/models/`. `npm run gen:models` startete Blender im
+Hintergrund und exportierte mit Python-Skripten (`blend_to_obj.py`) OBJ und
+MTL nach `src/models/`, die das Spiel las. Nur Blender kann `.blend` lesen -
+das Format ist nicht dokumentiert und ändert sich mit jeder Version.
 
-- **Baumenü im Stil der Minimap (verworfen):** Tafel in Anthrazit, Knöpfe
-  mit Bronze- und Goldkanten wie die AoE4-Minimap - wieder rückgängig
-  gemacht.
+**Der Umweg:** Zuerst wurde `src/models/` aus Git genommen und ein
+`prebuild` eingerichtet, der die Modelle vor jedem Build aus Blender neu
+erzeugt (`e16189f`, `22c0a4e`). Vercel hat aber kein Blender - der Deploy
+schlug fehl. Das war der Anlass für die glTF-Lösung.
+
+**Die Lösung (`2f107fc`):** Jedes Modell ist jetzt `src/models/<name>.glb`
+und eingecheckt. glTF ist ein offener Standard; Blender öffnet und
+speichert ihn ohne Zusatz (Datei → Import / Export → glTF 2.0).
+
+- `tools/models/glb.mjs` liest und schreibt `.glb` ohne Bibliothek:
+  `glbToObj()` macht daraus OBJ- und MTL-Text, `objToGlb()` den Weg zurück.
+- Ein Vite-Plugin (`vite.config.ts`) wandelt beim Bauen:
+  `import house from '../models/house.glb?model'` liefert `{ obj, mtl }`.
+  So arbeiten Spiel, Felder und Symbole unverändert mit OBJ-Text weiter,
+  und zur Laufzeit kostet es nichts.
+- **Namen:** Blender duldet keine doppelten Objektnamen und nummeriert sie
+  beim Import um - das Spiel braucht aber doppelte (viele `Window.Bar`,
+  `Berry.100`). Darum heißt ab dem zweiten gleichen Namen ein Objekt
+  `Name#2`, `#3` ...; das Spiel liest bis zum `#`. Eine Kopie in Blender
+  (`Window.Bar.001`) zählt als das Original. Ersetzt die frühere Custom
+  Property `obj_name`.
+- **Farben:** `baseColorFactor` ist genau der frühere Kd-Wert. Achsen: glTF
+  und OBJ haben beide Y oben.
+- **Geprüft:** Alle 59 Modelle kamen Dreieck für Dreieck, Name für Name und
+  Farbe für Farbe gleich heraus. 8 davon gingen zur Probe durch Blender
+  (Import und Export mit den Vorgaben) - ebenfalls ohne Unterschied.
+- Entfallen: die 59 `.blend`-Modelle, `gen:models`, `prebuild` und die
+  Python-Skripte für die Modelle. Vercel baut seitdem wieder.
+
+## 2. Clip-Bibliotheken ohne `.blend`, kein Python - in `main` (`58793b5`)
+
+Die Bewegungen lagen als `.blend` in `assets/blender/clips/` und wurden mit
+`npm run gen:anim` (Blender + Python) nach `src/models/*_clips.glb` + `.json`
+exportiert. Auf Wunsch entfernt: die vier `.blend`-Dateien, `gen:anim` und
+alle Python-Skripte. Seitdem enthält das Projekt kein Python mehr.
+
+- Die `*_clips.glb` sind jetzt selbst die Quelle; die Angaben je Clip
+  (`props`, `pose`, `strike`, `species` ...) stehen von Hand gepflegt in
+  `*_clips.json`. Die eingecheckten Clips blieben unverändert
+  (`check:anim` weiter 0,01 cm).
+- **Bekannte Grenze:** Ein Clip, der mit den vorgegebenen Einstellungen
+  durch Blender geht, verändert sich - Blender rechnet die Bilder neu ab.
+  Probe: Hände beim Hacken bis 7 cm daneben (vorher 0,5 cm), Tiere bis
+  0,9 cm. Siehe „Clips über Blender bearbeiten“ unten.
+- Verloren sind die IK-Ziele der Hände aus der früheren `humanoid.blend` -
+  ihr Ergebnis steckt in den gebackenen Clips. Die Dateien liegen in der
+  Git-Geschichte.
+
+## 3. Jeder Wald trägt Holz - Branch (`a7452f2`)
+
+**Problem:** Bäume wuchsen nur, wo ein zweites Rauschen (das
+Ressourcen-Rauschen) über 0,15 lag. Die Hälfte des Waldes blieb leer: Auf
+der Welt `Soliva` trugen um den Start nur 4416 von 8679 Wald-Tiles Bäume.
+
+**Lösung:** In `RESOURCE_RULES` (`src/map.ts`) hat Holz keine Schwelle mehr
+(`threshold: -Infinity`) - jedes Wald-Tile trägt einen Baum, 8679 von 8679.
+Die Menge je Tile bleibt im bisherigen Bereich: Wo das Rauschen unter 0
+liegt, zählt es wie 0, also mindestens 50 Holz. Ohne diese Untergrenze
+stünden Bäume mit fast nichts darin.
+
+## 4. Beeren in dichten Gruppen - Branch (`de40b37`, `d3a3c40`)
+
+**Problem:** Beeren lagen, wo ein Häufchen-Rauschen über 0,7 lag - das
+ergab gebogene Streifen und lockere Flecken bis 13 x 13 Tiles mit einem
+Drittel Sträuchern, und zunächst nur in einer Gegend der Wiese.
+
+**Lösung in drei Schritten:**
+1. Die Gegend-Schwelle fiel weg - Beeren auf der ganzen Wiese.
+2. Statt Rauschen: runde Gruppen wie in AoE2 (`clump` in `RESOURCE_RULES`).
+   Die Welt ist in Zellen von 12 x 12 Tiles geteilt; in manchen Zellen
+   liegt eine Gruppe mit Radius 1,5 - meist 7-9 Sträucher auf 3 x 3 Tiles,
+   ganz innerhalb der Zelle, damit zwischen den Gruppen Wege frei bleiben.
+   Im Bild rückt jeder Strauch ein Stück zur Mitte seiner Gruppe
+   (`towardGroup()` in `world/resources.ts`) und ist etwas größer
+   (0,55 statt 0,45 Tiles) - die Gruppe wirkt wie ein Gebüsch.
+3. Halb so viele Gruppen: `chance` 0,6 → 0,3. Um den Start von `Soliva`
+   sind es 82 Gruppen.
+
+## 5. Flachland weniger wellig - Branch (`701eb2a`)
+
+**Problem:** Die Wiesen wirkten hügelig, mit dunklen Wellen.
+
+**Lösung - nur an der Darstellung**, Küsten, Biome und Ressourcen bleiben
+gleich (die Höhe selbst bestimmt, wo Wasser, Wiese und Wald liegen):
+- `LOWLAND_RELIEF` 4 → 2 (`src/noise.ts`): Das Flachland steigt von der
+  Küste bis zum Gebirgsfuß nur noch 2 Tiles, seine Buckel sind halb so hoch.
+- `LOWLAND_SHADE` 0,35: Die Hangschattierung verstärkt jede Neigung 52-fach
+  - das waren die dunklen Wellen. Unter dem Gebirgsfuß wirkt sie nur noch
+  zu gut einem Drittel und wächst zum Fuß hin auf die volle Stärke
+  (`terrainShader.ts`). Berge sehen aus wie bisher.
+
+Zur Probe wurde die Dämpfung bis ins Gebirge ausgeweitet - das änderte an
+den Berghängen kaum etwas (dort sind es echte Grate) und wurde
+zurückgenommen.
+
+## 6. Feste Puffer für Bäume, Felsen und Sträucher - Branch (`2b9473a`)
+
+**Problem:** Beim Herauszoomen fielen die FPS. Jedes Bild ging jeden
+sichtbaren Baum durch, schrieb ihn neu in die Instanzliste und lud sie
+komplett auf die Grafikkarte - weit draußen Zehntausende. Dazu suchte der
+Renderer für jede Instanz ihr Modell unter rund 60 per `find()`.
+
+**Lösung:**
+- Vorkommen, an denen niemand arbeitet, liegen je Region (4 x 4 Stücke =
+  64 x 64 Tiles) in einem festen Puffer auf der Grafikkarte
+  (`createBatch()` in `gl/entityRenderer.ts`), einmal gepackt und
+  hochgeladen, danach nur gezeichnet - je Modell ein Aufruf je Region.
+- Bild für Bild laufen nur noch angefasste Tiles (angebaut, gefällt,
+  gepflückt) und das ausgewählte Vorkommen über den bisherigen Weg.
+- Neu gebaut wird eine Region, wenn dort ein Tile angefasst oder wieder
+  ganz frei wird (`Deposits.revision` zählt dann hoch) oder die Auswahl
+  wechselt - sofort, sonst stünde ein Baum doppelt da. Kommen beim Scrollen
+  neue Stücke dazu, wird höchstens 3 ms je Bild nachgebaut.
+- Das Modell je Instanz kommt aus einer Tabelle (`modelByShape`).
+- **Geprüft:** Startansicht Pixel für Pixel gleich; Tests, Build und
+  Rauchtest (mit Demo, Speichern, Laden) laufen.
+- **Nicht gemessen:** der FPS-Gewinn - der Test-Browser rendert per
+  Software. Messen: `npm run dev` im Worktree, ganz herauszoomen, FPS im
+  Entwickler-Panel oben links mit `main` vergleichen.
+
+## Verworfen
+
+### Geringere Pixeldichte beim Herauszoomen (`2b9473a`, zurück in `da58935`)
+
+Ab 16 px je Tile wurde das Spielfeld mit höchstens einem Pixel je
+CSS-Pixel gerendert, ab 8 px mit 0,75, und der Browser skalierte hoch - der
+Gelände-Shader rechnet je Pixel, auf Retina-Bildschirmen wären das ein
+Viertel bis ein Siebtel der Pixel gewesen. Ergebnis: zu pixelig, wieder
+entfernt.
+
+### Baumenü im Stil der Minimap
+
+Die Steintafel des Baumenüs in Anthrazit mit Bronze- und Goldkanten wie die
+neue AoE4-Minimap. Auf Wunsch vor dem Commit rückgängig gemacht.
+
+---
+
+# Offene Vorschläge
+
+## Herauszoomen: weit draußen den Wald nur vom Boden malen
+
+**Das bringt am meisten, bei wenig Aufwand - der nächste Schritt.**
+
+Der Gelände-Shader hat schon einen eigenen Waldboden mit gemalten Kronen
+und Schatten (`forestTexture()` und `forestProp()` in `terrainShader.ts`).
+Weit draußen ist ein Baum nur wenige Pixel groß; die 3D-Modelle kosten
+dann viel und zeigen kaum mehr als der gemalte Wald.
+
+**Umsetzung:**
+- Unterhalb einer Zoomstufe (etwa 8-12 CSS-Pixel je Tile) die Baum-Modelle
+  nicht mehr zeichnen - in `ResourceField.instances()` bzw. beim Zeichnen
+  der festen Puffer die Baum-Formen überspringen. Felsen und Sträucher
+  bleiben (es sind wenige).
+- Im Gelände-Shader den gemalten Wald dort voll einblenden, im Übergang
+  weich überblenden (zwei Zoomstufen), damit nichts aufpoppt.
+- Gefällte oder angefangene Bäume nah am Dorf eventuell weiter als Modell
+  zeigen.
+
+**Vorteil:** Die teuerste Last - Zehntausende Baum-Modelle - fällt weit
+draußen ganz weg. So machen es viele Strategiespiele.
+**Nachteil:** Der Wald sieht aus der Ferne etwas flacher aus; einzelne
+Bäume am Waldrand verschwinden.
+**Aufwand:** klein.
+
+## Herauszoomen: Billboards für mittlere Entfernung
+
+Zwischen nah (3D-Modell) und fern (gemalter Boden) wird jeder Baum als
+flaches Bild aus zwei Dreiecken gezeichnet, das zur Kamera zeigt.
+
+**Umsetzung:**
+- Je Baumart ein Bild (oder wenige, aus verschiedenen Richtungen)
+  vorrendern - `tools/ui/icons.mjs` rendert Modelle schon zu Bildern.
+- Die Bilder in einen Texturatlas; eine eigene Zeichenroutine im
+  `EntityRenderer`, die je Baum ein Rechteck mit der passenden Kachel zeigt.
+- Zoomgrenzen: z. B. 3D ab 16 px je Tile, Billboard von 8 bis 16 px,
+  darunter der gemalte Wald.
+
+**Vorteil:** Ein Baum kostet zwei Dreiecke statt Dutzender; weiter draußen
+bleiben einzelne Bäume sichtbar.
+**Nachteil:** Mehr Code und ein Atlas, der bei neuen Baumarten neu gerendert
+werden muss; Licht und Schatten passen nur ungefähr.
+**Aufwand:** mittel.
+
+## Herauszoomen: begrenzen oder Nebel am Rand
+
+- Die weiteste Zoomstufe (1 CSS-Pixel je Tile) weglassen oder erst später
+  freigeben (`ZOOM_LEVELS` in `game/Camera.ts`).
+- Oder wie in AoE: am Bildrand Nebel bzw. Wolken, sodass die sichtbare
+  Fläche begrenzt bleibt.
+
+**Vorteil:** sofort weniger Last, fast kein Code.
+**Nachteil:** Es ändert, wie das Spiel sich anfühlt - man sieht weniger von
+der Welt.
+**Aufwand:** sehr klein.
+
+## Herauszoomen: nur das Gelände in geringerer Auflösung
+
+Die verworfene Idee, feiner: Nur der Gelände-Shader rechnet weit draußen
+mit weniger Pixeln, Bäume, Gebäude und Figuren bleiben scharf.
+
+**Umsetzung:** Das Gelände in einen eigenen Framebuffer (halbe Auflösung,
+mit Tiefenpuffer) rendern, hochskaliert auf das Bild legen, die Tiefe für
+die Objekte übernehmen.
+**Vorteil:** Der teure Shader rechnet weniger, die Objekte bleiben scharf.
+**Nachteil:** Die Tiefe zwischen den Auflösungen zu übertragen ist
+fehleranfällig (Kanten an Hängen); das Gelände wird trotzdem weicher.
+**Aufwand:** mittel bis groß - erst nach dem gemalten Wald prüfen.
+
+## Waldrand zwischen Shader und Logik angleichen
+
+Der Shader blendet Waldboden schon ab Feuchte 0,02 ein
+(`smoothstep(0.02, 0.18, moisture)`), die Spiel-Logik zählt ein Tile erst ab
+0,1 als Wald (`classify()` in `noise.ts`). An jedem Waldrand liegt deshalb
+ein schmaler Saum Waldboden ohne Bäume.
+
+**Umsetzung:** Den Übergang im Shader enger um 0,1 legen, z. B.
+`smoothstep(0.07, 0.13, ...)`, oder umgekehrt Bäume am Rand lichter setzen.
+**Abwägung:** Der Saum wirkt heute wie ein natürlicher Waldrand. Nur ändern,
+wenn er stört.
+**Aufwand:** klein.
+
+## Beeren-Gruppen natürlicher verteilen
+
+Die Gruppen liegen in einem Raster aus Zellen von 12 Tiles; aus der Nähe
+fällt das kaum auf, aus der Ferne wirkt die Verteilung recht gleichmäßig.
+
+**Umsetzung:** In `clumpValue()` (`map.ts`) die Zellen versetzen (jede
+zweite Zeile halb verschoben), die Mitte freier in der Zelle wählen oder die
+Zellgröße je Gegend schwanken lassen. Menge und Dichte: `chance` (jetzt 0,3)
+und `cell` (jetzt 12) in `RESOURCE_RULES`.
+**Aufwand:** klein.
+
+## Noch flachere Wiesen
+
+Zwei Regler in `src/noise.ts`: `LOWLAND_RELIEF` (jetzt 2 Tiles) und
+`LOWLAND_SHADE` (jetzt 0,35). Kleinere Werte machen das Flachland ebener;
+bei 0 ist es ganz platt und ohne Schattierung.
+**Aufwand:** sehr klein.
+
+## Berghänge ruhiger
+
+Die Streifen an den Hängen (z. B. in der Startansicht von `Soliva`) sind
+echte Grate und Rinnen aus dem Warp- und Grat-Rauschen, keine Bodenwellen.
+Glätten hieße, die Form der Berge zu ändern (`WARP_STRENGTH`,
+`RIDGE_STRENGTH`, Feindetail in `elevation()`).
+**Nachteil:** Das verschiebt Gelände und damit Küsten, Biome und
+Ressourcen - Spielstände passen danach nicht mehr zur Welt.
+**Aufwand:** klein im Code, groß in den Folgen.
+
+## Clips über Blender bearbeiten
+
+Seit die Clip-Bibliotheken nur noch `.glb` sind, geht Bearbeiten über
+Import und Export in Blender. Mit den vorgegebenen Einstellungen verändert
+das die Clips (Hände bis 7 cm, Tiere bis 0,9 cm).
+
+**Umsetzung:** Export-Einstellungen suchen, bei denen `npm run check:anim`
+gleich bleibt - Bildrate 30, Animation abtasten, keine Optimierung der
+Keyframes - und in docs/ANIMATION.md festhalten. Bis dahin Clips nicht
+über Blender speichern. Steht auch in docs/OFFEN.md.
+**Aufwand:** klein bis mittel (ausprobieren).
 
 ## Sonst
 
-- **Branch übernehmen:** `feat/landscape-reshape` (Wald, Beeren,
-  flacheres Flachland, feste Puffer) ist nicht gepusht und nicht in `main`.
+- **Branch übernehmen:** `feat/landscape-reshape` (Wald, Beeren, flacheres
+  Flachland, feste Puffer, diese Datei) ist nicht gepusht und nicht in
+  `main`.
 - **Rauchtest:** Seit den Gelände-Änderungen landen seine Klicks auf
   anderen Tiles - er steckt 2 statt 3 Feldstücke ab und baut 4 statt 5
   Gebäude. Er läuft weiter durch; wer feste Zahlen erwartet, passt ihn an.
-- **Clips über Blender bearbeiten:** Export-Einstellungen finden, bei denen
-  die Animationen gleich bleiben - steht in docs/OFFEN.md.
+- **Symbole neu zeichnen:** Die Bilder der Rohstoffleiste (`src/icons/`)
+  sind älter als die jetzigen Modelle - `npm run gen:ui` (steht in
+  docs/OFFEN.md).
