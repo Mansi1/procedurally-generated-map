@@ -24,6 +24,8 @@ import { World } from './world/world';
 import { worldInstances } from './world/render';
 import { Selection } from './game/Selection';
 import { Camera } from './game/Camera';
+import { steerCamera } from './game/cameraControl';
+import { startPoint } from './game/startPoint';
 import { FixedStep, Interval } from './game/timing';
 import { Pointer } from './game/Pointer';
 import { DevPanel } from './game/DevPanel';
@@ -49,7 +51,7 @@ import { ResourceField } from './world/resources';
 import { Sound } from './audio';
 import { Music } from './music';
 import { GATHER_CURSOR, RALLY_CURSOR } from './cursors';
-import { currentSeed, DEFAULT_SEED, deleteSave, switchWorld, takeStartRequest } from './worlds';
+import { currentSeed, deleteSave, switchWorld, takeStartRequest } from './worlds';
 
 // Erst Spielfeld-Canvas und Oberfläche (components/Hud.tsx) - danach werden
 // ihre Teile hier über ihre IDs gefunden.
@@ -94,9 +96,6 @@ function resize() {
 
 applyCanvasSize();
 
-/** Wo es in der Standardwelt losgeht - dort liegt ein guter Platz fürs erste Dorf. */
-const DEFAULT_START = { x: 88, y: -59 };
-
 // Die Adresse bleibt "/": Welt und Stelle stehen nicht mehr darin. Alte Links
 // (/<seed>/<x>-<y>?zoom=) werden aufgeräumt; die Welt wählt man im Hauptmenü.
 if (window.location.pathname !== '/' || window.location.search) window.history.replaceState(null, '', '/');
@@ -106,35 +105,7 @@ const mapGen = new MapGenerator(seed);
 const terrain = new Terrain(mapGen, seed);
 const world = new World(terrain, seed);
 
-/**
- * Wo es losgeht: beim ersten Hauptgebäude, in der Standardwelt bei
- * DEFAULT_START, sonst auf der nächsten Wiese um den Ursprung, um die herum
- * fester Boden liegt - der Ursprung selbst kann mitten im Meer liegen.
- */
-function startPoint(): { x: number; y: number } {
-  const home = world.townCenters()[0];
-  if (home) return { x: home.x, y: home.y };
-  if (seed === DEFAULT_SEED) return DEFAULT_START;
-  const solid = (x: number, y: number) => {
-    const t = terrain.getTile(x, y).tileType;
-    return t !== 'water' && t !== 'deep_water' && t !== 'mountain' && t !== 'snow';
-  };
-  for (let r = 0; r <= 600; r += 3) {
-    const steps = Math.max(1, Math.round((2 * Math.PI * r) / 3));
-    for (let i = 0; i < steps; i++) {
-      const a = (i / steps) * Math.PI * 2;
-      const x = Math.round(Math.cos(a) * r);
-      const y = Math.round(Math.sin(a) * r);
-      if (terrain.getTile(x, y).tileType !== 'grass') continue;
-      // Genug Platz für ein Dorf: ringsum im Abstand von 5 Tiles kein Wasser, kein Fels.
-      if ([[5, 0], [-5, 0], [0, 5], [0, -5], [4, 4], [-4, 4], [4, -4], [-4, -4]].every(([dx, dy]) => solid(x + dx, y + dy))) {
-        return { x, y };
-      }
-    }
-  }
-  return { x: 0, y: 0 };
-}
-const { x: startX, y: startY } = startPoint();
+const { x: startX, y: startY } = startPoint(world, terrain, seed);
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 const resources = new ResourceField(terrain, mapGen);
@@ -284,7 +255,7 @@ function startNewGame() {
 
 /** Kamera zurück an den Start - im Hauptmenü ist sie weitergezogen. */
 function goToStart() {
-  const home = startPoint();
+  const home = startPoint(world, terrain, seed);
   camera.moveTo(home.x, home.y);
 }
 
@@ -644,37 +615,9 @@ function loop(now: number) {
   lastTime = now;
 
 
-  // Gescrollt wird in Bildschirmrichtung, nicht entlang der Weltachsen - die
-  // liegen in der Rautenansicht diagonal. Das Tempo ist in Tiles je Sekunde
-  // gleich, aber auf 3200 Pixel je Sekunde gedeckelt: ganz nah heran zoomt
-  // man, um genau hinzusehen - dort flöge die Karte sonst in einem
-  // Zehntel einer Sekunde vorbei.
-  const speed = Math.min(400 * (camera.tileSize / 4), 3200) * dt * settings.scroll;
-  let dx = 0;
-  let dy = 0;
-  if (keyboard.isDown('w', 'arrowup')) dy -= speed;
-  if (keyboard.isDown('s', 'arrowdown')) dy += speed;
-  if (keyboard.isDown('a', 'arrowleft')) dx -= speed;
-  if (keyboard.isDown('d', 'arrowright')) dx += speed;
-  // Hinter dem Hauptmenü zieht die Welt langsam vorbei.
-  if (start.isOpen()) dx += 24 * dt;
-  // Leertaste halten: Relief sinkt flach, um hinter Berge zu sehen. Weich
-  // überblendet, damit man sieht, was wohin gehört. Nie ganz 0 - siehe
-  // MapRenderer.relief.
-  const targetRelief = keyboard.isDown(' ') ? 0.02 : 1;
-  const reliefBefore = renderer.relief;
-  renderer.relief += (targetRelief - renderer.relief) * Math.min(1, dt * 10);
-  if (Math.abs(targetRelief - renderer.relief) < 0.002) renderer.relief = targetRelief;
-  const reliefChanged = renderer.relief !== reliefBefore;
+  // WASD, Leertaste, hinter dem Hauptmenü langsam vorbeiziehen (game/cameraControl.ts).
+  if (steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen())) refreshPointer();
 
-  if (dx !== 0 || dy !== 0 || reliefChanged) {
-    camera.panPixels(dx, dy);
-    // Unter dem stehenden Zeiger zieht jetzt anderes Gelände durch.
-    refreshPointer();
-  }
-
-  // Feste Schritte. Der Rest bleibt für den nächsten Frame liegen, damit über
-  // die Zeit weder etwas verloren geht noch doppelt gefördert wird.
   simulation.advance(paused || start.isOpen() ? 0 : dt * settings.speed, (step) => world.tick(step));
 
   ground.update(now);
