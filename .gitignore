@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# L-System-Export (tools/lsystem/export.ts)
+tools/lsystem/out

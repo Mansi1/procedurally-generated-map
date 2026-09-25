@@ -1,0 +1,12 @@
+{
+  // Strenger als das Spiel: tools/lsystem ist neu und soll es bleiben.
+  // Prüfen: npx tsc -p tools/lsystem
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": ["."]
+}

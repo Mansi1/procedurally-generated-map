@@ -6,7 +6,7 @@
 
 import { findPath, lineOfSight } from './pathfinding';
 import { uniqueName } from './names';
-import { BUILDING_HEADING, FALL_LYING, POSE, modelEntry } from '../gl/entityRenderer';
+import { BUILDING_HEADING, POSE, modelEntry } from '../gl/entityRenderer';
 import { RESOURCE_TYPE_LABEL, type Terrain } from '../map';
 import { reliefZ } from '../noise';
 import {
@@ -33,6 +33,7 @@ import {
 import { readSave, writeSave, type LoadedSave, type SaveData } from './save';
 import { isAnimalKind, Villager, type Animal, type AnimalSurroundings, type Task } from './unit';
 import { Wildlife } from './wildlife';
+import { Deposits } from './deposits';
 import { Farming, farmSpot, furrowKey, furrowNeeds, FIELD_INNER, METERS_PER_TILE, type FarmPhase } from './farming';
 import { RUIN_DURATION, type Ruin } from './ruin';
 
@@ -72,14 +73,6 @@ export interface ViewRect {
 const key = (x: number, y: number) => `${x},${y}`;
 
 
-/**
- * Beerensträucher: nach dem letzten Pflücken BERRY_REST Sekunden Pause, dann
- * wachsen sie in BERRY_REGROW_TIME Sekunden von leer auf voll nach.
- */
-const BERRY_REST = 90 * 60;
-const BERRY_REGROW_TIME = 5 * 60;
-
-
 /** Abstand der Sammelplätze von der Feldmitte, in Tiles. */
 const GATHER_SPREAD = 0.4;
 /** Abstand zur Gebäudekante, ab dem er abliefern kann. */
@@ -91,19 +84,8 @@ export class World {
   private buildings = new Map<string, Building>();
   /** Jedes belegte Feld zeigt auf den Ankerpunkt seines Gebäudes. */
   private occupied = new Map<string, string>();
-  private harvested = new Map<string, number>();
-  private exhausted = new Set<string>();
-  /**
-   * Angepflückte Beerensträucher: volle Menge und wann zuletzt gepflückt
-   * wurde (Weltzeit). Sie wachsen nach einer Pause nach (siehe regrowBerries).
-   */
-  private berryTiles = new Map<string, { total: number; picked: number }>();
-  /**
-   * Gefällte Bäume: wann (Weltzeit) und in welche Richtung (Radiant) sie
-   * umgefallen sind. Ein Baum fällt beim ersten Axthieb und wird danach als
-   * liegender Stamm abgebaut - wie in AoE2.
-   */
-  private felled = new Map<string, { at: number; dir: number }>();
+  /** Vorkommen: entnommen, leer, gefällt, nachwachsend (deposits.ts). */
+  readonly deposits: Deposits;
   /**
    * Was ein Tile vom Gelände her versperrt, gemerkt: 0 frei, 1 Wasser,
    * 2 Baum/Fels (frei, sobald abgebaut oder gefällt). Gebäude kommen dazu
@@ -147,6 +129,7 @@ export class World {
   groundAt: ((x: number, y: number) => number) | null = null;
 
   constructor(readonly terrain: Terrain, private seed: string) {
+    this.deposits = new Deposits(terrain);
     this.farming = new Farming(this);
     this.wildlife = new Wildlife({
       terrain,
@@ -244,17 +227,7 @@ export class World {
    * @param blend Anteil des laufenden Ticks, damit die Bewegung flüssig ist
    */
   fall(x: number, y: number, blend: number): { angle: number; dir: number } | null {
-    const f = this.felled.get(key(x, y));
-    if (!f) return null;
-    const t = this.timeAt(blend) - f.at;
-    const DURATION = 1.1;
-    const BOUNCE = 0.35;
-    const LYING = FALL_LYING;
-    let angle: number;
-    if (t < DURATION) angle = LYING * (t / DURATION) ** 2;
-    else if (t < DURATION + BOUNCE) angle = LYING - 0.14 * Math.sin((Math.PI * (t - DURATION)) / BOUNCE);
-    else angle = LYING;
-    return { angle, dir: f.dir };
+    return this.deposits.fall(x, y, this.timeAt(blend));
   }
 
   /**
@@ -263,28 +236,13 @@ export class World {
    */
   resourceInfo(x: number, y: number):
       { type: DepositType; remaining: number; total: number; gatherers: number; regrowIn?: number } | null {
-    const k = key(x, y);
-    const bush = this.berryTiles.get(k);
-    const bushTotal = bush?.total;
-    const found = this.remainingAt(x, y);
-    // Leere Beerensträucher bleiben auswählbar - sie wachsen nach.
-    if (bushTotal === undefined && (!found.type || found.amount <= 0)) return null;
+    const info = this.deposits.info(x, y, this.time);
+    if (!info) return null;
     let gatherers = 0;
     for (const v of this.villagers) {
       if (v.task.kind === 'gather' && v.task.x === x && v.task.y === y) gatherers++;
     }
-    const total = bushTotal ?? this.terrain.getTile(x, y).resourceAmount;
-    const remaining = bushTotal !== undefined ? Math.max(0, total - (this.harvested.get(k) ?? 0)) : found.amount;
-    return {
-      type: bushTotal !== undefined ? 'berries' : found.type!,
-      remaining,
-      total,
-      gatherers,
-      // Sekunden, bis der Strauch wieder voll ist: Rest der Pause plus Wachsen.
-      regrowIn: bush
-        ? Math.max(0, BERRY_REST - (this.time - bush.picked)) + (total - remaining) / (total / BERRY_REGROW_TIME)
-        : undefined,
-    };
+    return { ...info, gatherers };
   }
 
   /**
@@ -292,22 +250,12 @@ export class World {
    * berechnen - `total` kennt der Aufrufer schon.
    */
   remainingShare(x: number, y: number, total: number): number {
-    const k = key(x, y);
-    if (this.exhausted.has(k)) return 0;
-    const taken = this.harvested.get(k);
-    return taken === undefined ? 1 : Math.max(0, 1 - taken / total);
+    return this.deposits.remainingShare(x, y, total);
   }
 
   /** Was an einem Feld noch im Boden liegt. */
   remainingAt(x: number, y: number): { type: DepositType | null; amount: number } {
-    const k = key(x, y);
-    if (this.exhausted.has(k)) return { type: null, amount: 0 };
-    const tile = this.terrain.getTile(x, y);
-    if (tile.resource === 'none' || tile.resourceAmount <= 0) return { type: null, amount: 0 };
-    return {
-      type: tile.resource as DepositType,
-      amount: tile.resourceAmount - (this.harvested.get(k) ?? 0),
-    };
+    return this.deposits.remainingAt(x, y);
   }
 
   private canPay(cost: Partial<Resources>): boolean {
@@ -494,7 +442,7 @@ export class World {
       this.sowableTiles.set(k, soil);
     }
     // 2: Baum oder Fels - frei, sobald abgebaut.
-    return soil === 1 || (soil === 2 && this.exhausted.has(k));
+    return soil === 1 || (soil === 2 && this.deposits.isExhausted(x, y));
   }
 
   /**
@@ -696,7 +644,7 @@ export class World {
     this.lastDt = dt;
     if (this.ruins.length > 0) this.ruins = this.ruins.filter((r) => this.time - r.at < RUIN_DURATION);
     for (const b of this.buildings.values()) if (b.isUnitProducer()) this.tickTraining(b, dt);
-    this.regrowBerries(dt);
+    if (this.deposits.regrow(dt, this.time)) this.dirty = true;
     if (this.farming.grow(dt)) this.dirty = true;
     if (this.wildlife.tick(dt, this.animalSurroundings)) this.dirty = true;
     for (const v of this.villagers) {
@@ -742,7 +690,7 @@ export class World {
       if (this.terrainBlock.size > 200_000) this.terrainBlock.clear();
       this.terrainBlock.set(k, t);
     }
-    if (t === 2) return !this.exhausted.has(k) && !this.felled.has(k);
+    if (t === 2) return !this.deposits.isExhausted(x, y) && !this.deposits.isFelled(x, y);
     return t === 1;
   }
 
@@ -1262,16 +1210,16 @@ export class World {
         // dem Holz näher zum Stumpf wandert). Er steht seitlich daneben.
         let aimX = task.x + 0.5;
         let aimY = task.y + 0.5;
-        const felled = task.type === 'wood' ? this.felled.get(key(task.x, task.y)) : undefined;
-        const length = felled ? this.treeLength?.(task.x, task.y) : undefined;
-        if (felled && length) {
+        const fellDir = task.type === 'wood' ? this.deposits.fellDirection(task.x, task.y) : undefined;
+        const length = fellDir !== undefined ? this.treeLength?.(task.x, task.y) : undefined;
+        if (fellDir !== undefined && length) {
           const total = this.terrain.getTile(task.x, task.y).resourceAmount;
           const share = Math.max(0, Math.min(1, found.amount / total));
           // In Sprüngen von STEP Tiles: so geht er ab und zu ein paar Schritte
           // weiter, statt dem kürzer werdenden Stamm hinterherzurutschen.
           const STEP = 0.8;
           const along = Math.max(0.35, Math.floor((length * share * 0.8) / STEP) * STEP);
-          const [dx, dy] = [Math.cos(felled.dir), Math.sin(felled.dir)];
+          const [dx, dy] = [Math.cos(fellDir), Math.sin(fellDir)];
           aimX += dx * along;
           aimY += dy * along;
           // Links oder rechts vom Stamm, mehrere Holzfäller verteilt.
@@ -1290,27 +1238,17 @@ export class World {
           v.carrying = 0;
           v.carryType = YIELD[task.type];
         }
-        const take = Math.min(
-            VILLAGER.gatherRate[task.type] * dt,
-            found.amount,
-            VILLAGER.capacity - v.carrying);
-        const k = key(task.x, task.y);
-        // Der erste Hieb fällt den Baum - weg vom Holzfäller.
-        if (task.type === 'wood' && !this.felled.has(k)) {
-          // Grob weg vom Holzfäller, aber nie ganz genau - bis zu 35° daneben.
+        // Der erste Hieb fällt den Baum - grob weg vom Holzfäller, aber nie
+        // ganz genau: bis zu 35° daneben.
+        if (task.type === 'wood') {
           const away = Math.atan2(task.y + 0.5 - v.y, task.x + 0.5 - v.x);
           const jitter = (tileAngle(task.x + 17, task.y - 31) / Math.PI - 1) * 0.6;
-          this.felled.set(k, { at: this.time, dir: away + jitter });
-          this.onEvent?.({ kind: 'treeFall', x: task.x + 0.5, y: task.y + 0.5 });
+          if (this.deposits.fell(task.x, task.y, away + jitter, this.time)) {
+            this.onEvent?.({ kind: 'treeFall', x: task.x + 0.5, y: task.y + 0.5 });
+          }
         }
-        const taken = (this.harvested.get(k) ?? 0) + take;
-        this.harvested.set(k, taken);
-        if (task.type === 'berries') {
-          const total = this.berryTiles.get(k)?.total ?? found.amount + taken - take;
-          this.berryTiles.set(k, { total, picked: this.time });
-        }
-        if (found.amount - take <= 1e-6) this.exhausted.add(k);
-        v.carrying += take;
+        const wanted = Math.min(VILLAGER.gatherRate[task.type] * dt, VILLAGER.capacity - v.carrying);
+        v.carrying += this.deposits.take(task.x, task.y, wanted, this.time);
         this.dirty = true;
 
         if (v.carrying >= VILLAGER.capacity - 1e-6) task.delivering = true;
@@ -1379,7 +1317,7 @@ export class World {
       villagers: this.villagers.map((v) => ({
         x: v.x, y: v.y, c: v.carrying, ct: v.carryType, task: v.task, hp: v.hp, n: v.name, f: v.female,
       })),
-      harvested: Object.fromEntries(this.harvested),
+      harvested: Object.fromEntries(this.deposits.harvested),
       animals: this.wildlife.animals.map((a) => ({
         k: a.kind, x: +a.x.toFixed(2), y: +a.y.toFixed(2), hp: a.hp, f: +a.food.toFixed(1),
         ...(a.state === 'dead' ? { d: true } : {}),
@@ -1391,22 +1329,7 @@ export class World {
   /** Übernimmt einen geladenen Stand - schon auf das heutige Format gebracht (save.ts). */
   private applySave({ data, scale }: LoadedSave) {
     this.stock = data.stock;
-    // Welche Felder leer sind, steht nicht im Speicherstand - es ergibt sich
-    // aus der entnommenen Menge und dem, was der Generator dort hergibt. So
-    // bleibt die Datei klein und übersteht eine Änderung an den Vorkommen.
-    for (const [k, amount] of Object.entries(data.harvested)) {
-      this.harvested.set(k, amount);
-      const comma = k.indexOf(',');
-      const [x, y] = [Number(k.slice(0, comma)), Number(k.slice(comma + 1))];
-      const tile = this.terrain.getTile(x, y);
-      if (amount >= tile.resourceAmount) this.exhausted.add(k);
-      // Wann zuletzt gepflückt wurde, steht nicht im Speicherstand - die
-      // Pause beginnt beim Laden von vorn.
-      if (tile.resource === 'berries') this.berryTiles.set(k, { total: tile.resourceAmount, picked: 0 });
-      // Angefangene Bäume liegen schon - ohne noch einmal umzufallen. Die
-      // Richtung steht nicht im Speicherstand; sie ergibt sich aus der Lage.
-      if (tile.resource === 'wood') this.felled.set(k, { at: -Infinity, dir: ((x * 7 + y * 13) % 8) * (Math.PI / 4) });
-    }
+    this.deposits.restore(data.harvested);
 
     for (const saved of data.buildings) {
       // Unbekannte Arten fallen weg; umbenannte schreibt buildingFromSave um.
@@ -1438,37 +1361,13 @@ export class World {
     return uniqueName(female, new Set(this.villagers.map((v) => v.name)));
   }
 
-  /**
-   * Beerensträucher wachsen nach: erst BERRY_REST Sekunden nach dem letzten
-   * Pflücken, dann in BERRY_REGROW_TIME Sekunden von leer auf voll. Sobald
-   * wieder etwas daran hängt, kann man sie erneut abernten.
-   */
-  private regrowBerries(dt: number) {
-    for (const [k, { total, picked }] of this.berryTiles) {
-      if (this.time - picked < BERRY_REST) continue;
-      const taken = (this.harvested.get(k) ?? 0) - (total / BERRY_REGROW_TIME) * dt;
-      if (taken <= 0) {
-        this.harvested.delete(k);
-        this.berryTiles.delete(k);
-        this.exhausted.delete(k);
-      } else {
-        this.harvested.set(k, taken);
-        if (taken < total - 1) this.exhausted.delete(k);
-      }
-      this.dirty = true;
-    }
-  }
-
   /** Alles zurücksetzen - für den Neustart-Knopf. */
   reset() {
     this.buildings.clear();
     this.farming.invalidate();
     this.fieldLooks.clear();
     this.occupied.clear();
-    this.harvested.clear();
-    this.exhausted.clear();
-    this.berryTiles.clear();
-    this.felled.clear();
+    this.deposits.clear();
     this.villagers = [];
     this.wildlife.clear();
     this.stock = initialResources();

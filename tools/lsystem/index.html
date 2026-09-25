@@ -1,158 +1,56 @@
 <!doctype html>
-<!-- Spielwiese für L-System-Bäume (lsystem.mjs). Aufruf: npm run dev, dann
-     http://localhost:5173/tools/lsystem/ öffnen. Ziehen dreht, Mausrad zoomt. -->
+<!-- Spielwiese für L-System-Bäume (lsystem.ts). Aufruf: npm run dev, dann
+     http://localhost:5173/tools/lsystem/ öffnen. -->
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <title>L-System-Bäume</title>
 <style>
-  :root { color-scheme: dark; --bg: #1b1d1a; --panel: #25282a; --line: #3a3f41; --text: #e4e2da; --muted: #9a9c94; }
+  :root { color-scheme: dark; --bg: #1b1d1a; --panel: #25282a; --line: #3a3f41; --text: #e4e2da; --muted: #9a9c94; --error: #e87c6a; }
   * { box-sizing: border-box; }
   body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: var(--text); font: 13px system-ui, sans-serif; }
-  aside { width: 340px; padding: 12px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); }
-  main { flex: 1; position: relative; }
-  canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  aside { width: 340px; flex: none; padding: 12px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); }
+  main { flex: 1; position: relative; min-width: 0; }
+  canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
   label { display: block; margin: 10px 0 3px; color: var(--muted); }
   input, select, textarea, button { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px; font: inherit; }
   textarea { height: 150px; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   input[type=range] { padding: 0; }
   button { margin-top: 12px; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
   #stats { position: absolute; left: 10px; bottom: 8px; color: var(--muted); }
-  #err { color: #e87c6a; white-space: pre-wrap; margin-top: 8px; }
+  #error { color: var(--error); white-space: pre-wrap; margin-top: 8px; }
   details { margin-top: 10px; color: var(--muted); line-height: 1.5; }
   code { color: var(--text); }
 </style>
 </head>
 <body>
 <aside>
-  <label>Beispiel</label><select id="preset"></select>
-  <label>Axiom</label><input id="axiom">
-  <label>Regeln</label><textarea id="rules" spellcheck="false"></textarea>
-  <div class="row">
-    <div><label>Schritte <span id="nv"></span></label><input id="n" type="range" min="0" max="14" step="1"></div>
-    <div><label>Winkel <span id="anglev"></span>°</label><input id="angle" type="range" min="1" max="90" step="0.5"></div>
-    <div><label>Tropismus <span id="tropismv"></span></label><input id="tropism" type="range" min="-0.5" max="0.6" step="0.01"></div>
-    <div><label>Streuung <span id="jitterv"></span></label><input id="jitter" type="range" min="0" max="0.6" step="0.01"></div>
-    <div><label>Längenfaktor <span id="lengthFactorv"></span></label><input id="lengthFactor" type="range" min="0.5" max="1.1" step="0.01"></div>
-    <div><label>Laubgröße <span id="leafSizev"></span></label><input id="leafSize" type="range" min="0" max="2" step="0.05"></div>
-  </div>
-  <div class="row">
-    <div><label>Seed</label><input id="seed" type="number" min="1"></div>
-    <div><label>Laub-Zeichen</label><input id="leaves"></div>
+  <label for="preset">Beispiel</label><select id="preset"></select>
+  <label for="axiom">Axiom</label><input id="axiom">
+  <label for="rules">Regeln</label><textarea id="rules" spellcheck="false"></textarea>
+  <div class="grid">
+    <div><label for="iterations">Schritte <span id="iterations-value"></span></label><input id="iterations" type="range" min="0" max="14" step="1"></div>
+    <div><label for="angle">Winkel <span id="angle-value"></span>°</label><input id="angle" type="range" min="1" max="90" step="0.5"></div>
+    <div><label for="tropism">Tropismus <span id="tropism-value"></span></label><input id="tropism" type="range" min="-0.5" max="0.6" step="0.01"></div>
+    <div><label for="jitter">Streuung <span id="jitter-value"></span></label><input id="jitter" type="range" min="0" max="0.6" step="0.01"></div>
+    <div><label for="lengthFactor">Längenfaktor <span id="lengthFactor-value"></span></label><input id="lengthFactor" type="range" min="0.5" max="1.1" step="0.01"></div>
+    <div><label for="leafSize">Laubgröße <span id="leafSize-value"></span></label><input id="leafSize" type="range" min="0" max="2" step="0.05"></div>
+    <div><label for="seed">Seed</label><input id="seed" type="number" min="1"></div>
+    <div><label for="leaves">Laub-Zeichen</label><input id="leaves"></div>
   </div>
   <button id="reseed">Neuer Seed</button>
-  <button id="obj">OBJ herunterladen</button>
-  <div id="err"></div>
+  <button id="download">OBJ herunterladen</button>
+  <div id="error"></div>
   <details><summary>Zeichen</summary>
     <code>F</code> Ast, <code>f</code> bewegen, <code>+ -</code> gieren, <code>&amp; ^</code> nicken,
     <code>\ /</code> rollen, <code>|</code> umdrehen, <code>[ ]</code> verzweigen,
     <code>"</code> Länge × Faktor, <code>L</code> Laub. Argumente in Klammern: <code>+(30)</code>, <code>F(2)</code>.
     Regeln: <code>A -&gt; F[+A]</code>, zufällig mit Gewicht: <code>A 0.3 -&gt; FA</code>.
+    Ziehen dreht, Mausrad zoomt.
   </details>
 </aside>
-<main><canvas id="c"></canvas><div id="stats"></div></main>
-<script type="module">
-import { PRESETS, grow } from './lsystem.mjs';
-
-// Farben wie PALETTE in tools/models/lib.mjs (die Datei braucht node:fs).
-const COLOR = { Bark: [0.33, 0.22, 0.12], Leaf: [0.3, 0.52, 0.22], Ivy: [0.3, 0.52, 0.2], IvyDark: [0.19, 0.38, 0.14] };
-const $ = (id) => document.getElementById(id);
-const SLIDERS = ['n', 'angle', 'tropism', 'jitter', 'lengthFactor', 'leafSize'];
-const canvas = $('c'), ctx = canvas.getContext('2d');
-let preset, tris = [], obj = '', yaw = 0.6, pitch = 0.25, zoom = 1;
-
-for (const [k, p] of Object.entries(PRESETS)) $('preset').add(new Option(p.label, k));
-function load(k) {
-  preset = PRESETS[k];
-  for (const id of [...SLIDERS, 'axiom', 'rules', 'seed', 'leaves']) $(id).value = preset[id] ?? { seed: 1, leaves: '', lengthFactor: 0.9, tropism: 0, jitter: 0 }[id];
-  update();
-}
-
-function params() {
-  const p = { ...preset, axiom: $('axiom').value, rules: $('rules').value, seed: +$('seed').value, leaves: $('leaves').value };
-  for (const id of SLIDERS) { p[id] = +$(id).value; $(id + 'v').textContent = p[id]; }
-  return p;
-}
-
-function update() {
-  let r;
-  try { r = grow(params()); $('err').textContent = ''; } catch (e) { $('err').textContent = e.message; return; }
-  obj = r.m.out.join('\n');
-  tris = [];
-  const P = [];
-  let mtl = 'Bark';
-  for (const l of r.m.out) {
-    const a = l.split(' ');
-    if (a[0] === 'v') P.push(a.slice(1).map(Number));
-    else if (a[0] === 'usemtl') mtl = a[1];
-    else if (a[0] === 'f') {
-      const c = a.slice(1).map((i) => P[i - 1]);
-      for (let i = 1; i + 1 < c.length; i++) tris.push({ p: [c[0], c[i], c[i + 1]], k: COLOR[mtl] ?? [0.6, 0.6, 0.6] });
-    }
-  }
-  $('stats').textContent = `${r.steps} Schritte${r.capped ? ' (gekappt - zu viele Zeichen)' : ''} · ${r.symbols.toLocaleString()} Zeichen · `
-    + `${r.segs.toLocaleString()} Äste · ${r.leaves.toLocaleString()} Laub · ${tris.length.toLocaleString()} Dreiecke · ${r.height.toFixed(1)} m hoch`;
-  draw();
-}
-
-// Maler-Algorithmus: Dreiecke von hinten nach vorn, flach beleuchtet.
-function draw() {
-  const W = canvas.width = canvas.clientWidth * devicePixelRatio, H = canvas.height = canvas.clientHeight * devicePixelRatio;
-  ctx.fillStyle = '#1b1d1a'; ctx.fillRect(0, 0, W, H);
-  if (!tris.length) return;
-  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-  const tr = ([x, y, z]) => { const x1 = x * cy + z * sy, z1 = -x * sy + z * cy; return [x1, y * cp - z1 * sp, y * sp + z1 * cp]; };
-  let top = 1, rad = 1;
-  for (const t of tris) for (const p of t.p) { top = Math.max(top, p[1]); rad = Math.max(rad, Math.hypot(p[0], p[2])); }
-  const S = zoom * 0.85 * Math.min(H / (top + rad * 0.5), W / (2 * rad + 1)), ox = W / 2, oy = H * 0.5 + top * S * 0.5;
-  // Boden
-  ctx.fillStyle = '#2c3326';
-  ctx.beginPath(); ctx.ellipse(ox, oy, rad * S * 1.2, rad * S * 1.2 * Math.abs(sp), 0, 0, Math.PI * 2); ctx.fill();
-  const L = [0.45, 0.75, 0.5].map((v, _, a) => v / Math.hypot(...a));
-  const V = tris.map((t) => {
-    const q = t.p.map(tr);
-    const u = q[1].map((v, i) => v - q[0][i]), w = q[2].map((v, i) => v - q[0][i]);
-    let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
-    const nl = Math.hypot(...n) || 1;
-    n = n.map((v) => v / nl);
-    if (n[2] < 0) n = n.map((v) => -v);
-    const li = 0.45 + 0.75 * Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
-    return { q, z: q[0][2] + q[1][2] + q[2][2], c: `rgb(${t.k.map((v) => Math.min(255, v * li * 255) | 0)})` };
-  }).sort((a, b) => a.z - b.z);
-  for (const { q, c } of V) {
-    ctx.fillStyle = ctx.strokeStyle = c;
-    ctx.beginPath();
-    ctx.moveTo(ox + q[0][0] * S, oy - q[0][1] * S);
-    ctx.lineTo(ox + q[1][0] * S, oy - q[1][1] * S);
-    ctx.lineTo(ox + q[2][0] * S, oy - q[2][1] * S);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-  }
-}
-
-let drag = null;
-canvas.onpointerdown = (e) => { drag = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId); };
-canvas.onpointermove = (e) => {
-  if (!drag) return;
-  yaw += (e.clientX - drag[0]) * 0.01;
-  pitch = Math.max(-0.2, Math.min(1.4, pitch + (e.clientY - drag[1]) * 0.01));
-  drag = [e.clientX, e.clientY];
-  draw();
-};
-canvas.onpointerup = () => { drag = null; };
-canvas.onwheel = (e) => { e.preventDefault(); zoom *= Math.exp(-e.deltaY * 0.001); draw(); };
-addEventListener('resize', draw);
-
-$('preset').onchange = (e) => load(e.target.value);
-for (const id of [...SLIDERS, 'axiom', 'rules', 'seed', 'leaves']) $(id).oninput = update;
-$('reseed').onclick = () => { $('seed').value = 1 + Math.floor(Math.random() * 99999); update(); };
-$('obj').onclick = () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([`# L-System-Baum (tools/lsystem)\n${obj}\n`], { type: 'text/plain' }));
-  a.download = `lsys_${$('preset').value}.obj`;
-  a.click();
-};
-load(Object.keys(PRESETS)[0]);
-</script>
+<main><canvas id="view"></canvas><div id="stats"></div></main>
+<script type="module" src="./viewer.ts"></script>
 </body>
 </html>

@@ -213,7 +213,8 @@ src/
 - [x] 2.1 `save.ts`: `SaveData`, Schlüssel, lesen, schreiben und die Umrechnung alter Versionen; `worlds.ts` und `demo.ts` nutzen es
 - [x] 2.2 `farming.ts`: Feldgruppen, Phase, freie Furche, Wachsen, Platz des Bauern (die Arbeit des Bauern bleibt bei den Dorfbewohnern, 2.4)
 - [x] 2.3 Tiere als Klassen (`unit/UnitBase`, `AnimalBase`, `Deer`, `Hare`, Liste in `unit/index.ts`) und `wildlife.ts` (entstehen lassen, suchen, Kadaver); Jagd bleibt bei den Dorfbewohnern
-- [ ] 2.4 `villagers.ts`: Aufgaben, Laufen, Sammeln, Abliefern, `describe()`
+- [x] 2.4a `deposits.ts`: Vorkommen - entnommen, leer, gefällt, nachwachsend; `take()`, `fell()`, `regrow()`, `fall()`
+- [ ] 2.4b `villagers.ts`: Aufgaben, Laufen, Sammeln, Abliefern, `describe()`
 - [x] 2.5 `render.ts`: Instanzen für den Renderer (Gebäude, Felder, Figuren, Tiere, Einsturz); `ruin.ts` für einstürzende Gebäude
 - [x] 2.6 `Villager` und `Animal` als Klassen (unit/), `Task` bei `Villager`
 
