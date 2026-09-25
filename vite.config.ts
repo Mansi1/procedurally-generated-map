@@ -6,4 +6,14 @@ import defuss from 'defuss-vite';
 export default defineConfig({
   // add the defuss() plugin to make JSX transpilation work
   plugins: [defuss()],
+  build: {
+    // Neben dem Spiel auch das L-System-Werkzeug (tools/lsystem/) und seine Galerie.
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        lsystem: 'tools/lsystem/index.html',
+        lsystemGallery: 'tools/lsystem/gallery.html',
+      },
+    },
+  },
 });

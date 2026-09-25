@@ -1,9 +1,10 @@
 // StartScreen.tsx
 // Hauptmenü beim Öffnen der Seite, wie bei einem Spiel: Logo und die Wahl
-// zwischen Einzelspieler, Mehrspieler (noch nicht da), Einstellungen und
-// Galerie. Dahinter zieht langsam die Welt vorbei; das Spiel selbst steht,
-// bis man unter Einzelspieler weiterspielt, einen Spielstand lädt oder neu
-// beginnt - für ein neues Spiel fragt es nach der Welt (Seed).
+// zwischen Einzelspieler, Mehrspieler (noch nicht da), Einstellungen,
+// Galerie und dem L-System-Werkzeug. Dahinter zieht langsam die Welt vorbei;
+// das Spiel selbst steht, bis man unter Einzelspieler weiterspielt, einen
+// Spielstand lädt oder neu beginnt - für ein neues Spiel fragt es nach der
+// Welt (Seed).
 
 import { createRef, render } from 'defuss';
 import './StartScreen.css';
@@ -119,6 +120,7 @@ export class StartScreen {
             <StartButton label="Mehrspieler" hint="bald" disabled />
             <StartButton label="Einstellungen" onClick={() => h.openSettings()} />
             <StartButton label="Galerie" hint="alle Modelle" onClick={() => window.location.assign('/galerie')} />
+            <StartButton label="L-System" hint={'Bäume & Pflanzen'} onClick={() => window.location.assign('/tools/lsystem/')} />
           </nav>
         ) : page === 'single' ? (
           <nav class="start-list">

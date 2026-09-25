@@ -30,7 +30,8 @@ Versuch, Bäume und Pflanzen mit einem [L-System](https://en.wikipedia.org/wiki/
 in 3D zu erzeugen - noch nicht im Spiel. In TypeScript, streng geprüft:
 `npx tsc -p tools/lsystem`.
 
-- Spielwiese: `npm run dev`, dann <http://localhost:5173/tools/lsystem/>. Beispiel
+- Spielwiese: `npm run dev`, dann <http://localhost:5173/tools/lsystem/> - online unter
+  `/tools/lsystem/` (im Hauptmenü "L-System"; `vite.config.ts` baut beide Seiten mit). Beispiel
   wählen, Regeln und Regler ändern, Blätter als Form oder Foto, ziehen dreht,
   Mausrad zoomt, als OBJ + MTL herunterladen.
 - Galerie aller Beispiele: <http://localhost:5173/tools/lsystem/gallery.html>
