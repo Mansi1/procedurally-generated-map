@@ -126,7 +126,7 @@ export const RESOURCE_RULES: readonly ResourceRule[] = [
   { biome: "mountain", type: "stone", threshold: 0.1, cluster: 0.72, yield: 40 },
   {
     biome: "grass", type: "berries", threshold: -Infinity, cluster: 0, yield: 30,
-    clump: { cell: 12, radius: 1.5, chance: 0.6 },
+    clump: { cell: 12, radius: 1.5, chance: 0.3 },
   },
 ];
 
