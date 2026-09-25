@@ -1,12 +1,14 @@
 // keyboard.ts
 // Die Tastatur: welche Tasten gehalten werden (WASD, Pfeile, Leertaste - die
-// fragt die Spielschleife je Bild ab) und die Tastenbelegung als Tabelle.
-// Was eine Taste im Spiel tut, liefert main.ts als KeyCommands.
+// fragt die Spielschleife je Bild ab) und welche Taste was auslöst - nach der
+// Tabelle in controls.ts. Was ein Befehl im Spiel tut, liefert main.ts als
+// KeyCommands.
 //
 // Reihenfolge: F10 (Menü) geht immer; bei offenem Menü nur Esc und M, im
 // Hauptmenü nur M; F3 hält an. Danach die Spieltasten.
 
-import { BUILDING_ORDER, BUILDINGS, VILLAGER, type BuildingType } from '../world/catalog';
+import type { BuildingType } from '../world/catalog';
+import { controlForKey } from './controls';
 
 /** Was die Tasten im Spiel auslösen. */
 export interface KeyCommands {
@@ -87,31 +89,14 @@ export class Keyboard {
     this.gameKey(e, key);
   }
 
-  /** Die Spieltasten - wie in AoE2, wo es sie dort gibt. */
+  /** Die Spieltasten (controls.ts); im Untermenü der Felder wählen Ziffern die Frucht. */
   private gameKey(e: KeyboardEvent, key: string) {
     const c = this.commands;
-    switch (key) {
-      case 'e': c.zoom(1); break;
-      case 'q': c.zoom(-1); break;
-      case 'escape': c.cancel(); break;
-      case 'delete': case 'backspace': c.demolish(); break;
-      // H wie in AoE2 - "Home".
-      case 'h': c.home(); break;
-      case 'm': c.toggleSound(); break;
-      // I: Tastenhilfe (Info), P: Entwickler-Infos (Programmierer).
-      case 'i': c.toggleHelp(); break;
-      case 'p': c.toggleDebug(); break;
-      // Punkt wie in AoE2: alle untätigen Dorfbewohner (mit Umschalt: einzeln reihum).
-      case '.': case ':': c.selectIdle(!e.shiftKey); break;
-      case VILLAGER.key: c.train(e.shiftKey ? 5 : 1); break;
-    }
-    // Ziffern: im Untermenü der Felder die Frucht, sonst ein Gebäude.
-    if (c.farmsOpen()) {
-      const digit = Number(e.key);
-      if (digit >= 1) c.chooseCrop(digit - 1);
+    const digit = Number(e.key);
+    if (c.farmsOpen() && digit >= 1) {
+      c.chooseCrop(digit - 1);
       return;
     }
-    const type = BUILDING_ORDER.find((t) => BUILDINGS[t].key === e.key);
-    if (type) c.build(type);
+    controlForKey(key)?.run?.(c, e);
   }
 }

@@ -1,43 +1,9 @@
 // Shortcuts.tsx
-// Die Tastenkürzel des Spiels an einer Stelle - gezeigt ausführlich im Menü
+// Die Steuerung (game/controls.ts) als Liste - ausführlich im Menü
 // (Steuerung, zum Aufklappen) und knapp in der Tastenhilfe oben rechts.
 // Mausbefehle zeigen eine Maus mit der jeweiligen Taste statt "Klick".
 
-const MOUSE_LEFT = 'mouse:left';
-const MOUSE_RIGHT = 'mouse:right';
-
-interface Shortcut {
-  /** Tasten, je eine kbd - MOUSE_LEFT/MOUSE_RIGHT zeichnen eine Maus, "~2×" ist nur Text daneben. */
-  keys: string[];
-  /** Was es tut - ausführlich, fürs Menü. */
-  what: string;
-  /** Knapp, für die Tastenhilfe. */
-  short: string;
-  /** Zwischen den Tasten: "+" zusammen, "/" oder "-" eine davon, sonst nebeneinander (WASD). */
-  sep?: string;
-}
-
-const SHORTCUTS: Shortcut[] = [
-  { keys: ['W', 'A', 'S', 'D'], what: 'Kamera bewegen (auch Pfeiltasten)', short: 'bewegen' },
-  { keys: [MOUSE_RIGHT, '~ziehen'], what: 'Karte verschieben', short: 'verschieben' },
-  { keys: ['Q', 'E'], what: 'Zoomen (auch Mausrad)', short: 'zoomen', sep: '/' },
-  { keys: ['Leertaste'], what: 'Halten: Gelände flach', short: 'flach' },
-  { keys: ['H'], what: 'Zum Hauptgebäude', short: 'Hauptgebäude' },
-  { keys: [MOUSE_LEFT], what: 'Auswählen (Ziehen: Rahmen)', short: 'auswählen' },
-  { keys: ['Umschalt', MOUSE_LEFT], what: 'Zur Auswahl hinzu', short: 'hinzu', sep: '+' },
-  { keys: [MOUSE_LEFT, '~2×'], what: 'Gleiche Gebäude in der Nähe', short: 'gleiche' },
-  { keys: ['.'], what: 'Untätige (Umschalt: einzeln)', short: 'untätige' },
-  { keys: [MOUSE_RIGHT], what: 'Befehl: sammeln, jagen, bauen, gehen', short: 'Befehl' },
-  { keys: ['1', '6'], what: 'Gebäude bauen', short: 'bauen', sep: '-' },
-  { keys: ['V'], what: 'Dorfbewohner ausbilden (Umschalt: 5)', short: 'Dorfbewohner' },
-  { keys: ['Entf'], what: 'Abreißen', short: 'abreißen' },
-  { keys: ['Esc'], what: 'Abbrechen, Auswahl aufheben', short: 'abbrechen' },
-  { keys: ['F3'], what: 'Pause', short: 'Pause' },
-  { keys: ['F10'], what: 'Menü', short: 'Menü' },
-  { keys: ['M'], what: 'Ton an/aus', short: 'Ton' },
-  { keys: ['I'], what: 'Tastenhilfe ein/aus', short: 'Tastenhilfe' },
-  { keys: ['P'], what: 'Entwickler-Infos ein/aus', short: 'Entwickler' },
-];
+import { CONTROLS, MOUSE_LEFT, MOUSE_RIGHT, type Control } from '../game/controls';
 
 /** Maus mit hervorgehobener linker oder rechter Taste. */
 function MouseIcon({ button }: { button: 'left' | 'right' }) {
@@ -59,15 +25,15 @@ function Key({ k }: { k: string }) {
 }
 
 /** Die Tasten eines Kürzels mit ihren Trennzeichen. */
-function Keys({ s }: { s: Shortcut }) {
-  return <>{s.keys.map((k, i) => <>{i > 0 && s.sep ? s.sep : null}<Key k={k} /></>)}</>;
+function Keys({ s }: { s: Control }) {
+  return <>{s.label.map((k, i) => <>{i > 0 && s.sep ? s.sep : null}<Key k={k} /></>)}</>;
 }
 
 /** Ausführlich, zweispaltig: Tasten, Wirkung - fürs Menü. */
 export function ShortcutList() {
   return (
     <dl class="menu-keys">
-      {SHORTCUTS.map((s) => (
+      {CONTROLS.map((s) => (
         <>
           <dt><Keys s={s} /></dt>
           <dd>{s.what}</dd>
@@ -81,7 +47,7 @@ export function ShortcutList() {
 export function ShortcutLine() {
   return (
     <div class="help-keys">
-      {SHORTCUTS.map((s) => <span class="help-key"><Keys s={s} /> {s.short}</span>)}
+      {CONTROLS.map((s) => <span class="help-key"><Keys s={s} /> {s.short}</span>)}
     </div>
   );
 }
