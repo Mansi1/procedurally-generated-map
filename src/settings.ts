@@ -35,7 +35,7 @@ export interface Settings {
   animalsBelow: Record<string, number>;
 }
 
-/** Vorgabe für animalsBelow: ab 8 px je Tile keine Tiere mehr. */
+/** Vorgabe für animalsBelow: bei Zoom 1 (8 px je Tile) keine Tiere. */
 export const ANIMALS_BELOW_DEFAULT = 16;
 
 const DEFAULTS: Settings = {

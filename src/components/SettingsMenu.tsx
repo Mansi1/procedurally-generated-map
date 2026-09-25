@@ -34,20 +34,20 @@ export interface MenuHooks {
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
 /**
  * Ab wann Bäume als Bild gezeichnet werden: unter so vielen CSS-Pixeln je
- * Tile (Zoomstufen 128 ... 1, Vorgabe 32). 16 = ab der zweiten Stufe unter
- * der Vorgabe, dort sind Bäume nur noch wenige Pixel groß.
+ * Tile. Die Zoomstufen sind 8, 16, 32, 64, 128 px - im Spiel Zoom 1 bis 5,
+ * Vorgabe Zoom 3. 16 = nur bei Zoom 1, dort sind Bäume nur wenige Pixel groß.
  */
 const BILLBOARDS: [number, string, string][] = [
   [0, 'Nie', 'Bäume immer als 3D-Modell'],
-  [16, 'Weit', 'Als Bild ab zwei Zoomstufen unter der Vorgabe - dort sind Bäume nur noch wenige Pixel groß'],
-  [32, 'Mittel', 'Als Bild, sobald man herauszoomt'],
-  [64, 'Immer', 'Auch in der Vorgabe-Zoomstufe als Bild - nur ganz nah als Modell'],
+  [16, 'Weit', 'Als Bild bei Zoom 1 - dort sind Bäume nur noch wenige Pixel groß'],
+  [32, 'Mittel', 'Als Bild bei Zoom 1 und 2'],
+  [64, 'Immer', 'Als Bild bei Zoom 1 bis 3 - nur bei Zoom 4 und 5 als Modell'],
 ];
 /** Ab wann eine Tierart nicht mehr gezeichnet wird - Zoomstufen wie bei BILLBOARDS. */
 const HIDE_ANIMALS: [number, string, string][] = [
   [0, 'Nie', 'Immer zeigen'],
-  [16, 'Weit', 'Ab zwei Zoomstufen unter der Vorgabe (8 px je Tile) ausblenden'],
-  [32, 'Mittel', 'Ausblenden, sobald man herauszoomt'],
+  [16, 'Weit', 'Bei Zoom 1 ausblenden'],
+  [32, 'Mittel', 'Bei Zoom 1 und 2 ausblenden'],
 ];
 /** Die Tierarten in der Reihenfolge der Klassen: Kennung und Name. */
 const ANIMAL_KINDS = ANIMAL_CLASSES.map((c) => [c.definition.type, c.definition.label] as const);

@@ -339,7 +339,13 @@ function setZoom(index: number, anchorX?: number, anchorY?: number) {
   camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
 
   refreshPointer();
-  devPanel.showZoom(camera.tileSize);
+  showZoom();
+}
+
+/** Zoomstufe unter der Minimap ("Zoom 1" bis "Zoom 5") und in den Entwickler-Infos. */
+function showZoom() {
+  document.getElementById('zoom-level')!.textContent = `Zoom ${camera.zoomNumber}`;
+  devPanel.showZoom(camera);
 }
 
 /** Tastatur: gehaltene Tasten und die Belegung (game/keyboard.ts) - hier, was sie im Spiel tut. */
@@ -517,7 +523,7 @@ function loop(now: number) {
   requestAnimationFrame(loop);
 }
 
-devPanel.showZoom(camera.tileSize);
+showZoom();
 // Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
 // Feld aus der Adresse - gedreht wird nur die Ansicht.
 if (isDirection(settings.facing)) rotateToFace(settings.facing);

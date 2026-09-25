@@ -133,6 +133,7 @@ function Minimap() {
       </svg>
       <Compass />
       <SoundButton />
+      <div id="zoom-level" class="minimap-zoom" title="Zoomstufe - Mausrad oder Q / E">Zoom 3</div>
       <div class="minimap-turn">
         <button type="button" id="turn-left" title="Ansicht gegen den Uhrzeigersinn drehen"><TurnIcon /></button>
         <button type="button" id="turn-right" title="Ansicht im Uhrzeigersinn drehen"><TurnIcon flip /></button>

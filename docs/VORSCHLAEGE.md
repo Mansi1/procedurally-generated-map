@@ -17,6 +17,7 @@ offenen Punkte des Projekts stehen in docs/OFFEN.md.
 | Feste Puffer für Bäume, Felsen, Sträucher | erledigt, Branch |
 | Bäume als Bild (Billboards), im Menü unter Grafik | erledigt, Branch |
 | Tiere weit draußen ausblenden, je Art einstellbar | erledigt, Branch |
+| Fünf Zoomstufen (Zoom 1-5), angezeigt an der Minimap | erledigt, Branch |
 | Geringere Pixeldichte beim Herauszoomen | verworfen (zu pixelig) |
 | Baumenü im Stil der Minimap | verworfen |
 | Weit draußen Wald nur vom Boden malen | offen - der nächste Schritt |
@@ -208,6 +209,19 @@ sie leben, grasen und fliehen trotzdem weiter.
   Arten; die Minimap zeigt weiter alle.
 - Neben den FPS zeigen die Entwickler-Infos (Taste P), ob Bäume gerade als
   Bild gezeichnet werden: „Bäume Bild“ bzw. „Bäume 3D“.
+
+## 9. Fünf Zoomstufen, angezeigt an der Minimap - Branch
+
+Die Zoomstufen sind jetzt 8, 16, 32, 64 und 128 CSS-Pixel je Tile - im Spiel
+**Zoom 1** (weit draußen) bis **Zoom 5** (ganz nah), Standard ist Zoom 3.
+Die drei weitesten Stufen (1, 2, 4 px) sind weggefallen; dort war ohnehin
+fast nichts mehr zu erkennen, und sie kosteten am meisten.
+
+- Unter der Minimap steht mittig die jetzige Stufe („Zoom 3“), in den
+  Entwickler-Infos „3 (32px)“ (`ZOOM_LEVELS` in `game/Camera.ts`).
+- Die Tooltips unter Grafik nennen die Stufen: Bäume als Bild *Weit* = Zoom 1,
+  *Mittel* = Zoom 1-2, *Immer* = Zoom 1-3; Tiere ausblenden *Weit* = Zoom 1,
+  *Mittel* = Zoom 1-2.
 
 ## Verworfen
 

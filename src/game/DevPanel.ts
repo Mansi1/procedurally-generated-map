@@ -50,8 +50,8 @@ export class DevPanel {
     }
   }
 
-  showZoom(tileSize: number) {
-    setText(this.zoom, `${tileSize}px`);
+  showZoom(camera: Camera) {
+    setText(this.zoom, `${camera.zoomNumber} (${camera.tileSize}px)`);
   }
 
   /** Tile unter dem Zeiger mit seinen Gelände-Werten - oder keins. */
