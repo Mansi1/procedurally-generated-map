@@ -32,3 +32,6 @@ tools/export/out
 
 # Sicherungen, die Blender beim Speichern anlegt
 *.blend1
+
+# Python-Cache der Blender-Skripte (tools/blender/*.py importieren einander)
+__pycache__/
