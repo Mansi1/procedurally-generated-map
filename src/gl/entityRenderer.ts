@@ -22,7 +22,7 @@ import millClipsManifest from '../models/mill_clips.json';
 import flagClipsGlb from '../models/flag_clips.glb?inline';
 import flagClipsManifest from '../models/flag_clips.json';
 import {
-  BONE, FLAG, FLAG_SEGMENTS, HUMANOID, KNEEL_BIT, MAX_BONES, MILL, QUADRUPED, QUADRUPED_BONE, TEXELS_PER_BONE, bakeClip, loadClips,
+  BONE, FLAG, FLAG_SEGMENTS, HUMANOID, KNEEL_BIT, MAX_BONES, MILL, PROP_BITS, QUADRUPED, QUADRUPED_BONE, TEXELS_PER_BONE, bakeClip, loadClips,
   type Clip, type Rig,
 } from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
@@ -31,6 +31,10 @@ import { parseMtl, parseObj, type ObjTriangle } from './obj';
 import villagerMaleObj from '../models/villager_male.obj?raw';
 import villagerFemaleObj from '../models/villager_female.obj?raw';
 import villagerMtl from '../models/villager.mtl?raw';
+import propAxeObj from '../models/prop_axe.obj?raw';
+import propKnifeObj from '../models/prop_knife.obj?raw';
+import propScytheMaleObj from '../models/prop_scythe_male.obj?raw';
+import propScytheFemaleObj from '../models/prop_scythe_female.obj?raw';
 import millObj from '../models/mill.obj?raw';
 import millMtl from '../models/mill.mtl?raw';
 import mill2Obj from '../models/mill_2.obj?raw';
@@ -240,6 +244,17 @@ export const SHAPE = {
    * Shader wippt er.
    */
   markerArrow: 101,
+  /**
+   * Werkzeuge als Anhänge (models/prop_*.obj): je Werkzeug und Körper eine
+   * Form - sie leiht sich beim Zeichnen Gelenke und Clips des Körpers und
+   * hängt an seiner rechten Hand (figureProps, docs/ANIMATION.md).
+   */
+  propAxe: 102,
+  propAxeFemale: 103,
+  propScythe: 104,
+  propScytheFemale: 105,
+  propKnife: 106,
+  propKnifeFemale: 107,
 } as const;
 
 /** Mittlere Drehzahl der Mühlenflügel in Radiant je Sekunde. */
@@ -296,7 +311,13 @@ export function millMotion(x: number, y: number): [number, number, number, numbe
 const SHAPE_RING = SHAPE.ring;
 
 /** Figuren: verdeckt zeigen sie ihren Umriss. */
-const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale];
+/** Anhänge der Dorfbewohner (Werkzeuge) - gezeichnet wie Figuren, mit deren Gelenken und Clips. */
+const PROP_SHAPES: number[] = [
+  SHAPE.propAxe, SHAPE.propAxeFemale, SHAPE.propScythe, SHAPE.propScytheFemale, SHAPE.propKnife, SHAPE.propKnifeFemale,
+];
+const FIGURES: number[] = [SHAPE.villager, SHAPE.villagerFemale, ...PROP_SHAPES];
+/** Im Shader: ist die Form eine Figur (Dorfbewohner oder ihr Anhang)? */
+const FIGURE_TEST = `(shape == ${SHAPE.villager} || shape == ${SHAPE.villagerFemale} || (shape >= ${SHAPE.propAxe} && shape <= ${SHAPE.propKnifeFemale}))`;
 
 /** Alle Bäume - sie werden gefällt und kippen um. */
 export const TREES: number[] = [
@@ -570,7 +591,12 @@ uniform float uHip;
 uniform float uShoulder;
 uniform float uKnee;
 uniform float uElbow;
-uniform float uArm;          // Figuren: Abstand der Unterarme von der Mitte - Drehpunkt, wenn der Arm zur Mitte schwenkt
+uniform float uArm;
+// Anhänge (Werkzeuge): Mitte der rechten Hand des Körpers in Ruhelage
+// (Modell-Einheiten) und wie weit das Zugmesser auf seinen Handabstand
+// gestreckt wird.
+uniform vec3  uSocket;
+uniform float uKnifeScale;          // Figuren: Abstand der Unterarme von der Mitte - Drehpunkt, wenn der Arm zur Mitte schwenkt
 uniform float uStride;   // Schrittweite: 1 = voller Schritt, kleiner im langen Rock
 uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 // Modelle: Groesse je Tile der Instanzgroesse, Nabe der Fluegel (links, oben)
@@ -585,6 +611,9 @@ uniform float uGraze;        // Tiere: so weit senkt sich der Kopf beim Äsen (R
 uniform float uSide;         // Tiere: halbe Breite des Körpers - so liegt es tot auf der Seite
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
+// Lage in Ruhelage (Modell-Einheiten des Körpers) - für die Texturen (vLocal).
+// Anhänge liegen in Metern im Rahmen der Hand und werden erst auf den Körper gebracht.
+vec3 gRest = vec3(0.0);
 // Feldpflanzen: 1 = frisch gesät und grün, 0 = reif in ihrer eigenen Farbe.
 float gUnripe = 0.0;
 uniform vec2  uHub;
@@ -824,7 +853,8 @@ void main() {
     // Modell aus einer OBJ-Datei. Eckpunkte in Modell-Einheiten: x nach vorn,
     // y nach links, z nach oben, Boden bei 0. Figuren sind auf Koerperhoehe 1
     // gebracht, Gebaeude auf Breite 1 (siehe loadModel()).
-    bool figure = shape == 5 || shape == 18;
+    bool figure = ${FIGURE_TEST};
+    bool prop = shape >= ${SHAPE.propAxe} && shape <= ${SHAPE.propKnifeFemale};
     bool beast = ${BEASTS.map((n) => `shape == ${n}`).join(' || ')};
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
     bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
@@ -836,6 +866,14 @@ void main() {
     float scale = size * uModelScale;
     int part = int(aCorner.w + 0.5);
     vec3 p = aCorner.xyz;
+    if (prop) {
+      // Anhang (Werkzeug): in Metern im Rahmen der rechten Hand - an die Hand
+      // des Körpers, der es trägt, in dessen Einheiten. Das Zugmesser auf
+      // seinen Handabstand gestreckt (gebaut ist es für den Mann).
+      if (part == P_KNIFE) p.y *= uKnifeScale;
+      p = uSocket + p / uMeters;
+    }
+    gRest = p;
 
     if (figure) {
       float phase = aMotion.y;
@@ -1440,15 +1478,15 @@ void main() {
     if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
     vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
-    bool villager = shape == 5 || shape == 18;
+    bool villager = ${FIGURE_TEST};
     bool figureTex = role >= ${FIGURE_TEX.cloth} && role <= ${FIGURE_TEX.skin};
     vTex = figureTex ? (villager ? role : 0)
       : villager && (role == 1 || role == 2) ? ${FIGURE_TEX.cloth}
       : role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
-    vLocal = aCorner.xyz * uMeters;
+    vLocal = gRest * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
-    if (shape != 5 && shape != 18 && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
+    if (!${FIGURE_TEST} && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
   }
   vParams = aParams;
   vRoof = aCorner.w;
@@ -1458,7 +1496,7 @@ void main() {
   // höher - es schnitte Füße und Ring ab. Ihre Tiefe wird deshalb um etwa
   // einen halben Tile zur Kamera gezogen; auf dem Bildschirm bleibt alles,
   // wo es ist (siehe project: näher = kleinere Tiefe).
-  if (shape == 5 || shape == 18 || shape == ${SHAPE_RING} || ${BEASTS.map((n) => `shape == ${n}`).join(' || ')}) gl_Position.z -= 0.5 / uDepthRange;
+  if (${FIGURE_TEST} || shape == ${SHAPE_RING} || ${BEASTS.map((n) => `shape == ${n}`).join(' || ')}) gl_Position.z -= 0.5 / uDepthRange;
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
   if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
@@ -2070,6 +2108,8 @@ interface Model {
   stockSlots: number;
   /** Werkstatt: wo der Arbeiter steht und wohin er schaut (Modell-Einheiten: vorn, links). */
   work?: { stand: [number, number]; aim: [number, number] };
+  /** Figuren: Mitte der rechten Hand in Ruhelage (Modell-Einheiten) - dort hängen Werkzeuge. */
+  hand: [number, number, number];
   /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
   meters: number;
 }
@@ -2158,7 +2198,7 @@ function berryRandom(index: number): number {
  * mitzählen. Der Boden liegt danach bei 0. Blender hängt beim Export manchmal
  * den Mesh-Namen an ("Leg.L_Cube.003"), darum zählt der Anfang des Namens.
  */
-function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'width', lod = false, sawable = false,
+function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'width' | 'meters', lod = false, sawable = false,
                    only?: ObjTriangle[]): Model {
   // Die Objekte "Entry" (Eingang) und "Work.*" (Platz an der Werkbank)
   // markieren nur Stellen - nicht zeichnen, nicht mitmessen.
@@ -2183,6 +2223,11 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   const stockSlots = triangles.reduce((n, t) => (t.object.startsWith('Stock') ? Math.max(n, stockNumber(t.object) + 1) : n), 0);
 
   let unitLength = maxY - minY;
+  // Anhänge: in Metern, wie sie sind - der Shader bringt sie auf den Körper.
+  if (unit === 'meters') {
+    unitLength = 1;
+    minY = 0;
+  }
   if (unit === 'width') {
     let minX = Infinity;
     let maxX = -Infinity;
@@ -2201,6 +2246,15 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   // Datei (x links, y oben, z vorn) -> Modell (x vorn, y links, z oben)
   const local = (p: [number, number, number]) =>
     [p[2] / unitLength, p[0] / unitLength, (p[1] - minY) / unitLength] as const;
+
+  // Figuren: Mitte der rechten Hand in Ruhelage - dort hängen Werkzeuge (uSocket).
+  // Wie tools/models/villagers.mjs: der Mittelwert der Eckpunkte des Objekts.
+  const handPoints = new Map<string, readonly [number, number, number]>();
+  for (const t of triangles) {
+    if (t.object.startsWith('Arm.R.Lower.Hand')) for (const p of t.points) handPoints.set(p.join(), local(p));
+  }
+  const hand = [...handPoints.values()].reduce<[number, number, number]>(
+    (s, q) => [s[0] + q[0] / handPoints.size, s[1] + q[1] / handPoints.size, s[2] + q[2] / handPoints.size], [0, 0, 0]);
 
   // Größe jedes Teils (größte Ausdehnung in Modell-Einheiten) - für die
   // vereinfachten Fassungen.
@@ -2401,6 +2455,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     side,
     top: (maxY - minY) / unitLength,
     meters: unitLength,
+    hand,
   };
 }
 
@@ -2482,10 +2537,25 @@ function natural(shape: number, obj: string, mtl: string, meters: number) {
  * Formen, die aus Modell-Dateien kommen. `scale`: Tiles je Einheit der
  * Instanzgröße - eine Figur der Größe 0.55 ist 0.55 * 1.7 Tiles hoch.
  */
-const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] = [
+const PROP_AXE = loadModel(propAxeObj, villagerMtl, 'meters');
+const PROP_KNIFE = loadModel(propKnifeObj, villagerMtl, 'meters');
+
+const MODELS: {
+  shape: number; model: Model; scale: number; stride?: number;
+  /** Anhang: der Körper, dessen Gelenke, Clips und Hand es beim Zeichnen nutzt. */
+  body?: number;
+}[] = [
   { shape: SHAPE.villager, model: loadModel(villagerMaleObj, villagerMtl, 'height'), scale: 1.7 },
   // Kürzere Schritte, sonst treten die Beine hinten aus dem langen Rock.
   { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleObj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
+  // Werkzeuge als Anhänge: Beil und Zugmesser einmal für beide Körper, die
+  // Sense je Körper (ihr Stiel liegt in der Mäh-Haltung in beiden Händen).
+  { shape: SHAPE.propAxe, model: PROP_AXE, scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propAxeFemale, model: PROP_AXE, scale: 1.7, body: SHAPE.villagerFemale },
+  { shape: SHAPE.propKnife, model: PROP_KNIFE, scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propKnifeFemale, model: PROP_KNIFE, scale: 1.7, body: SHAPE.villagerFemale },
+  { shape: SHAPE.propScythe, model: loadModel(propScytheMaleObj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villager },
+  { shape: SHAPE.propScytheFemale, model: loadModel(propScytheFemaleObj, villagerMtl, 'meters'), scale: 1.7, body: SHAPE.villagerFemale },
   { shape: SHAPE.mill, model: loadModel(millObj, millMtl, 'width'), scale: 1 },
   { shape: SHAPE.mill2, model: loadModel(mill2Obj, mill2Mtl, 'width'), scale: 1 },
   { shape: SHAPE.mill3, model: loadModel(mill3Obj, mill3Mtl, 'width'), scale: 1 },
@@ -2536,6 +2606,47 @@ const MODELS: { shape: number; model: Model; scale: number; stride?: number }[] 
   { shape: SHAPE.goat, model: loadModel(goatObj, goatMtl, 'height'), scale: 1 },
   { shape: SHAPE.boar, model: loadModel(boarObj, boarMtl, 'height'), scale: 1 },
 ];
+
+/**
+ * Halber Handabstand (Meter), für den das Zugmesser gebaut ist - der des
+ * Mannes (tools/models/villagers.mjs). Andere Körper strecken es auf ihren.
+ */
+const KNIFE_HALF_SPAN = (() => {
+  const man = MODELS.find((m) => m.shape === SHAPE.villager)!.model;
+  return Math.abs(man.hand[1]) * man.meters;
+})();
+
+/** Anhänge der Dorfbewohner: Bit in den props eines Clips (PROP_BITS) → Form je Körper. */
+const FIGURE_PROPS: { bit: number; shapes: Record<number, number> }[] = [
+  { bit: PROP_BITS.axe, shapes: { [SHAPE.villager]: SHAPE.propAxe, [SHAPE.villagerFemale]: SHAPE.propAxeFemale } },
+  { bit: PROP_BITS.scythe, shapes: { [SHAPE.villager]: SHAPE.propScythe, [SHAPE.villagerFemale]: SHAPE.propScytheFemale } },
+  { bit: PROP_BITS.knife, shapes: { [SHAPE.villager]: SHAPE.propKnife, [SHAPE.villagerFemale]: SHAPE.propKnifeFemale } },
+];
+
+/**
+ * Was eine Figur in der Hand hat - Bits aus PROP_BITS: die props des Clips,
+ * den ihre Pose spielt (humanoid_clips.json). Ohne Clip wie die Formeln:
+ * Beil beim Stehen, Gehen und Hacken, Sense beim Mähen, Zugmesser beim Schnitzen.
+ */
+function propsOfPose(pose: number): number {
+  if (pose >= CLIP_POSE) return CLIPS[pose - CLIP_POSE]?.props ?? 0;
+  const clip = CLIPS.find((c) => c.pose === pose);
+  if (clip) return clip.props;
+  return pose <= POSE.work ? PROP_BITS.axe : pose === POSE.scythe ? PROP_BITS.scythe : pose === POSE.carve ? PROP_BITS.knife : 0;
+}
+
+/**
+ * Die Anhänge (Werkzeuge) einer Figur als eigene Instanzen: gleiche Lage,
+ * Größe und Bewegung wie die Figur - der Shader hängt sie an ihre Hand.
+ * Leer für alles, was keine Figur ist. Wer Figuren zeichnet, zeichnet diese dazu.
+ */
+export function figureProps(figure: EntityInstance): EntityInstance[] {
+  if (figure.shape !== SHAPE.villager && figure.shape !== SHAPE.villagerFemale) return [];
+  const bits = propsOfPose(Math.round(figure.motion?.[2] ?? 0));
+  return FIGURE_PROPS
+    .filter((p) => (bits & p.bit) !== 0)
+    .map((p) => ({ ...figure, shape: p.shapes[figure.shape], health: undefined }));
+}
 
 /**
  * Eingang eines Gebäudes in der Welt: Mitte (x, y wie EntityInstance, also
@@ -2600,7 +2711,7 @@ export class EntityRenderer {
   /** Spielerfarbe (0..255) - Felder bekommen sie als Uniform (siehe uPlayerColor). */
   playerColor: [number, number, number] = [64, 160, 72];
   private models: {
-    shape: number; model: Model; scale: number; stride?: number;
+    shape: number; model: Model; scale: number; stride?: number; body?: number;
     mesh: Mesh; lodMeshes: Mesh[]; list: EntityInstance[];
   }[];
   private instanceBuffer: WebGLBuffer;
@@ -2906,18 +3017,23 @@ export class EntityRenderer {
     const fieldLod = FIELD_LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
     let first = flats.length + solids.length;
     const drawModel = (m: (typeof this.models)[number], offset: number) => {
+      // Ein Anhang (Werkzeug) zeichnet sich mit Gelenken, Clips und Hand
+      // seines Körpers - er bewegt sich genau mit dessen Unterarm.
+      const b = m.body === undefined ? m : this.models.find((x) => x.shape === m.body) ?? m;
       gl.uniform1f(this.location('uModelScale'), m.scale);
-      gl.uniform1f(this.location('uHip'), m.model.hip);
-      gl.uniform1f(this.location('uShoulder'), m.model.shoulder);
-      gl.uniform1f(this.location('uKnee'), m.model.knee);
-      gl.uniform1f(this.location('uElbow'), m.model.elbow);
-      gl.uniform1f(this.location('uArm'), m.model.arm);
-      gl.uniform1f(this.location('uStride'), m.stride ?? 1);
+      gl.uniform3fv(this.location('uSocket'), b.model.hand);
+      gl.uniform1f(this.location('uKnifeScale'), Math.abs(b.model.hand[1]) * b.model.meters / KNIFE_HALF_SPAN);
+      gl.uniform1f(this.location('uHip'), b.model.hip);
+      gl.uniform1f(this.location('uShoulder'), b.model.shoulder);
+      gl.uniform1f(this.location('uKnee'), b.model.knee);
+      gl.uniform1f(this.location('uElbow'), b.model.elbow);
+      gl.uniform1f(this.location('uArm'), b.model.arm);
+      gl.uniform1f(this.location('uStride'), b.stride ?? 1);
       gl.uniform1f(this.location('uModelTop'), m.model.top);
-      gl.uniform1f(this.location('uMeters'), m.model.meters);
+      gl.uniform1f(this.location('uMeters'), b.model.meters);
       gl.uniform1f(this.location('uStump'), m.model.stump);
       gl.uniform1f(this.location('uStumpRadius'), m.model.stumpRadius);
-      gl.uniform3fv(this.location('uLoadAnchor'), m.model.loadAnchor);
+      gl.uniform3fv(this.location('uLoadAnchor'), b.model.loadAnchor);
       gl.uniform2fv(this.location('uHub'), m.model.hub);
       gl.uniform2fv(this.location('uLegs'), m.model.legs);
       gl.uniform3fv(this.location('uCanopy'), m.model.canopy);
@@ -2925,7 +3041,7 @@ export class EntityRenderer {
       gl.uniform2fv(this.location('uNeck'), m.model.neck);
       gl.uniform1f(this.location('uGraze'), m.model.graze);
       gl.uniform1f(this.location('uSide'), m.model.side);
-      const clips = this.clipUniforms.get(m.shape) ?? NO_CLIPS;
+      const clips = this.clipUniforms.get(b.shape) ?? NO_CLIPS;
       gl.uniform1iv(this.location('uClipRow'), clips.rows);
       gl.uniform1iv(this.location('uClipFrames'), clips.frames);
       gl.uniform1fv(this.location('uClipFps'), clips.fps);

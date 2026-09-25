@@ -6,7 +6,7 @@
 // einmal; der Ausschnitt um das, was gezeichnet wurde, wird als Bild-URL
 // zurückgegeben. Die Dorfbewohner tragen die Spielerfarbe.
 
-import { ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, POSE, SHAPE, type EntityInstance } from '../gl/entityRenderer';
+import { ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, POSE, SHAPE, figureProps, type EntityInstance } from '../gl/entityRenderer';
 import { groundToWorld, snapCamera } from '../gl/iso';
 import { ANIMALS, BUILDINGS, type AnimalKind, type BuildingType, type DepositType, type ResourceKind } from '../world/catalog';
 import { cropIcon } from './cropIcons';
@@ -28,14 +28,16 @@ const PADDING = 0.04;
 const WOOD: RGB = [72, 52, 28];
 
 /** Dorfbewohner(in), stehend und leicht zur Seite gedreht; `u` verschiebt auf dem Bildschirm nach rechts. */
-function villager(female: boolean, u: number, color: RGB): EntityInstance {
+function villager(female: boolean, u: number, color: RGB): EntityInstance[] {
   const at = groundToWorld(u, 0);
   const origin = groundToWorld(0, 0);
-  return {
+  const figure: EntityInstance = {
     x: at.x - origin.x - 0.5, y: at.y - origin.y - 0.5, size: 0.24, color,
     shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
     motion: [Math.PI * 0.2, 0, POSE.stand, 0], accent: WOOD,
   };
+  // Mit dem Beil in der Hand, wie im Spiel.
+  return [figure, ...figureProps(figure)];
 }
 
 /** Was je Symbol zu sehen ist - Farben und Größen wie auf der Karte. */
@@ -52,8 +54,8 @@ function scene(name: IconName, player: RGB): EntityInstance[] {
     // Nicht über one(): motion[3] = 1 hieße bei ihm "eingestürzt".
     case 'bows': return [{ x: -0.5, y: -0.5, size: 0.5, color: [0, 0, 0], shape: SHAPE.bow, alpha: 1, motion: [BUILDING_HEADING, 0, 0, 0] }];
     // Frau und Mann nebeneinander.
-    case 'population': return [villager(true, -0.12, player), villager(false, 0.12, player)];
-    case 'idle': return [villager(false, 0, player)];
+    case 'population': return [...villager(true, -0.12, player), ...villager(false, 0.12, player)];
+    case 'idle': return villager(false, 0, player);
   }
 }
 
@@ -166,7 +168,7 @@ export function buildingIcon(type: BuildingType, player: RGB): string {
 
 /** Dorfbewohner(in) in Spielerfarbe. */
 export function villagerIcon(female: boolean, player: RGB): string {
-  return cached(`villager:${female}`, player, () => [villager(female, 0, player)]);
+  return cached(`villager:${female}`, player, () => villager(female, 0, player));
 }
 
 /** Tier, äsend - erlegt liegend. */

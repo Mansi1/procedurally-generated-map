@@ -39,11 +39,21 @@ Phase 0 und Phase 1 sind fertig. Von Phase 2 ist der erste Teil fertig:
 - **IK für die Hände:** In `humanoid.blend` gibt es IK-Ziele für beide Hände,
   aktiv in `carve` und `mow` (siehe „Hände mit IK“). Die Clips sind dadurch
   unverändert (`check:anim` wie vorher). Ein verschobenes Ziel kommt im Spiel
-  an: 5 cm verschoben ergibt 5,0 cm an der Hand.
+  an: 5 cm verschoben ergibt 5,0 cm an der Hand. Die Hilfsknochen (`ik.*`,
+  `hand.*`) bleiben in Blender und kommen nicht mit ins Spiel.
 
-Offen in Phase 2: Werkzeuge als Anhänge, Schichten (`walk` + `carry`) und
-das Löschen der Formeln. Solange es die Formeln gibt, sind sie der Rückfall,
-falls die Clip-Bibliothek fehlt.
+**Werkzeuge sind Anhänge:** Beil, Sense und Zugmesser stecken nicht mehr in
+den Körpern, sondern sind eigene Modelle an der rechten Hand
+(`src/models/prop_*.obj`). Sie erscheinen je nach den `props` des Clips, den
+die Figur gerade spielt. Das Bild ist Pixel für Pixel wie vorher (alle Posen
+von Mann und Frau). Die eine Ausnahme ist das Zugmesser der Frau: Es war
+bisher für ihren Handabstand eigens gebaut und wird jetzt aus dem des Mannes
+auf ihren gestreckt, die Griffe sitzen dabei weiter in beiden Händen.
+Siehe „Werkzeuge anhängen“ unten.
+
+Offen in Phase 2: Schichten (`walk` + `carry`) und das Löschen der Formeln.
+Solange es die Formeln gibt, sind sie der Rückfall, falls die Clip-Bibliothek
+fehlt.
 
 **Phase 3 ist fertig: Alle sechs Tiere spielen Clips aus
 `assets/blender/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
@@ -146,6 +156,7 @@ Die Migration läuft auf dem Branch `animation-migration`.
 | festlegen, welche Pose ein Clip ersetzt | Custom Property `pose` der Action | `npm run gen:anim` |
 | einen Clip nur für bestimmte Tiere | Custom Property `species` der Action (z. B. `hare`) | `npm run gen:anim` |
 | die Form eines Körpers ändern | `tools/models/villagers.mjs` | `npm run gen:models` |
+| ein Werkzeug ändern oder neu anhängen | `tools/models/villagers.mjs` (`tools()`), `FIGURE_PROPS` in `entityRenderer.ts` | `npm run gen:models`, siehe „Werkzeuge anhängen“ |
 | einen Clip ansehen | Galerie → „Clips aus Blender“ | – |
 
 **Drei Regeln halten es zusammen:**
@@ -157,6 +168,39 @@ Die Migration läuft auf dem Branch `animation-migration`.
    passt deshalb auf jeden Körper mit denselben Knochen.
 3. **Materialnamen bleiben.** Das Aussehen kommt aus dem Shader nach Namen.
    Farben in Blender sind nur Vorschau.
+
+## Werkzeuge anhängen
+
+Ein Werkzeug ist ein eigenes kleines Modell (`src/models/prop_<name>.obj`),
+in Metern, mit dem Ursprung in der Mitte der rechten Hand in Ruhelage (Arm
+hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
+
+- **Je Werkzeug und Körper eine Form** (`SHAPE.propAxe`, `propAxeFemale` …).
+  Beim Zeichnen leiht sie sich Gelenke, Clip-Uniforms und Handlage ihres
+  Körpers (`body` in `MODELS`, `uSocket`). Sie bewegt sich darum genau mit
+  dessen Unterarm, im Clip wie mit den Formeln. Das Modell ist nur einmal
+  geladen, auch wenn zwei Körper es nutzen.
+- **Wann es zu sehen ist,** entscheiden die `props` des Clips (Custom
+  Property der Action in Blender). `figureProps()` in `entityRenderer.ts`
+  gibt für eine Figur die passenden Anhänge als Instanzen. Welt, Galerie und
+  Symbole zeichnen sie mit. Ohne Clip gilt, was die Formeln taten: Beil beim
+  Stehen, Gehen und Hacken, Sense beim Mähen, Zugmesser beim Schnitzen.
+- **Zweihändig:** Das Zugmesser hängt an beiden Unterarmen, der Shader mischt
+  nach der Lage zwischen den Händen. Es ist für den Handabstand des Mannes
+  gebaut und wird auf den des Trägers gestreckt (`uKnifeScale`). Die Sense
+  liegt in der Mäh-Haltung in beiden Händen und gibt es deshalb je Körper.
+
+**Ein neues Werkzeug (z. B. den Bogen):**
+
+1. In `tools/models/villagers.mjs` in `tools()` bauen (wie das Beil, im
+   Rahmen der Hand) und als `prop_<name>.obj` schreiben.
+   `npm run gen:models`.
+2. In `entityRenderer.ts`: je Körper eine Form in `SHAPE`, ein Eintrag in
+   `MODELS` mit `body`, ein Bit in `PROP_BITS` (`clips.ts`) und ein Eintrag
+   in `FIGURE_PROPS`. Die Teile heißen wie beim Beil (`Arm.R.Lower.Tool…`),
+   damit der Shader sie am rechten Unterarm führt.
+3. In Blender den Namen in `props` der Actions eintragen, die es brauchen.
+   `npm run gen:anim`.
 
 ## So wird jetzt gearbeitet
 
@@ -469,10 +513,11 @@ Bildrate mit 500 Dorfbewohnern gleich bleibt.
 3. Das Spiel lädt `villager_male.glb` und `villager_female.glb`. `POSE.*`
    wird zu Clip-Namen, die Phase zur Clip-Zeit. Beim Gehen bestimmt die
    Strecke die Zeit.
-4. **Werkzeuge als Anhänge:** Sockel `hand.R` und `hand.L`. Beil, Spitzhacke,
-   Hacke, Sense, Zugmesser und Speer werden eigene Modelle. Der Clip nennt sie
-   in `props`. `chop` wird damit für Holz, Stein, Gold und Pflügen genutzt,
-   je mit anderem Werkzeug.
+4. **Werkzeuge als Anhänge - erledigt** für Beil, Sense und Zugmesser (siehe
+   „Werkzeuge anhängen“). Statt eigener Sockel-Knochen hängen sie an der
+   Hand des Unterarms (`uSocket`). Offen: Spitzhacke, Hacke und Speer als
+   eigene Modelle, damit `chop` für Holz, Stein, Gold und Pflügen je mit
+   anderem Werkzeug genutzt wird.
 5. **Schichten:** `walk` nur für den Unterkörper, `carry` nur für den
    Oberkörper, übereinander abgespielt.
 6. **Ton:** `swing()` liest `strike` aus dem Clip statt aus der Formel -
