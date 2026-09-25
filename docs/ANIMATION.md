@@ -51,9 +51,24 @@ bisher für ihren Handabstand eigens gebaut und wird jetzt aus dem des Mannes
 auf ihren gestreckt, die Griffe sitzen dabei weiter in beiden Händen.
 Siehe „Werkzeuge anhängen“ unten.
 
-Offen in Phase 2: Schichten (`walk` + `carry`) und das Löschen der Formeln.
-Solange es die Formeln gibt, sind sie der Rückfall, falls die Clip-Bibliothek
-fehlt.
+**Die Formeln sind weg.** Im Shader bewegt nur noch der Clip-Weg Figuren,
+Tiere, Mühlenflügel und Fahnen. Gelöscht sind die Posen 0–5 der Figuren, der
+Tier-Zweig, die Flügel- und die Tuch-Formel samt ihren Uniforms (`uShoulder`,
+`uElbow`, `uStride`, `uLegs`, `uNeck`, `uGraze`, `uSide`, `uHub`) und die
+Hilfen `swingAround`, `swingSideways`, `swingAt`. Der Vertex-Shader hat 648
+statt 941 Zeilen. Die Maße der Modelle (Hüfte, Knie, Nabe, Beine, Hals ...)
+bleiben - mit ihnen werden die Clips gebacken. `mow_pose.json` und
+`carve_pose.json` bleiben ebenfalls: `tools/export/poses.mjs` und
+`npm run check:anim` rechnen damit.
+
+- **Ohne Clip:** Fehlt eine Bibliothek, stehen ihre Figuren in Ruhelage still,
+  Werkzeuge weggesteckt - es stürzt nichts ab. Der Rauchtest schlägt dann an
+  (`window.__clipLibraries`, „Clips aus Blender geladen“).
+- **Fahne auf dem Hauptgebäude:** spielt jetzt auch den Clip `wave`. Er ist
+  für das Tuch am Sammelpunkt gemacht; ein längeres Tuch (in Modell-Einheiten)
+  schlägt entsprechend weiter aus (`FlagJoints.stretch`, `Rig.moveScale`).
+
+Offen in Phase 2: Schichten (`walk` + `carry`).
 
 **Phase 3 ist fertig: Alle sechs Tiere spielen Clips aus
 `assets/blender/clips/quadruped.blend`** (Reh, Hase, Kuh, Schaf, Ziege,
@@ -82,8 +97,7 @@ Wildschwein).
 - **Ruinen:** Eine eingestürzte Mühle hält die Flügel an. Der Zeitpunkt
   kommt jetzt aus der Spieluhr (`animationTime()`). Vorher lag der Winkel nach
   Pause oder Tempowechsel daneben.
-- Die Fahne auf dem Hauptgebäude weht weiter über die Formel. Sie gehört zu
-  einem Modell ohne Skelett.
+- Die Fahne auf dem Hauptgebäude spielt denselben Clip, auf ihr Tuch gestreckt.
 
 **Alle Clips zusammen:** rund 16 000 Bilder (Dorfbewohner 4118, Tiere 6756,
 Mühlen 5032, Fahne 39). Das sind 16 Spalten in einer Textur von 768 × 1024
@@ -130,7 +144,7 @@ Die Migration läuft auf dem Branch `animation-migration`.
             │
             ▼
     src/gl/entityRenderer.ts           Shader: Pose mit Clip → Skinning aus der Textur,
-                                       sonst → die alten Formeln
+                                       ohne Clip → Ruhelage
             │
             ▼
     Spiel und Galerie („Clips aus Blender“)
@@ -183,8 +197,7 @@ hängt). Das Spiel hängt es an die rechte Hand des Körpers, der es trägt:
 - **Wann es zu sehen ist,** entscheiden die `props` des Clips (Custom
   Property der Action in Blender). `figureProps()` in `entityRenderer.ts`
   gibt für eine Figur die passenden Anhänge als Instanzen. Welt, Galerie und
-  Symbole zeichnen sie mit. Ohne Clip gilt, was die Formeln taten: Beil beim
-  Stehen, Gehen und Hacken, Sense beim Mähen, Zugmesser beim Schnitzen.
+  Symbole zeichnen sie mit. Ohne Clip keine - die Figur steht in Ruhelage.
 - **Zweihändig:** Das Zugmesser hängt an beiden Unterarmen, der Shader mischt
   nach der Lage zwischen den Händen. Es ist für den Handabstand des Mannes
   gebaut und wird auf den des Trägers gestreckt (`uKnifeScale`). Die Sense
@@ -524,14 +537,12 @@ Bildrate mit 500 Dorfbewohnern gleich bleibt.
 6. **Ton:** `swing()` liest `strike` aus dem Clip statt aus der Formel -
    **erledigt**. Ohne Clip für die Pose gilt weiter die Formel.
 7. **Bildvergleich:** alle Posen in der Galerie, alt und neu nebeneinander.
-8. **Weg damit:**
-   - im Shader die Figuren-Teile, die Gelenk-Uniforms (`uHip`, `uShoulder`,
-     `uKnee`, `uElbow`, `uArm`, `uStride`, `uLoadAnchor`) und die Posen 0–5
-   - `mow_pose.json` und `carve_pose.json`
-   - das Zurückrechnen der Sense in `villagers.mjs`
-   - das Überblenden des Zugmessers
-   - die fest eingebauten Werkzeuge in `villagers.mjs` (`hatchet`,
-     `scythe`, `drawknife`)
+8. **Weg damit - erledigt:** die Posen 0–5 im Shader und die Uniforms, die
+   nur sie brauchten (`uShoulder`, `uElbow`, `uStride`). `uHip`, `uKnee`,
+   `uArm` und `uLoadAnchor` bleiben (Rock, Knien, Zugmesser, Last).
+   `mow_pose.json` und `carve_pose.json` bleiben für den Export und
+   `check:anim`. Die Werkzeuge sind Anhänge, `villagers.mjs` gibt es nicht
+   mehr (docs/BLENDER.md).
 
 ### Phase 3: Tiere (mittel) - erledigt
 
@@ -553,8 +564,8 @@ Umgesetzt mit diesen Abweichungen vom ursprünglichen Plan:
    verlängern (`Rig.scale`) und die Höhe der Wurzel festlegen (`Rig.rootZ`).
    Bei den Dorfbewohnern sind das Schrittweite und Kniehöhe, bei den Tieren
    das Senken des Kopfs (`neck` auf uGraze) und die Höhe im Liegen (uSide).
-5. **Noch nicht weg:** Der Tier-Zweig im Shader bleibt als Rückfall, bis
-   Phase 7 aufräumt.
+5. **Weg:** Der Tier-Zweig im Shader und `uLegs`, `uNeck`, `uGraze`, `uSide`
+   sind gelöscht. Die Maße bleiben im Modell, sie backen die Clips je Art.
 
 ### Phase 4: Mühle und Fahne (klein) - erledigt
 
@@ -580,9 +591,10 @@ Mühlenflügel und die Fahne am Sammelpunkt kommen als Clips aus Blender
 - **Neu im Rückweg:** Knochen dürfen sich auch verschieben (`Clip.moves`),
   nicht nur drehen. Clips ohne Pose laufen nach der Spielzeit:
   (Zeit − `phase_shift`) × Dauer / `phase_period`.
-- **Rückfall:** Die Formeln (`P_SAILS`, `P_CLOTH`) bleiben im Shader, falls
-  eine Bibliothek fehlt. Die Fahne auf dem Hauptgebäude weht weiter über die
-  Formel, sie hat kein eigenes Skelett.
+- **Formeln weg:** `P_SAILS` und `P_CLOTH` gibt es nur noch als Clip, `uHub`
+  und `GUST_AMOUNT` sind gelöscht. `SAIL_SPEED` und `GUST_RATE` bleiben in
+  `entityRenderer.ts`: `millClipOffset` setzt damit jede Mühle an ihre Stelle
+  der Schleife. Die Fahne auf dem Hauptgebäude spielt denselben Clip.
 - **Galerie:** Beim Abriss bleiben die Flügel jetzt auch dort stehen.
 
 ### Phase 5: Zustands-Teile Blender-fest machen (klein bis mittel)
@@ -639,7 +651,7 @@ wenn gewünscht.
 |---|---|---|---|
 | 0 | Regeln, Ordner, Export-Aufruf | klein | – |
 | 1 | Lader, Clip-Textur, Skinning im Shader, Clip-Bibliothek, Pilot Schnitzen | groß | 0 |
-| 2 | Dorfbewohner (6 Clips, IK, Gewichte, Werkzeuge als Anhänge, Schichten) | groß | 1 |
+| 2 | Dorfbewohner (6 Clips, IK, Werkzeuge als Anhänge, Formeln gelöscht) - erledigt bis auf Schichten | groß | 1 |
 | 3 | Tiere (eine Vorlage, gemeinsame Clips, 3 eigene) - erledigt | mittel | 1 |
 | 4 | Mühle, Fahne - erledigt | klein | 1 |
 | 5 | Namensregeln absichern, später `extras` | klein bis mittel | – |

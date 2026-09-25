@@ -47,13 +47,15 @@ export interface Rig<J = never> {
   scale?(clip: Clip, joints: J, options: BakeOptions): Record<string, number>;
   /** Feste Höhe der Wurzel (Modell-Einheiten) für diesen Körper statt der aus dem Clip - oder null. */
   rootZ?(clip: Clip, joints: J): number | null;
+  /** Faktor auf die Verschiebungen der Knochen (Clip.moves) für diesen Körper - sonst 1. */
+  moveScale?(joints: J): number;
 }
 
 /** Was ein Clip in der Hand braucht - Bits wie im Shader (uClipProps). */
 export const PROP_BITS: Record<string, number> = { axe: 1, scythe: 2, knife: 4 };
 /**
- * Bit in uClipProps: der Clip kniet - der Rock wird wie bei der Formel für
- * Pose 3 bis zum Boden gestaucht (Knochen allein können das nicht).
+ * Bit in uClipProps: der Clip kniet - der Rock wird bis zum Boden gestaucht
+ * (Knochen allein können das nicht).
  */
 export const KNEEL_BIT = 8;
 
@@ -72,8 +74,8 @@ export interface Clip {
   pose: number | null;
   /**
    * Clip-Zeit = (Phase - phaseShift) * phaseRate. phaseRate = Länge des Clips
-   * durch die Phase einer Schleife (phase_period) - so läuft die Schleife genau
-   * so lang wie die Formel, und der Ton bleibt im Takt.
+   * durch die Phase einer Schleife (phase_period) - so passt die Schleife
+   * genau zur Phase des Spiels, und der Ton (strike) bleibt im Takt.
    */
   phaseRate: number;
   phaseShift: number;
@@ -343,7 +345,7 @@ export const HUMANOID: Rig<Joints> = {
   // Gehen: die Frau schreitet im langen Rock kürzer (uStride auf die Oberschenkel).
   scale: (clip, _joints, options): Record<string, number> => (clip.pose === 1 && (options.stride ?? 1) !== 1
     ? { 'thigh.L': options.stride!, 'thigh.R': options.stride! } : {}),
-  // Kniend: so tief, dass das Knie dieses Körpers den Boden berührt (wie die Formel: bob = -(uKnee - 0.04)).
+  // Kniend: so tief, dass das Knie dieses Körpers den Boden berührt (-(uKnee - 0.04), wie der Rock im Shader).
   rootZ: (clip, joints) => (clip.kneel ? -(joints.knee - 0.04) : null),
 };
 
@@ -412,9 +414,15 @@ export const MILL: Rig<MillJoints> = {
 /** Abschnitte des Fahnentuchs am Sammelpunkt: so viele Knochen + 1 längs des Tuchs. */
 export const FLAG_SEGMENTS = 6;
 
-/** Maße einer Fahne für ihr Skelett: das Tuch vom Mast (y0) bis zum Ende (y1), seine Höhe z. */
+/**
+ * Maße einer Fahne für ihr Skelett: das Tuch vom Mast (y0) bis zum Ende (y1),
+ * seine Höhe z. `stretch`: wie viel länger dieses Tuch ist als das am
+ * Sammelpunkt, für das der Clip gemacht ist (in Modell-Einheiten) - so weit
+ * schlägt es auch aus (die Fahne auf dem Hauptgebäude).
+ */
 export interface FlagJoints {
   cloth: [number, number, number];
+  stretch?: number;
 }
 
 /**
@@ -430,6 +438,7 @@ export const FLAG: Rig<FlagJoints> = {
     [0, 0, 0],
     ...Array.from({ length: FLAG_SEGMENTS + 1 }, (_, i) => [0, y0 + ((y1 - y0) * i) / FLAG_SEGMENTS, z] as Vec3),
   ],
+  moveScale: (j) => j.stretch ?? 1,
 };
 
 /** Texel je Knochen: drei Zeilen einer 3x4-Matrix. */
@@ -474,6 +483,7 @@ export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, ri
   const factors = Object.entries(rig.scale?.(clip, joints, options) ?? {}).filter(([, k]) => k !== 1);
   const factor = new Map(factors.map(([name, k]) => [index[name], k]));
   const rootZ = rig.rootZ?.(clip, joints) ?? null;
+  const k = rig.moveScale?.(joints) ?? 1;
   for (let f = 0; f < clip.frames; f++) {
     const stored = (b: number) => Array.from(clip.rotations.subarray((f * bones + b) * 4, (f * bones + b) * 4 + 4)) as Quat;
     const rot: Quat[] = rig.bones.map((_, b) => stored(b));
@@ -501,7 +511,7 @@ export function bakeClip<J>(clip: Clip, joints: J, options: BakeOptions = {}, ri
       // dazu, was der Knochen selbst beim Eltern verschoben ist.
       const mo = (f * bones + b) * 3;
       const offset = qRotate(w(parent), [
-        p[b][0] - p[parent][0] + clip.moves[mo], p[b][1] - p[parent][1] + clip.moves[mo + 1], p[b][2] - p[parent][2] + clip.moves[mo + 2],
+        p[b][0] - p[parent][0] + k * clip.moves[mo], p[b][1] - p[parent][1] + k * clip.moves[mo + 1], p[b][2] - p[parent][2] + k * clip.moves[mo + 2],
       ]);
       where.push([where[parent][0] + offset[0], where[parent][1] + offset[1], where[parent][2] + offset[2]]);
     }
