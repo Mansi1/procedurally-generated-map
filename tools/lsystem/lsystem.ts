@@ -323,51 +323,75 @@ function pipeRadii(segments: readonly Segment[], spec: TreeSpec): [number, numbe
   });
 }
 
-/** Eckenzahl eines Astes: dicke rund, dünne dreieckig. */
-const sides = (r: number) => (r > 0.18 ? 12 : r > 0.08 ? 9 : r > 0.03 ? 5 : 3);
+/** Eckenzahl eines Astes: dicke rund, dünne fast dreieckig. */
+const sides = (r: number) => (r > 0.24 ? 16 : r > 0.14 ? 12 : r > 0.07 ? 9 : r > 0.03 ? 6 : 4);
 
 /**
- * Ast als Prisma mit Texturkoordinaten: der Mantel abgewickelt, u läuft um den
- * Stamm herum (Umfang in Metern), v den Ast entlang (Weg vom Boden), beides in
- * Kacheln der Rinden-Textur (`tile` Meter je Kachel). `uOff` versetzt die
- * Abwicklung, damit nicht jeder Ast dieselbe Stelle der Textur zeigt.
+ * Eine Kette von Aststücken als durchgehender Schlauch mit Texturkoordinaten:
+ * der Mantel abgewickelt (u um den Stamm herum, v der Weg vom Boden, beides in
+ * Kacheln der Rinden-Textur). An jedem Gelenk sitzt ein gemeinsamer Ring
+ * senkrecht zur gemittelten Richtung, und der Querschnitt wird ohne Verdrehen
+ * mitgeführt (Parallel-Transport) - so knickt der Stamm an den Nahtstellen
+ * nicht mehr sichtbar und die Rinde läuft glatt durch.
  */
-function barkBeam(m: Model, name: string, mtl: string, a: Vec3, b: Vec3, r0: number, r1: number, n: number,
-  dist: number, uOff: number, tile: number, caps: { readonly bottom: boolean; readonly top: boolean }) {
-  const d = add(b, a, -1);
-  const len = length(d);
-  if (len < 1e-6) return;
-  const h: Vec3 = [d[0] / len, d[1] / len, d[2] / len];
-  const up: Vec3 = Math.abs(h[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const s1 = normalize(cross(h, up));
-  const s2 = cross(s1, h);
-  const angle = (k: number) => Math.PI / n + ((k % n) * 2 * Math.PI) / n; // k = n schließt den Mantel
-  const ring = (c: Vec3, r: number) => Array.from({ length: n + 1 }, (_, k): Vec3 =>
-    add(add(c, s1, Math.cos(angle(k)) * r), s2, Math.sin(angle(k)) * r));
-  const radial = (k: number): Vec3 => add(add([0, 0, 0], s1, Math.cos(angle(k))), s2, Math.sin(angle(k)));
-  const vertices = [...ring(a, r0), ...ring(b, r1)];
-  // Runde Schattierung: die Normale zeigt radial nach außen, nicht flach je Seite.
-  const normals = [...Array.from({ length: n + 1 }, (_, k) => radial(k)), ...Array.from({ length: n + 1 }, (_, k) => radial(k))];
-  const u = (k: number) => uOff + (k / n) * ((Math.PI * (r0 + r1)) / tile); // mittlerer Umfang
-  const uvs: [number, number][] = [
-    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [u(k), dist / tile]),
-    ...Array.from({ length: n + 1 }, (_, k): [number, number] => [u(k), (dist + len) / tile]),
-  ];
-  const faces: number[][] = Array.from({ length: n }, (_, k) => [k, k + 1, n + 2 + k, n + 1 + k]);
+function barkTube(m: Model, mtl: Material, skeleton: Skeleton, chain: readonly number[],
+  dist0: number, uOff: number, tile: number, caps: { readonly bottom: boolean; readonly top: boolean }) {
+  const segs = chain.map((i) => skeleton.segments[i]);
+  const pts: Vec3[] = [segs[0].a, ...segs.map((s) => s.b)];
+  const dirs = segs.map((s) => normalize(add(s.b, s.a, -1)));
+  const joints = pts.map((_, j): Vec3 =>
+    (j === 0 ? dirs[0] : j === dirs.length ? dirs[j - 1] : normalize(add(dirs[j - 1], dirs[j], 1))));
+  const radii = [skeleton.radii[chain[0]][0], ...chain.map((i) => skeleton.radii[i][1])];
+  const n = sides(radii[0]);
+
+  // Startrahmen wie bei beam(), danach je Gelenk mitgedreht.
+  const up: Vec3 = Math.abs(joints[0][1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  let s1 = normalize(cross(joints[0], up));
+  let s2 = cross(s1, joints[0]);
+
+  const vertices: Vec3[] = [];
+  const normals: Vec3[] = [];
+  const uvs: [number, number][] = [];
+  const faces: number[][] = [];
+  let dist = dist0;
+  for (let j = 0; j < pts.length; j++) {
+    if (j > 0) {
+      dist += length(add(pts[j], pts[j - 1], -1));
+      const axis = cross(joints[j - 1], joints[j]);
+      const mag = length(axis);
+      if (mag > 1e-6) {
+        const angle = Math.atan2(mag, dot(joints[j - 1], joints[j]));
+        const k: Vec3 = [axis[0] / mag, axis[1] / mag, axis[2] / mag];
+        s1 = rotate(s1, k, angle);
+        s2 = rotate(s2, k, angle);
+      }
+    }
+    for (let k = 0; k <= n; k++) { // k = n schließt den Mantel (gleicher Punkt, volles u)
+      const t = Math.PI / n + ((k % n) * 2 * Math.PI) / n;
+      const radial = add(add([0, 0, 0], s1, Math.cos(t)), s2, Math.sin(t));
+      vertices.push(add(pts[j], radial, radii[j]));
+      normals.push(radial); // rund schattiert
+      uvs.push([uOff + (k / n) * ((2 * Math.PI * radii[j]) / tile), dist / tile]);
+    }
+  }
+  for (let j = 0; j + 1 < pts.length; j++) {
+    const a0 = j * (n + 1), b0 = (j + 1) * (n + 1);
+    for (let k = 0; k < n; k++) faces.push([a0 + k, a0 + k + 1, b0 + k + 1, b0 + k]);
+  }
   // Deckel nur, wo man sie sehen kann: am Boden und an Astspitzen ohne Kinder -
   // mit eigener, flacher Normale entlang des Astes.
-  const cap = (offset: number, normal: Vec3, flip: boolean) => {
+  const cap = (ring: number, normal: Vec3, flip: boolean) => {
     const start = vertices.length;
     for (let k = 0; k < n; k++) {
-      vertices.push(vertices[offset + k]);
+      vertices.push(vertices[ring + k]);
       normals.push(normal);
       uvs.push([0, 0]);
     }
     faces.push(Array.from({ length: n }, (_, k) => start + (flip ? n - 1 - k : k)));
   };
-  if (caps.bottom) cap(0, [-h[0], -h[1], -h[2]], true);
-  if (caps.top) cap(n + 1, h, false);
-  m.mesh(name, mtl, vertices, faces, uvs, normals);
+  if (caps.bottom) cap(0, [-joints[0][0], -joints[0][1], -joints[0][2]], true);
+  if (caps.top) cap((pts.length - 1) * (n + 1), joints[pts.length - 1], false);
+  m.mesh(radii[0] > 0.12 ? 'Trunk' : 'Branch', mtl, vertices, faces, uvs, normals);
 }
 
 /** Wie das Laub gebaut wird. */
@@ -414,10 +438,26 @@ export function build(skeleton: Skeleton, spec: TreeSpec, rnd: () => number, { l
       uOff[i] = uOff[s.parent];
       hasChild[s.parent] = true;
     });
+    // Hauptfortsetzung je Ast: das dickste Kind am Astende. Es bildet mit dem
+    // Elternstück einen durchgehenden Schlauch, solange die Seitenzahl gleich
+    // bleibt; die übrigen Kinder beginnen eigene Schläuche.
+    const mainChild = new Array<number>(segments.length).fill(-1);
     segments.forEach((s, i) => {
-      const [r0, r1] = skeleton.radii[i];
-      barkBeam(m, r0 > 0.12 ? 'Trunk' : 'Branch', spec.stemMaterial, s.a, s.b, r0, r1, sides(r0),
-        dist[i], uOff[i], tile, { bottom: s.parent < 0, top: !hasChild[i] });
+      if (s.parent < 0) return;
+      const c = mainChild[s.parent];
+      if (c < 0 || skeleton.radii[i][0] > skeleton.radii[c][0]) mainChild[s.parent] = i;
+    });
+    const continues = (i: number): boolean => {
+      const p = segments[i].parent;
+      return p >= 0 && mainChild[p] === i && sides(skeleton.radii[i][0]) === sides(skeleton.radii[p][0]);
+    };
+    segments.forEach((s, i) => {
+      if (continues(i)) return; // Teil eines Schlauchs, der weiter unten beginnt
+      const chain = [i];
+      for (let j = mainChild[i]; j >= 0 && continues(j); j = mainChild[j]) chain.push(j);
+      const last = chain[chain.length - 1];
+      barkTube(m, spec.stemMaterial, skeleton, chain, dist[i], uOff[i], tile,
+        { bottom: s.parent < 0, top: !hasChild[last] });
     });
   }
   const foliage: Organ = {
