@@ -8,7 +8,7 @@
 // laufen in Schleifen. Ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, millMotion, type EntityInstance,
+  ANIMAL_POSE, BUILDING_HEADING, EntityRenderer, FALL_LYING, POSE, SHAPE, millMotion, modelWorkSpot, type EntityInstance,
 } from './gl/entityRenderer';
 import {
   groundToWorld, setViewRotation, snapCamera, viewRotation, worldToGround, worldToScreen, type IsoView,
@@ -68,6 +68,27 @@ function model(label: string, shape: number, size: number, motion?: [number, num
   return {
     label,
     draw: (_t, x, y, out) => out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: 1, motion }),
+  };
+}
+
+/**
+ * Werkstatt mit ihrem Arbeiter: das Gebäude und davor, an der markierten
+ * Werkbank (Work.Stand), ein Dorfbewohner in Pose - in echter Größe, damit
+ * er an die Bank passt, und zur Bank gewandt wie im Spiel.
+ */
+function withWorker(label: string, shape: number, size: number, female: boolean, pose: number): Exhibit {
+  return {
+    label,
+    draw: (t, x, y, out) => {
+      out.push({ x: x - 0.5, y: y - 0.5, size, color: PLAYER, shape, alpha: 1 });
+      const spot = modelWorkSpot(shape, x - 0.5, y - 0.5, size, BUILDING_HEADING);
+      if (!spot) return;
+      out.push({
+        x: spot.x - 0.5, y: spot.y - 0.5, size: VILLAGER.size, color: PLAYER,
+        shape: female ? SHAPE.villagerFemale : SHAPE.villager, alpha: 1,
+        motion: [Math.atan2(spot.aimY - spot.y, spot.aimX - spot.x), t * 6, pose, 0], accent: WOOD,
+      });
+    },
   };
 }
 
@@ -270,7 +291,16 @@ const SHOWCASE: Showcase[] = [
   building('Haus', BUILDINGS.house.models!, BUILDINGS.house.size, 220, 0.7),
   building('Holzlager', BUILDINGS.lumber_camp.models!, BUILDINGS.lumber_camp.size, 220, 0.6),
   building('Minenlager', [SHAPE.miningCamp], BUILDINGS.mining_camp.size, 200, 0.7),
-  building('Bognerei', [SHAPE.bowyer], BUILDINGS.bowyer.size, 200, 0.7),
+  // Mit dem Bogner an der Werkbank, wie im Spiel.
+  {
+    ...showcase('Gebäude', 'Bognerei', [
+      model('steht', SHAPE.bowyer, BUILDINGS.bowyer.size),
+      withWorker('mit Bogner', SHAPE.bowyer, BUILDINGS.bowyer.size, false, POSE.carve),
+      withWorker('mit Bognerin', SHAPE.bowyer, BUILDINGS.bowyer.size, true, POSE.carve),
+    ], 200, 0.7),
+    demolish: [0, 1, 2].map(() => collapse('Abriss', SHAPE.bowyer, BUILDINGS.bowyer.size)),
+    extras: ['Abriss'],
+  },
   // Wie im Spiel, wenn der Zeiger darauf steht: ohne Dach, mit Bögen gefüllt.
   {
     ...showcase('Gebäude', 'Waffenkammer', [
