@@ -1,5 +1,7 @@
 # Alles aus Blender
 
+Was noch offen ist: docs/OFFEN.md.
+
 Jedes Objekt des Spiels ist eine Blender-Datei: Dorfbewohner, Gebäude, Bäume,
 Sträucher, Stein und Gold, Tiere, Werkzeuge und die Pflanzen der Felder. Die Bewegungen stecken in eigenen
 Clip-Bibliotheken (docs/ANIMATION.md). Blender ist die Quelle - die Dateien

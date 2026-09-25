@@ -1,5 +1,7 @@
 # Migrationsplan: Animationen wie in Blender
 
+Was noch offen ist: docs/OFFEN.md.
+
 Ziel: Bewegungen werden in Blender gemacht und nicht mehr als Formeln im
 Shader geschrieben. Dazu gehören Skelett, Gewichte, Keyframes und IK. Das
 Spiel spielt sie ab. Was keine Animation im Blender-Sinn ist, sondern vom
@@ -637,10 +639,7 @@ wenn gewünscht.
   Figuren wäre ein 1-Knochen-Weg denkbar.
 - **Eckpunkte:** Weiche Haut braucht geteilte Eckpunkte. Heute ist jede
   Fläche flach, das Modell wird damit etwas größer.
-- **Modelle selbst:** Die Formen entstehen weiter aus Skripten
-  (`tools/models/*.mjs`). Ob auch sie nach Blender umziehen, ist ein eigener
-  Plan. Für die Animation reicht es, wenn das Skript das Figurmodell mit
-  Skelett ausgibt und die Clips aus Blender kommen.
+- **Modelle selbst:** Sind nach Blender umgezogen (docs/BLENDER.md).
 - **Texturen:** Leinen, Leder, Haar und Holzmaserung rechnet der Shader nach
   Materialnamen. Das bleibt so. Die Materialnamen müssen deshalb in Blender
   erhalten bleiben.
