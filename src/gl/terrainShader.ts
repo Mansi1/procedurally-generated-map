@@ -411,15 +411,25 @@ vec4 flower(vec2 tile, float ds, float bloom, out float shadow) {
   shadow = 0.0;
   float fade = detailFade(0.08, ds);
   if (fade <= 0.0) return vec4(0.0);
-  float meadow = smoothstep(0.1, 0.6, snoise(L_DETAIL, tile * 0.04 + vec2(70.0, -30.0)));
-  float group = smoothstep(0.15, 0.65, snoise(L_DETAIL, tile * 0.9 + vec2(5.0, -17.0)));
-  vec2 cell = floor(tile * 4.0);
+  // In Horsten wie world/flowers.ts: je Feld von 2x2 Tiles vielleicht eine
+  // Gruppe, in der Mitte dicht, zum Rand hin lichter; dazu wenige einzelne.
+  vec2 kc = floor(tile * 0.5);
+  vec2 kh = hash22(kc + 13.7);
+  vec2 cell = floor(tile * 8.0);
   vec2 rnd = hash22(cell);
-  float chance = (0.01 + meadow * 0.05 + group * (0.12 + meadow * 0.16)) * bloom;
-  if (rnd.x >= chance) return vec4(0.0);
+  float chance = 0.004;
+  float meadow = smoothstep(0.1, 0.6, snoise(L_DETAIL, tile * 0.04 + vec2(70.0, -30.0)));
+  bool inClump = kh.x < 0.08 + 0.4 * meadow;
+  if (inClump) {
+    vec2 mid = (kc + 0.3 + 0.4 * hash22(kc + 5.3)) * 2.0;
+    float dd = length((cell + 0.5) / 8.0 - mid) / (0.2 + 0.35 * kh.y);
+    chance += 0.8 * max(0.0, 1.0 - dd * dd);
+  }
+  if (rnd.x >= chance * bloom) return vec4(0.0);
 
-  vec2 center = (cell + 0.25 + 0.5 * hash22(cell + 3.1)) / 4.0;
-  float r = 0.05 * (0.8 + 0.45 * rnd.y);
+  vec2 center = (cell + 0.35 + 0.3 * hash22(cell + 3.1)) / 8.0;
+  // Wie size in world/flowers.ts (0.052 * 0.34 Blütenkarte, gerundet).
+  float r = 0.02 * (0.8 + 0.45 * rnd.y);
   vec2 q = (tile - center) / r;
   float d = length(q);
   if (d > 1.7) return vec4(0.0);
@@ -428,7 +438,7 @@ vec4 flower(vec2 tile, float ds, float bloom, out float shadow) {
   float sharp = detailFade(r * 0.6, ds);
 
   // Art: meist die der Gruppe, jede fünfte Blume eine andere.
-  float kindRnd = hash21(floor(tile * 0.7) + 9.0);
+  float kindRnd = inClump ? hash21(kc + 9.0) : hash21(cell + 1.3);
   if (hash21(cell + 7.7) < 0.2) kindRnd = hash21(cell + 1.3);
   int kind = int(kindRnd * 5.0);
   vec3 petal, heart;

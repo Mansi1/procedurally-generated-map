@@ -1,9 +1,11 @@
 // flowers.ts
 // Blumen auf der Wiese als kleine 3D-Objekte (gl/flowerModel.ts) - erst nah
 // genug heran (MapRenderer.flowerObjects), weiter draußen malt das Gelände
-// sie als Tupfen. Verteilt wie dort: je Viertel-Tile höchstens eine, in
-// Gruppen und manchen Wiesen dichter, meist eine Art je Gruppe, zu Wald,
-// Strand, Wüste und Fels hin keine (MapGenerator.bloomAt). Wie die Vorkommen
+// sie als Tupfen. Verteilt wie dort (flower() in terrainShader.ts): in
+// Horsten - je Feld von 2x2 Tiles vielleicht eine Gruppe, in der Mitte dicht,
+// zum Rand hin lichter, meist aus einer Art -, dazwischen kaum eine. In
+// blühenden Wiesen mehr Gruppen, zu Wald, Strand, Wüste und Fels hin keine
+// (MapGenerator.bloomAt). Wie die Vorkommen
 // in Stücken einmal ausgerechnet und gemerkt (fillChunks in resources.ts).
 
 import { FLOWERS, type EntityInstance } from '../gl/entityRenderer';
@@ -14,16 +16,17 @@ import { CHUNK, fillChunks, hash } from './resources';
 import type { ViewRect, World } from './world';
 
 /** Zellen je Tile-Kante: je Zelle höchstens eine Blume. */
-const CELLS = 4;
+const CELLS = 8;
+/** Kante des Rasters der Gruppen, in Tiles: je Feld höchstens eine Gruppe. */
+const CLUMP = 2;
+/** Chance einer Zelle in der Mitte einer Gruppe - zum Rand hin fällt sie auf 0. */
+const CLUMP_CHANCE = 0.8;
+/** Chance einer Zelle für eine einzelne Blume außerhalb der Gruppen. */
+const STRAY_CHANCE = 0.004;
+
+interface Clump { x: number; y: number; r: number; kind: number }
 /** Nah heran ist der Bildschirm klein - so viele Stücke reichen weit darüber hinaus. */
 const MAX_CHUNKS = 1200;
-/**
- * Anteil der gemalten Blumen, der als 3D-Objekt wächst: weniger, dafür mit
- * allen Einzelheiten (Blütenkarte, siehe flowerModel.ts).
- */
-const DENSITY = 0.35;
-/** Höchste Wahrscheinlichkeit einer Zelle (dichte Gruppe in dichter Wiese). */
-const MAX_CHANCE = 0.34 * DENSITY;
 
 const smoothstep = (a: number, b: number, v: number) => {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
@@ -60,28 +63,43 @@ export class FlowerField {
     }
   }
 
+  /** Die Gruppe im Feld (kx, ky) des Gruppenrasters - oder keine. */
+  private clump(kx: number, ky: number): Clump | null {
+    // Mitte im inneren Teil des Felds, Radius kleiner als der Abstand zum Rand -
+    // so reicht keine Gruppe ins Nachbarfeld.
+    const x = (kx + 0.3 + 0.4 * hash(kx, ky, 30)) * CLUMP;
+    const y = (ky + 0.3 + 0.4 * hash(kx, ky, 31)) * CLUMP;
+    const meadow = smoothstep(0.1, 0.6, this.mapGen.detail(x * 0.04 + 70, y * 0.04 - 30));
+    if (hash(kx, ky, 32) >= 0.08 + 0.4 * meadow) return null;
+    return { x, y, r: 0.2 + 0.35 * hash(kx, ky, 33), kind: hash(kx, ky, 34) };
+  }
+
   private generate(cx: number, cy: number): EntityInstance[] {
     const out: EntityInstance[] = [];
+    const clumps = new Map<number, Clump | null>();
     for (let ty = cy * CHUNK; ty < (cy + 1) * CHUNK; ty++) {
       for (let tx = cx * CHUNK; tx < (cx + 1) * CHUNK; tx++) {
+        const kx = Math.floor(tx / CLUMP), ky = Math.floor(ty / CLUMP);
+        const key = kx * 65536 + ky;
+        if (!clumps.has(key)) clumps.set(key, this.clump(kx, ky));
+        const clump = clumps.get(key)!;
         // Blumendichte des Tiles - teuer, darum erst bei Bedarf und einmal je Tile.
         let bloom = -1;
         for (let j = 0; j < CELLS; j++) {
           for (let i = 0; i < CELLS; i++) {
             const gx = tx * CELLS + i;
             const gy = ty * CELLS + j;
+            let chance = STRAY_CHANCE;
+            if (clump) {
+              const d = Math.hypot((gx + 0.5) / CELLS - clump.x, (gy + 0.5) / CELLS - clump.y) / clump.r;
+              chance += CLUMP_CHANCE * Math.max(0, 1 - d * d);
+            }
             const rnd = hash(gx, gy, 20);
-            if (rnd >= MAX_CHANCE) continue;
-            const mx = (gx + 0.5) / CELLS;
-            const my = (gy + 0.5) / CELLS;
-            const meadow = smoothstep(0.1, 0.6, this.mapGen.detail(mx * 0.04 + 70, my * 0.04 - 30));
-            const group = smoothstep(0.15, 0.65, this.mapGen.detail(mx * 0.9 + 5, my * 0.9 - 17));
-            const chance = (0.01 + meadow * 0.05 + group * (0.12 + meadow * 0.16)) * DENSITY;
             if (rnd >= chance) continue;
             // Kein Platz zwischen Bäumen, Felsen und Sträuchern.
             if (bloom < 0) bloom = this.terrain.resourceAt(tx, ty).type !== 'none' ? 0 : this.mapGen.bloomAt(tx + 0.5, ty + 0.5);
             if (rnd >= chance * bloom) continue;
-            this.plant(out, gx, gy);
+            this.plant(out, gx, gy, clump?.kind ?? hash(gx, gy, 24));
           }
         }
       }
@@ -90,15 +108,16 @@ export class FlowerField {
   }
 
   /** Die Blume der Zelle (gx, gy) - der Schatten gehört zum Modell. */
-  private plant(out: EntityInstance[], gx: number, gy: number) {
-    const x = (gx + 0.25 + 0.5 * hash(gx, gy, 21)) / CELLS;
-    const y = (gy + 0.25 + 0.5 * hash(gx, gy, 22)) / CELLS;
-    // Art: meist die der Gruppe (Flecken von gut einem Tile), jede fünfte eine andere.
-    const own = hash(gx, gy, 23) < 0.2;
-    const kindRnd = own ? hash(gx, gy, 24) : hash(Math.floor(x * 0.7), Math.floor(y * 0.7), 25);
+  private plant(out: EntityInstance[], gx: number, gy: number, groupKind: number) {
+    const x = (gx + 0.35 + 0.3 * hash(gx, gy, 21)) / CELLS;
+    const y = (gy + 0.35 + 0.3 * hash(gx, gy, 22)) / CELLS;
+    // Art: meist die der Gruppe, jede fünfte eine andere.
+    const kindRnd = hash(gx, gy, 23) < 0.2 ? hash(gx, gy, 24) : groupKind;
     const kind = Math.min(FLOWER_KINDS.length - 1, Math.floor(kindRnd * FLOWER_KINDS.length));
-    // Breite über die Blätter - die Blüte ist etwa ein Drittel davon.
-    const size = 0.13 * (0.8 + 0.45 * hash(gx, gy, 26));
+    // Breite über die Blätter - die Blüte ist etwa ein Drittel davon: rund
+    // 9 cm Radius, 16 cm hoch, passend zu den Tomaten. Wie r in flower()
+    // im Gelände-Shader - beim Wechsel zu 3D springt die Größe nicht.
+    const size = 0.052 * (0.8 + 0.45 * hash(gx, gy, 26));
     const ground = reliefZ(this.mapGen.heightAt(x, y));
     const petal = FLOWER_KINDS[kind].petal;
     out.push({
