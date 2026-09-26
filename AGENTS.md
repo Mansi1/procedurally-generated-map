@@ -291,17 +291,15 @@ Die Werkzeuge kommen mit PR #4 (`fix-smooth-zoom`); Hintergrund und Plan in `doc
 
 ### Stolperfallen, in die schon ein Agent gelaufen ist
 
-- **`npm test` scheitert unter Node 24:** Die Meldung lautet „Cannot find module …/tests“. Das liegt nicht an deiner Änderung: `node --test tests/` nimmt ab Node 24 kein Verzeichnis mehr an. Stattdessen `node --test tests/*.test.mjs` ausführen, das läuft unter jeder Version. Die Korrektur von `package.json` kommt mit PR #4. Danach ist `npm test` wieder richtig, und dieser Punkt kann weg.
 - **Szenen per Playwright aufsetzen:** `entry.ts` lädt `main.ts` erst nach dem `load`-Ereignis nach.
   - Wer Welt und Start-Vermerk setzt (`pgm.seed`, `sessionStorage` `pgm.start`), muss vorher warten, bis `window.getRenderStats` existiert. Sonst verbraucht die laufende Seite den Vermerk, und gemessen wird das Hauptmenü, mit plausibel aussehenden Zahlen.
   - Danach prüfen, dass `#start` verborgen ist, und in den Stats nachsehen, ob `tileSize` zur Szene passt.
 - **Stillstand ist keine Langsamkeit:** Steht die Kamera eine Sekunde, zeichnet das Spiel absichtlich nur 30 fps (`idleFps`). Das erkennt man in den Stats an `idle` nahe 1. Zum Messen `idleFps: false` setzen, der Bench tut das schon.
-- **Headless-Chrome nutzt die echte GPU:** Auf dem Mac läuft Playwright (`tools/ui/browser.mjs`) über Metal auf der echten Grafikkarte, nicht auf einem Software-Renderer. `EXT_disjoint_timer_query_webgl2` ist vorhanden. Messwerte aus Playwright sind also echt. Das Pixel-Verhältnis ist dort aber 1, bei einem Retina-Bildschirm 2. Nur gleiche Umstände vergleichen, dafür gibt es `getRenderInfo()`.
+- **Nur gleiche Umstände vergleichen:** Playwright läuft mit Pixel-Verhältnis 1, ein Retina-Bildschirm mit 2, also viermal so vielen Pixeln. Vor einem Vergleich `getRenderInfo()` beider Läufe ansehen: GPU, Pixel-Verhältnis und Einstellungen.
 - **Schichten beim Import:** `src/gl/` importiert nie aus `src/game/`, sondern nur aus `src/world/`, `src/noise.ts`, `src/functions/` und aus `src/gl/` selbst. `src/game/` und `src/main.ts` sitzen darüber. Code, den beide Seiten brauchen, liegt in `src/` selbst, zum Beispiel `renderStats.ts`. Vor einer neuen Datei die Imports der Nachbarn ansehen.
 - **`docs/OPTIMIZATION_PLAN.md` ist ein Hinweis, keine Tatsache:**
   - Zeilenangaben dort sind veraltet. Nach Funktionsnamen suchen, nicht nach Zeilennummern.
-  - Befunde vor dem Umsetzen am Code prüfen. Mindestens eine Behauptung war falsch: 2.2 soll „bit-identisch“ sein, kann aber schmale Grate überspringen.
-  - Ein „harmloser“ Early-out (`armoryStock`) hätte das Verhalten geändert, weil der Aufrufer `has()` prüft.
+  - Befunde vor dem Umsetzen am Code prüfen. Behauptungen wie „bit-identisch“ oder „harmlos“ waren schon falsch. Aufrufer lesen, bevor ein Early-out das Ergebnis ändert.
   - Umgesetztes und bewusst Ausgelassenes vermerkt der Plan zu Beginn von Abschnitt 2. Das bei jeder Änderung nachführen.
 - **`Array.find` durch eine Map ersetzen:** `find` liefert den *ersten* Treffer, `new Map(entries)` behält den *letzten*. Bei möglichen Doppelten die Map aus der umgekehrten Liste bauen.
 
