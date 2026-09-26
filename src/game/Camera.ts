@@ -22,8 +22,12 @@ export const ZOOM_LEVELS = Array.from({ length: MAX_ZOOM - MIN_ZOOM + 1 }, (_, i
 const ZOOM_RATE = 18;
 /** So lange nach der letzten Eingabe (ms) rastet das Ziel auf eine Stufe ein. */
 const ZOOM_SETTLE = 140;
-/** Ab diesem Bruchteil einer Stufe in Zoomrichtung geht es zur nächsten statt zurück. */
-const ZOOM_COMMIT = 0.25;
+/**
+ * Ab diesem Bruchteil einer Stufe in Zoomrichtung geht es zur nächsten statt
+ * zurück. Klein: schon ein kurzes Wischen auf dem Trackpad ist gewollt - bei
+ * einem Viertel federte es zurück. Nur ein Zucken bleibt auf der Stufe.
+ */
+const ZOOM_COMMIT = 0.04;
 
 export class Camera {
   /** Welt-Tile in der Bildmitte. */

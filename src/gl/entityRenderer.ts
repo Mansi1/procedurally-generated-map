@@ -2685,6 +2685,9 @@ const SHAPE_NAME: Record<number, string> = Object.fromEntries(Object.entries(SHA
  * gebundenen READ_FRAMEBUFFER) als PNG an den Dev-Server - er legt sie in
  * tools/export/out/billboards/ ab (vite.config.ts), z. B. treeOak_64px_r0.png.
  */
+/** Baumbilder als PNG ablegen (vite.config.ts) - nur mit ?saveBillboards in der Adresse. */
+const SAVE_BILLBOARDS = typeof location !== 'undefined' && new URLSearchParams(location.search).has('saveBillboards');
+
 function saveBillboard(gl: WebGL2RenderingContext, shape: number, band: BillboardBand, ppt: number) {
   const raw = new Uint8Array(band.w * band.h * 4);
   gl.readPixels(0, 0, band.w, band.h, gl.RGBA, gl.UNSIGNED_BYTE, raw);
@@ -3128,7 +3131,9 @@ export class EntityRenderer {
     gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, msaa);
     gl.blitFramebuffer(0, 0, band.w, band.h, 0, 0, band.w, band.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-    if (import.meta.env.DEV) {
+    // Nur auf Wunsch (Adresse mit ?saveBillboards): das Auslesen hält die
+    // Grafikkarte an und kostete beim Herauszoomen gemessen 180 ms am Stück.
+    if (import.meta.env.DEV && SAVE_BILLBOARDS) {
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, resolved);
       saveBillboard(gl, shape, band, ppt);
     }
@@ -3163,9 +3168,14 @@ export class EntityRenderer {
       this.billboardSet = this.planBillboards(key, pixelsPerTile);
     }
     const set = this.billboardSet;
+    // Höchstens eine Baumart je Bild - alle auf einmal hielten das Bild spürbar
+    // an. Bis ihr Bild da ist, steht eine Art als Modell da (siehe drawModel).
     for (const shape of shapes) {
       const band = set.shapes.get(shape);
-      if (band && !band.texture) this.renderBillboardBand(shape, band, pixelsPerTile, pixelRatio);
+      if (band && !band.texture) {
+        this.renderBillboardBand(shape, band, pixelsPerTile, pixelRatio);
+        break;
+      }
     }
     return set.shapes.size > 0;
   }
