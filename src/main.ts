@@ -2,6 +2,7 @@
 import { MapGenerator } from './noise';
 import {
   type IsoView,
+  viewRotation,
   visibleWorldRect,
 } from './gl/iso';
 import {
@@ -460,6 +461,17 @@ function updateHoverInfo() {
 }
 
 let lastTime = performance.now();
+
+/**
+ * Steht die Kamera (verschieben, zoomen, drehen) so lange still, zeichnet das
+ * Spiel nur noch IDLE_FPS Bilder je Sekunde - schont Akku und Lüfter. Die
+ * Welt läuft gleich schnell weiter, nur seltener gezeichnet.
+ */
+const IDLE_AFTER_MS = 1000;
+const IDLE_FPS = 30;
+let lastMove = performance.now();
+let lastFrame = 0;
+let lastView = '';
 /** Die Simulation läuft in festen Schritten von 0.1 s (game/timing.ts). */
 const simulation = new FixedStep(0.1);
 /** Vorrat, Auswahl und Hover fünfmal je Sekunde - je Bild wäre es nur unruhig und teuer. */
@@ -506,6 +518,18 @@ function collectOverlay(blend: number) {
 }
 
 function loop(now: number) {
+  const view = `${camera.x},${camera.y},${camera.zoomIndex},${viewRotation()}`;
+  if (view !== lastView) {
+    lastView = view;
+    lastMove = now;
+  }
+  // Etwas Spiel, damit bei 60 Hz jedes zweite Bild kommt und nicht jedes dritte.
+  if (now - lastMove > IDLE_AFTER_MS && now - lastFrame < 1000 / IDLE_FPS - 4) {
+    requestAnimationFrame(loop);
+    return;
+  }
+  lastFrame = now;
+
   // Begrenzt, damit die Kamera nach einem Tab-Wechsel nicht quer über die Karte
   // springt (dt wäre dann die gesamte Zeit im Hintergrund).
   const dt = Math.min((now - lastTime) / 1000, 0.1);
