@@ -27,7 +27,7 @@ import {
 } from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
-import { parseMtl, parseObj, type ObjTriangle } from './obj';
+import { parseMtl, parseMtlImages, parseObj, type ObjTriangle, type RGB01 } from './obj';
 import villagerMaleModel from '../models/villager_male.glb?model';
 import villagerFemaleModel from '../models/villager_female.glb?model';
 import propAxeModel from '../models/prop_axe.glb?model';
@@ -296,6 +296,21 @@ const LEAF_TEXTURE_UNIT = 3;
 const CLIP_TEXTURE_UNIT = 5;
 /** Bilder der Bäume für weit draußen (uBillboardTex, siehe ensureBillboards). */
 const BILLBOARD_TEXTURE_UNIT = 6;
+/** Bildtexturen aus den .glb-Modellen (uModelImages, siehe MODEL_IMAGES). */
+const IMAGE_TEXTURE_UNIT = 7;
+/** Kantenlänge jeder Bildtextur in uModelImages - alle Bilder werden darauf gebracht. */
+const IMAGE_SIZE = 512;
+/** Rolle der Flächen mit Bildtextur: statt der Farbe (u, v, Schicht in uModelImages). */
+const IMAGE_ROLE = 20;
+/**
+ * Bildtexturen aller Modelle (map_Kd, tools/models/glb.mjs) mit der
+ * Materialfarbe, die sie einfärbt - je Eintrag eine Schicht in uModelImages.
+ */
+const MODEL_IMAGES: { url: string; tint: RGB01 }[] = [];
+function imageLayer(url: string, tint: RGB01): number {
+  const i = MODEL_IMAGES.findIndex((m) => m.url === url && m.tint.every((c, k) => c === tint[k]));
+  return i >= 0 ? i : MODEL_IMAGES.push({ url, tint }) - 1;
+}
 /**
  * So viele Drehungen je Baumart hat ein Billboard - das Bild liegt höchstens
  * eine halbe Stufe (22,5°) neben der Drehung des Baums.
@@ -1205,7 +1220,8 @@ void main() {
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
     bool villager = ${FIGURE_TEST};
     bool figureTex = role >= ${FIGURE_TEX.cloth} && role <= ${FIGURE_TEX.skin};
-    vTex = figureTex ? (villager ? role : 0)
+    vTex = role == ${IMAGE_ROLE} ? (gSawn > 0.5 ? 5 : role)
+      : figureTex ? (villager ? role : 0)
       : villager && (role == 1 || role == 2) ? ${FIGURE_TEX.cloth}
       : role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
     vLocal = gRest * uMeters;
@@ -1270,6 +1286,7 @@ float texDetail(float freq, float px) {
   return 1.0 - smoothstep(0.25, 0.6, freq * px);
 }
 
+uniform highp sampler2DArray uModelImages; // Bildtexturen der Modelle (IMAGE_ROLE)
 uniform sampler2D uLeafTex;  // Foto eines Birkenblatts (Blatt- und Astkarten)
 
 // Birkenrinde wie am Stamm (treeTexture, vTex 4), für gemalte Äste und Zweige:
@@ -1358,6 +1375,14 @@ vec3 figureTexture(vec3 base) {
   float flush = smoothstep(0.55, 0.9, texNoise(q * 4.0 + 2.2));
   vec3 c = base * (0.95 + 0.1 * mix(0.5, mottle, texDetail(18.0, px)));
   return mix(c, c * vec3(1.06, 0.93, 0.9), flush * 0.4);
+}
+
+// Bildtextur aus der .glb: base = (u, v, Schicht); v = 0 ist unten im Bild.
+// Durchsichtiges (Umriss der Blattkarten) wird verworfen.
+vec3 imageTexture(vec3 base) {
+  vec4 t = texture(uModelImages, vec3(base.x, 1.0 - base.y, floor(base.z + 0.5)));
+  if (t.a < 0.5) discard;
+  return t.rgb;
 }
 
 // Rinde als Textur: Stamm abgewickelt (Umfang, Höhe) in Metern.
@@ -1644,7 +1669,8 @@ void main() {
   }
 
   vec3 base = vColor;
-  if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
+  if (vTex == ${IMAGE_ROLE}) base = imageTexture(base);
+  else if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
   else if (vTex != 0) base = treeTexture(base);
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
@@ -1948,6 +1974,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   const entryPoints = markerPoints('Entry');
   const triangles = all.filter((t) => !isMarker(t.object));
   const colors = parseMtl(mtl);
+  const images = parseMtlImages(mtl);
   if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
 
   let minY = Infinity;
@@ -2081,9 +2108,14 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     // Blattkarte: statt einer Farbe ihre Lage auf der Karte (u, v) und ein
     // Zufall je Karte - der Shader malt Zweig und Blätter danach.
     const card = CARD_MATERIALS.has(t.material) ? cardFrame(t.index) : undefined;
-    for (const p of t.points) {
+    // Bildtextur: statt der Farbe (u, v, Schicht), eingefärbt wird beim Hochladen.
+    const image = images.get(t.material);
+    const layer = image && t.uvs ? imageLayer(image, color) : undefined;
+    const vertexRole = layer === undefined ? role : IMAGE_ROLE;
+    for (const [k, p] of t.points.entries()) {
       const [x, y, z] = local(p);
       let rgb = color;
+      if (layer !== undefined) rgb = [t.uvs![k][0], t.uvs![k][1], layer];
       if (card) {
         const d = [x - card.c[0], y - card.c[1], z - card.c[2]];
         const along = d[0] * card.a[0] + d[1] * card.a[1] + d[2] * card.a[2];
@@ -2108,13 +2140,13 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
         // Stammstück (19 + Ansatzhöhe): über dem Schnitt verschwindet es ganz.
         : sawable ? 19 + (bottom.get(t.index) ?? 0) * 0.45
         : part;
-      v.push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], role);
+      v.push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], vertexRole);
       if (lod) {
         LOD_PARTS.forEach((min, i) => {
           // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
           // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
           // Blattkarten auch: ohne sie stünde die Birke weit draußen kahl da.
-          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) lods[i].push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], role);
+          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) lods[i].push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], vertexRole);
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
@@ -2575,6 +2607,10 @@ export class EntityRenderer {
   private clipTexture: WebGLTexture;
   /** true, sobald das Blattfoto geladen ist - vorher sind Birken nur grün. */
   leafReady = false;
+  /** Bildtexturen der Modelle, eine Schicht je MODEL_IMAGES-Eintrag (uModelImages). */
+  private imageTexture: WebGLTexture;
+  /** So viele davon sind geladen - vorher ist ihre Schicht durchsichtig. */
+  private imagesLoaded = 0;
   /**
    * Unter so vielen CSS-Pixeln je Tile zeichnen die Bäume der festen Puffer
    * als Bild statt als Modell (0: nie). Gefällte, angefangene und
@@ -2628,6 +2664,7 @@ export class EntityRenderer {
     uploadTerrainParams(gl, (name) => this.location(name));
     gl.uniform1i(this.location('uLeafTex'), LEAF_TEXTURE_UNIT);
     gl.uniform1i(this.location('uBillboardTex'), BILLBOARD_TEXTURE_UNIT);
+    gl.uniform1i(this.location('uModelImages'), IMAGE_TEXTURE_UNIT);
 
     // Blatt-Textur: bis das Bild geladen ist, ein einzelnes grünes Pixel.
     this.leafTexture = gl.createTexture()!;
@@ -2650,7 +2687,52 @@ export class EntityRenderer {
     };
     image.src = birchLeafUrl;
 
+    this.imageTexture = this.loadModelImages();
+
     this.clipTexture = this.bakeClips();
+  }
+
+  /**
+   * Die Bildtexturen der Modelle (MODEL_IMAGES) als Schichten einer
+   * Array-Textur, je IMAGE_SIZE² Pixel, kachelnd. Die Bilder laden danach;
+   * bis dahin ist ihre Schicht leer (durchsichtig).
+   */
+  private loadModelImages(): WebGLTexture {
+    const gl = this.gl;
+    const texture = gl.createTexture()!;
+    const levels = Math.log2(IMAGE_SIZE) + 1;
+    gl.activeTexture(gl.TEXTURE0 + IMAGE_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, levels, gl.RGBA8, IMAGE_SIZE, IMAGE_SIZE, Math.max(1, MODEL_IMAGES.length));
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    gl.activeTexture(gl.TEXTURE0);
+    MODEL_IMAGES.forEach(({ url, tint }, layer) => {
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = IMAGE_SIZE;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+        ctx.drawImage(image, 0, 0, IMAGE_SIZE, IMAGE_SIZE);
+        const pixels = ctx.getImageData(0, 0, IMAGE_SIZE, IMAGE_SIZE);
+        const d = pixels.data;
+        for (let i = 0; i < d.length; i += 4) {
+          d[i] *= tint[0];
+          d[i + 1] *= tint[1];
+          d[i + 2] *= tint[2];
+        }
+        gl.activeTexture(gl.TEXTURE0 + IMAGE_TEXTURE_UNIT);
+        gl.bindTexture(gl.TEXTURE_2D_ARRAY, texture);
+        gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, layer, IMAGE_SIZE, IMAGE_SIZE, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+        gl.activeTexture(gl.TEXTURE0);
+        this.imagesLoaded++;
+      };
+      image.src = url;
+    });
+    return texture;
   }
 
   /**
@@ -2917,7 +2999,7 @@ export class EntityRenderer {
    * keine Bilder gibt.
    */
   private ensureBillboards(pixelsPerTile: number, pixelRatio: number, shapes: Iterable<number>): boolean {
-    const key = `${viewRotation()}|${pixelsPerTile}|${pixelRatio}|${this.leafReady}`;
+    const key = `${viewRotation()}|${pixelsPerTile}|${pixelRatio}|${this.leafReady}|${this.imagesLoaded}`;
     if (this.billboardSet?.key !== key) {
       for (const band of this.billboardSet?.shapes.values() ?? []) if (band.texture) this.gl.deleteTexture(band.texture);
       this.billboardSet = this.planBillboards(key, pixelsPerTile);
@@ -3046,6 +3128,8 @@ export class EntityRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.leafTexture);
     gl.activeTexture(gl.TEXTURE0 + CLIP_TEXTURE_UNIT);
     gl.bindTexture(gl.TEXTURE_2D, this.clipTexture);
+    gl.activeTexture(gl.TEXTURE0 + IMAGE_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.imageTexture);
     gl.activeTexture(gl.TEXTURE0);
     // Herausgezoomt die vereinfachten Fassungen der Vorkommen.
     const lod = LOD_ZOOM.filter((z) => cssPixelsPerTile < z).length;
