@@ -4,6 +4,8 @@ import {
   TILT_DEFAULT,
   TILT_MAX,
   TILT_MIN,
+  centerFor,
+  pickWorld,
   setViewElevation,
   type IsoView,
   viewElevation,
@@ -279,6 +281,7 @@ function applyFacing(dir: string) {
   const pivot = focusPoint();
   rotateToFace(dir);
   keepFocus(pivot);
+  autoFlat = hiddenAtCenter(pivot.x, pivot.y);
   compass.update();
   // Die Blickrichtung bleibt beim Neuladen.
   settings.facing = dir;
@@ -359,28 +362,60 @@ window.addEventListener('resize', resize);
 // --- Neigung ---------------------------------------------------------------
 
 /**
- * Der Punkt, auf den man schaut (Welt, mit Geländehöhe): beim Neigen und
- * Drehen bleibt er genau in der Bildmitte. Bestimmt wird er einmal und gilt,
- * bis die Kamera anders bewegt wird (Verschieben, Zoomen, Minimap) oder das
- * Relief sich ändert (Leertaste). Je Bild neu gepickt, wanderte er mit jedem
+ * Der Punkt, auf den man schaut (Welt, mit Geländehöhe bei vollem Relief):
+ * beim Neigen, Drehen und Flachlegen bleibt er genau in der Bildmitte.
+ * Bestimmt wird er einmal und gilt, bis die Kamera anders bewegt wird
+ * (Verschieben, Zoomen, Minimap). Je Bild neu gepickt, wanderte er mit jedem
  * kleinen Rechenfehler weiter - und flacher geneigt verdeckt ein Berg im
  * Vordergrund die Stelle, dann spränge er auf dessen Hang.
  */
-let focus: { x: number; y: number; z: number; cameraX: number; cameraY: number; relief: number } | null = null;
+let focus: { x: number; y: number; height: number; cameraX: number; cameraY: number } | null = null;
 
-function focusPoint() {
-  if (!focus || focus.cameraX !== camera.x || focus.cameraY !== camera.y || focus.relief !== renderer.relief) {
-    const p = picker.point(camera.centerX, camera.centerY);
-    focus = { x: p.x, y: p.y, z: p.z, cameraX: camera.x, cameraY: camera.y, relief: renderer.relief };
-  }
-  return focus;
+/** Der festgehaltene Punkt, wenn die Kamera seitdem nicht anders bewegt wurde - sonst null. */
+function heldFocus() {
+  return focus && focus.cameraX === camera.x && focus.cameraY === camera.y ? focus : null;
 }
 
-/** Legt den Punkt nach einer Winkeländerung wieder genau in die Bildmitte - und merkt sich, dass die Kamera nun so steht. */
+function focusPoint() {
+  if (!heldFocus()) {
+    const p = picker.point(camera.centerX, camera.centerY);
+    focus = { x: p.x, y: p.y, height: ground.groundAt(p.x, p.y), cameraX: camera.x, cameraY: camera.y };
+  }
+  return focus!;
+}
+
+/** Legt den Punkt wieder genau in die Bildmitte (bei der jetzigen Reliefstärke) - und merkt sich, dass die Kamera nun so steht. */
 function keepFocus(f: NonNullable<typeof focus>) {
-  camera.centerOn(f.x, f.y, f.z);
+  camera.centerOn(f.x, f.y, f.height * renderer.relief);
   f.cameraX = camera.x;
   f.cameraY = camera.y;
+}
+
+// --- Gelände im Weg --------------------------------------------------------
+
+/**
+ * Gelände automatisch flachlegen, wie mit gehaltener Leertaste: wenn nach dem
+ * Neigen oder Drehen ein Berg den angeschauten Punkt verdeckt - etwa das
+ * Haupthaus hinter einem Hang. Der Punkt bleibt dabei in der Bildmitte.
+ * Aufgerichtet wird wieder, sobald die Bildmitte auch bei vollem Relief frei
+ * ist (verschoben, zurückgedreht, steiler geneigt).
+ */
+let autoFlat = false;
+/** Ab so viel Abstand (Tiles) zwischen Punkt und erstem Treffer des Sichtstrahls gilt er als verdeckt. */
+const HIDDEN_TILES = 1;
+/** Kamera-Stand, für den autoFlat zuletzt geprüft wurde. */
+let autoFlatView = '';
+
+/**
+ * Wäre der Punkt (x, y) bei vollem Relief verdeckt, wenn er in der Bildmitte
+ * läge? Der Sichtstrahl durch die Mitte trifft dann vorher einen Hang.
+ */
+function hiddenAtCenter(x: number, y: number): boolean {
+  const view = camera.view();
+  const center = centerFor(view, x, y, ground.groundAt(x, y), camera.centerX, camera.centerY);
+  const hit = pickWorld({ ...view, centerX: center.x, centerY: center.y }, camera.centerX, camera.centerY,
+    (a, b) => ground.groundAt(a, b));
+  return Math.hypot(hit.x - x, hit.y - y) > HIDDEN_TILES;
 }
 
 /** Neigen mit Alt und rechter Maustaste: Radiant je Pixel (wie in der Galerie). */
@@ -422,6 +457,7 @@ function updateTilt(dt: number, now: number): boolean {
   const pivot = focusPoint();
   setViewElevation(next);
   keepFocus(pivot);
+  autoFlat = hiddenAtCenter(pivot.x, pivot.y);
   if (next === tiltTarget) {
     // Der Blickwinkel bleibt beim Neuladen - wie die Blickrichtung.
     settings.tilt = Math.round((next * 180) / Math.PI * 10) / 10;
@@ -692,7 +728,24 @@ function loop(now: number) {
   // WASD, Leertaste, hinter dem Hauptmenü langsam vorbeiziehen (game/cameraControl.ts).
   const zoomed = updateZoom(dt, now);
   const tilted = updateTilt(dt, now);
-  if (steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen()) || zoomed || tilted) refreshPointer();
+  // Beim Flachlegen und Aufrichten bleibt der angeschaute Punkt in der Mitte,
+  // solange die Kamera nicht anders bewegt wurde.
+  const held = heldFocus();
+  const reliefBefore = renderer.relief;
+  const [cameraX, cameraY] = [camera.x, camera.y];
+  const steered = steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen(), autoFlat);
+  if (held && renderer.relief !== reliefBefore && camera.x === cameraX && camera.y === cameraY) keepFocus(held);
+  if (steered || zoomed || tilted) refreshPointer();
+  // Flachgelegt, weil Gelände im Weg war: aufrichten, sobald die Bildmitte
+  // auch bei vollem Relief frei ist - geprüft, wenn sich die Ansicht ändert.
+  if (autoFlat) {
+    const seen = `${camera.x},${camera.y},${camera.zoom},${viewRotation()},${viewElevation()}`;
+    if (seen !== autoFlatView) {
+      autoFlatView = seen;
+      const p = heldFocus() ?? picker.point(camera.centerX, camera.centerY);
+      autoFlat = hiddenAtCenter(p.x, p.y);
+    }
+  }
 
   simulation.advance(paused || start.isOpen() ? 0 : dt * settings.speed, (step) => world.tick(step));
 
