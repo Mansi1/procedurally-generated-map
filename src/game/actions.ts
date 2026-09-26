@@ -10,7 +10,6 @@ import { CROPS, type BuildingType, type CropType } from '../world/catalog';
 import type { UnitProducer } from '../world/building';
 import type { World } from '../world/world';
 import type { Camera } from './Camera';
-import type { Ground } from './Ground';
 import type { Picker } from './Picker';
 import type { Placement } from './Placement';
 import type { Selection } from './Selection';
@@ -28,6 +27,11 @@ export interface ActionUi {
   refreshResources(): void;
   /** Die Kamera hat sich bewegt - was unter dem Zeiger liegt, neu bestimmen. */
   refreshPointer(): void;
+  /**
+   * Die Stelle (x, y) mit ihrer Geländehöhe in die Bildmitte - verdeckt sie
+   * ein Berg, legt sich das Gelände flach (lookAt in main.ts).
+   */
+  lookAt(x: number, y: number): void;
   /** Baumodus für diese Art ein- (oder mit null aus-)schalten. */
   setPlacing(type: BuildingType | null): void;
 }
@@ -38,7 +42,6 @@ export interface GameState {
   selection: Selection;
   placement: Placement;
   picker: Picker;
-  ground: Ground;
   sound: Sound;
 }
 
@@ -48,13 +51,12 @@ export class PlayerActions {
   private selection: Selection;
   private placement: Placement;
   private picker: Picker;
-  private ground: Ground;
   private sound: Sound;
 
   constructor(state: GameState, private ui: ActionUi) {
     ({
       world: this.world, camera: this.camera, selection: this.selection, placement: this.placement,
-      picker: this.picker, ground: this.ground, sound: this.sound,
+      picker: this.picker, sound: this.sound,
     } = state);
   }
 
@@ -227,7 +229,7 @@ export class PlayerActions {
       this.selection.villagers.clear();
       this.selection.villagers.add(next.id);
     }
-    this.camera.centerOn(target.x, target.y, this.ground.heightAt(target.x, target.y));
+    this.ui.lookAt(target.x, target.y);
     this.ui.refreshPointer();
     this.ui.refreshSelection();
   }
@@ -251,9 +253,7 @@ export class PlayerActions {
     this.selection.selectBuildings([this.world.anchorOf(next)], this.world.anchorOf(next));
     // Mitte des Gebäudes in die Bildmitte - mit seiner Geländehöhe, sonst
     // säße es auf einem Hügel ein gutes Stück über der Mitte.
-    const x = next.x + 0.5;
-    const y = next.y + 0.5;
-    this.camera.centerOn(x, y, this.ground.heightAt(x, y));
+    this.ui.lookAt(next.x + 0.5, next.y + 0.5);
     this.ui.refreshPointer();
     this.ui.refreshSelection();
   }

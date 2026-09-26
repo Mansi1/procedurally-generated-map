@@ -16,6 +16,9 @@ const FIELD_REFRESH = 250;
 /** Raster (Tiles), auf das der Äcker-Ausschnitt springt. */
 const FIELD_SNAP = 32;
 
+/** Abtastschritt (Tiles) für coarseGroundAt - die feinen Oktaven fallen dabei weg. */
+const COARSE_STEP = 2;
+
 export class Ground {
   /** Eingeebnete Flächen unter den Gebäuden (world/flatten.ts), je Bild neu. */
   private flatZones: FlatZone[] = [];
@@ -39,6 +42,14 @@ export class Ground {
   groundAt(x: number, y: number): number {
     const step = 4 / (this.camera.tileSize * this.camera.pixelRatio);
     return flatten(x, y, reliefZ(this.mapGen.heightAt(x, y, step)), this.flatZones);
+  }
+
+  /**
+   * Geländehöhe (Tiles) ohne Feindetail - für Fragen im Maßstab ganzer Berge
+   * (steht einer im Weg?), deutlich billiger als groundAt.
+   */
+  coarseGroundAt(x: number, y: number): number {
+    return reliefZ(this.mapGen.heightAt(x, y, COARSE_STEP));
   }
 
   /**
@@ -78,7 +89,8 @@ export class Ground {
     }
     // Der Shader nimmt nur die der Bildmitte nächsten.
     const { x, y } = this.camera;
-    zones.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    // Quadrate reichen zum Vergleichen - ohne Wurzel je Vergleich.
+    zones.sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - ((b.x - x) ** 2 + (b.y - y) ** 2));
     this.flatZones = zones;
     this.renderer.setFlatZones(zones);
   }
