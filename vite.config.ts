@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 
 // import the defuss plugin - JSX for the UI components (resource bar, menu, ...)
@@ -20,9 +21,39 @@ function glbModels(): Plugin {
   };
 }
 
+/**
+ * Nur mit `npm run dev`: nimmt die Baumbilder entgegen, die das Spiel rendert
+ * (EntityRenderer.saveBillboard), und legt sie als PNG in
+ * tools/export/out/billboards/ ab - zum Ansehen.
+ */
+function saveBillboards(): Plugin {
+  const dir = join(import.meta.dirname, 'tools/export/out/billboards');
+  return {
+    name: 'save-billboards',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/__billboards', (req, res) => {
+        const name = basename(decodeURIComponent(req.url ?? ''));
+        if (req.method !== 'POST' || !/^[\w.-]+\.png$/.test(name)) {
+          res.statusCode = 400;
+          res.end();
+          return;
+        }
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.on('end', () => {
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, name), Buffer.concat(chunks));
+          res.end('ok');
+        });
+      });
+    },
+  };
+}
+
 export default defineConfig({
   // add the defuss() plugin to make JSX transpilation work
-  plugins: [glbModels(), defuss()],
+  plugins: [glbModels(), saveBillboards(), defuss()],
   // Skelett-Clips aus Blender (src/models/*.glb) werden mit ?inline eingebettet.
   assetsInclude: ['**/*.glb'],
   build: {

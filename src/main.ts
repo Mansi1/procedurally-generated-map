@@ -39,7 +39,6 @@ import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay'
 import { mountGame } from './components/Hud';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
-import { treeBillboards } from './components/billboards';
 import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound } from './audio';
@@ -283,7 +282,6 @@ function applyFacing(dir: string) {
 window.addEventListener('beforeunload', () => world.save());
 
 const renderer = new MapRenderer(canvas, seed, camera.tileSize, camera.pixelRatio);
-renderer.setBillboards(treeBillboards);
 const minimap = new MiniMap(minimapCanvas, seed, camera.pixelRatio);
 
 camera.moveTo(startX, startY);

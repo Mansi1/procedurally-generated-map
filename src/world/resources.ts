@@ -6,7 +6,7 @@
 // Tausende Tiles; je Bild neu zu rechnen wäre viel zu teuer.
 
 import type { EntityInstance, StaticBatch } from '../gl/entityRenderer';
-import { SHAPE, TREES, modelSize } from '../gl/entityRenderer';
+import { BILLBOARD_HEADINGS, SHAPE, TREES, modelSize } from '../gl/entityRenderer';
 import type { Terrain } from '../map';
 import { reliefZ, type MapGenerator } from '../noise';
 import type { DepositType } from './catalog';
@@ -269,7 +269,11 @@ export class ResourceField {
             color: look.color.map((c) => Math.min(255, Math.round(c * shade))) as [number, number, number],
             shape,
             alpha: 1,
-            motion: [hash(x, y, 5) * Math.PI * 2, 0, 0, 0],
+            // Bäume nur in den Richtungen ihrer Bilder (BILLBOARD_HEADINGS) -
+            // sonst drehte sich ein Baum beim Wechsel zwischen Bild und Modell.
+            motion: [TREES.includes(shape)
+              ? (Math.floor(hash(x, y, 5) * BILLBOARD_HEADINGS) * Math.PI * 2) / BILLBOARD_HEADINGS
+              : hash(x, y, 5) * Math.PI * 2, 0, 0, 0],
             ground: this.groundUnder(ox + 0.5, oy + 0.5, size / 2),
           },
         });

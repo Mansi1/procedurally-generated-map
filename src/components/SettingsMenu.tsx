@@ -11,6 +11,7 @@ import woodBar from '../icons/wood-bar.png';
 import { PLAYER_COLORS } from '../world/catalog';
 import { ANIMALS_BELOW_DEFAULT, resetSettings, saveSettings, type Settings } from '../settings';
 import { ANIMAL_CLASSES } from '../world/unit';
+import { ZOOM_LEVELS } from '../game/Camera';
 import { ShortcutList } from './Shortcuts';
 import { confirmDialog } from './ConfirmDialog';
 
@@ -33,22 +34,20 @@ export interface MenuHooks {
 
 const SPEEDS: [number, string][] = [[1, 'Normal'], [1.5, 'Schnell'], [2, 'Sehr schnell']];
 /**
- * Ab wann Bäume als Bild gezeichnet werden: unter so vielen CSS-Pixeln je
- * Tile. Die Zoomstufen sind 8, 16, 32, 64, 128 px - im Spiel Zoom 1 bis 5,
- * Vorgabe Zoom 3. 16 = nur bei Zoom 1, dort sind Bäume nur wenige Pixel groß.
+ * Wahl "bis Zoom N": Aus oder eine der Zoomstufen (Zoom 1 = weit draußen).
+ * Gespeichert wird die Grenze in CSS-Pixeln je Tile, unter der es gilt - die
+ * doppelte Pixelzahl der gewählten Stufe (Zoom 1 = 8 px → 16).
  */
-const BILLBOARDS: [number, string, string][] = [
-  [0, 'Nie', 'Bäume immer als 3D-Modell'],
-  [16, 'Weit', 'Als Bild bei Zoom 1 - dort sind Bäume nur noch wenige Pixel groß'],
-  [32, 'Mittel', 'Als Bild bei Zoom 1 und 2'],
-  [64, 'Immer', 'Als Bild bei Zoom 1 bis 3 - nur bei Zoom 4 und 5 als Modell'],
-];
-/** Ab wann eine Tierart nicht mehr gezeichnet wird - Zoomstufen wie bei BILLBOARDS. */
-const HIDE_ANIMALS: [number, string, string][] = [
-  [0, 'Nie', 'Immer zeigen'],
-  [16, 'Weit', 'Bei Zoom 1 ausblenden'],
-  [32, 'Mittel', 'Bei Zoom 1 und 2 ausblenden'],
-];
+function zoomChoices(off: string, upTo: (zoom: string) => string): [number, string, string][] {
+  return [
+    [0, 'Aus', off],
+    ...ZOOM_LEVELS.map((px, i): [number, string, string] => [px * 2, String(i + 1), upTo(i === 0 ? 'Zoom 1' : `Zoom 1 bis ${i + 1}`)]),
+  ];
+}
+/** Bäume als Bild bis zu dieser Zoomstufe - weit draußen sind Bäume nur noch wenige Pixel groß. */
+const BILLBOARDS = zoomChoices('Bäume immer als 3D-Modell', (z) => `Bäume als Bild bei ${z}`);
+/** Eine Tierart ausblenden bis zu dieser Zoomstufe. */
+const HIDE_ANIMALS = zoomChoices('Immer zeigen', (z) => `Ausblenden bei ${z}`);
 /** Die Tierarten in der Reihenfolge der Klassen: Kennung und Name. */
 const ANIMAL_KINDS = ANIMAL_CLASSES.map((c) => [c.definition.type, c.definition.label] as const);
 
@@ -194,15 +193,20 @@ export class SettingsMenu {
         <section>
           <h3>Grafik</h3>
           <div class="menu-row">
-            <span title="Bäume als flaches Bild statt als 3D-Modell - weit draußen sieht man kaum einen Unterschied, das Spiel läuft aber flüssiger.">Bäume als Bild</span>
+            <span title="Bäume als flaches Bild statt als 3D-Modell - weit draußen sieht man kaum einen Unterschied, das Spiel läuft aber flüssiger.">Bäume als Bild bis Zoom</span>
             <span class="menu-choice">
               {BILLBOARDS.map(([value, label, hint], i) => (
                 <button type="button" class="wood-btn" title={hint} ref={this.billboardButtons[i]} onClick={() => this.change({ billboards: value })}>{label}</button>
               ))}
             </span>
           </div>
+          <p class="menu-hint">
+            Bis zu dieser Zoomstufe (1 = weit draußen, 5 = ganz nah) werden Bäume als flaches Bild statt als
+            3D-Modell gezeichnet - das Spiel läuft flüssiger, weit draußen sieht man kaum einen Unterschied.
+            {import.meta.env.DEV ? ' Entwicklermodus: die Bilder liegen in tools/export/out/billboards/.' : ''}
+          </p>
           <details class="menu-keys-box">
-            <summary title="Weit draußen sind Tiere kaum zu sehen - ausgeblendet läuft das Spiel flüssiger. Sie leben trotzdem weiter.">Tiere ausblenden</summary>
+            <summary title="Weit draußen sind Tiere kaum zu sehen - ausgeblendet läuft das Spiel flüssiger. Sie leben trotzdem weiter.">Tiere ausblenden bis Zoom</summary>
             {ANIMAL_KINDS.map(([kind, name]) => (
               <div class="menu-row">
                 <span>{name}</span>
@@ -214,6 +218,9 @@ export class SettingsMenu {
                 </span>
               </div>
             ))}
+            <p class="menu-hint">
+              Bis zu dieser Zoomstufe wird die Tierart nicht gezeichnet - die Tiere leben trotzdem weiter.
+            </p>
           </details>
         </section>
         <section>

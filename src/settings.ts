@@ -24,7 +24,7 @@ export interface Settings {
   playerColor: string;
   /**
    * Bäume als Bild statt als Modell unter so vielen CSS-Pixeln je Tile (0:
-   * nie) - weit draußen spart das die meiste Arbeit (components/billboards.ts).
+   * nie) - weit draußen spart das die meiste Arbeit (EntityRenderer.ensureBillboards).
    */
   billboards: number;
   /**

@@ -173,17 +173,38 @@ Kamera zeigt.
 - Die Ansicht des Spiels ist parallel (ohne Perspektive) - ein Baum sieht
   überall auf dem Bildschirm gleich aus. Darum genügt je Baumart ein Bild,
   exakt so, wie das Modell gezeichnet würde.
-- `components/billboards.ts` rendert jede der 10 Baumarten in 4 Drehungen
-  einmal auf der Bühne der Symbole (`modelIcons.ts`) und packt die Bilder in
-  eine Textur. Nach einem Drehen der Karte (Kompass) wird neu gerendert, und
-  einmal, sobald das Blattfoto geladen ist (vorher wären Birken nur grün).
+- `EntityRenderer.ensureBillboards` rendert jede der 10 Baumarten in
+  8 Drehungen direkt in eine Textur des Spiels (unsichtbarer Framebuffer mit
+  Kantenglättung) - erst, wenn eine Zoomstufe die Bilder braucht, nichts im
+  Voraus. Die Größe jedes Bilds wird vorher aus den Eckpunkten des Modells
+  berechnet; kein Kopieren über den Arbeitsspeicher. Früher entstanden die
+  Bilder auf der Bühne der Symbole und wurden per readPixels kopiert - langsam.
+  Neu gerendert wird nach einem Drehen der Karte, beim Wechsel der Zoomstufe
+  und einmal, sobald das Blattfoto geladen ist. Wäre die Textur zu groß für
+  die Grafikkarte (Zoom 5 auf Retina), zeichnet das Spiel Modelle.
 - Im Shader (`uBillboard` in `gl/entityRenderer.ts`) steht das Rechteck am
   Fuß des Baums, nach seiner Größe skaliert; die Tiefe wächst mit der Höhe
   wie beim Modell, Hügel verdecken es richtig. Die Drehung des Baums wählt
   das nächste der 4 Bilder.
-- Die Bilder sind vormultipliziert abgelegt und der Umriss kommt aus einer
-  feineren Mipmap-Stufe - sonst verschwänden dünne Stämme und die Ränder
-  würden dunkel.
+- **Je Zoomstufe eigene Bilder**, in genau der Pixelgröße, in der ein Baum
+  mittlerer Größe dort steht (mit der Pixeldichte des Bildschirms), und mit
+  der vereinfachten Fassung, die das Modell dort zeigt. Zuerst gab es nur
+  ein großes Bild, das die Grafikkarte verkleinerte: Das war dichter als die
+  vereinfachten Modelle, und feine Birkenblätter wurden zu Rauschen. Ragt
+  ein Baum über die Bühne, wird sie größer statt die Auflösung kleiner.
+  Gemerkt werden die Bilder je Blickrichtung und Zoomstufe.
+- Die Bilder sind vormultipliziert abgelegt; halb deckende Ränder und dünne
+  Stämme werden weich eingeblendet wie beim Modell.
+- **Größter Baum, 8 Drehungen:** Gerendert wird der größte Baum (0,72);
+  kleinere werden nur verkleinert, der Shader bleibt bei der scharfen
+  Mipmap-Stufe. Je Baumart 8 Drehungen - ein Bild liegt höchstens 22,5°
+  neben dem Baum (mit 4 waren es 45°, bei Zoom 5 deutlich zu sehen).
+- **Nur bis Zoom 3:** Auf Retina wäre das Bild bei Zoom 4 67 MB groß, bei
+  Zoom 5 262 MB (2048 × 31 988 Pixel) - größer als die Grafikkarte eine
+  Textur nimmt. Das Hochladen schlug fehl, und das Spiel zeigte die Bilder
+  einer kleineren Stufe hochskaliert: unscharfe Bäume bei Zoom 5. Jetzt
+  bietet das Menü Aus, 1, 2, 3 (`BILLBOARD_MAX`), und ein zu großes Bild
+  wird nie hochgeladen - dann zeichnet das Spiel Modelle.
 - Als Bild gezeichnet werden nur die Bäume der festen Puffer; gefällte,
   angefangene und ausgewählte Bäume bleiben Modelle.
 - **Einstellbar** im Menü unter **Grafik → Bäume als Bild**:
@@ -191,8 +212,10 @@ Kamera zeigt.
   Zoomstufen unter der Standardansicht - dort sind Bäume nur wenige Pixel
   groß), *Mittel* (sobald man herauszoomt), *Immer* (auch in der
   Standardansicht).
-- **Geprüft:** Nebeneinander (Modell und Bild, gleiche Ansicht) kaum zu
-  unterscheiden; Drehen der Karte ohne Fehler; Tests, Build, Rauchtest.
+- **Geprüft:** Gleiche Ansicht, im Spiel umgeschaltet: bei Zoom 2 kein
+  Unterschied, bei Zoom 1 sind nur Birken etwas weicher (ein Bild liegt nie
+  genau auf dem Pixelraster - Bäume streuen in der Größe um ±20 %).
+  Drehen der Karte ohne Fehler; Tests, Build, Rauchtest.
 
 ## 8. Tiere weit draußen ausblenden - Branch
 
