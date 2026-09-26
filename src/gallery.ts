@@ -15,12 +15,13 @@ import {
   type EntityInstance,
 } from './gl/entityRenderer';
 import {
-  groundToWorld, setViewElevation, setViewRotation, snapCamera, viewElevation, viewRotation, worldToGround, worldToScreen, type IsoView,
+  groundToWorld, setViewElevation, snapCamera, viewElevation, worldToGround, worldToScreen, type IsoView,
 } from './gl/iso';
-import { mountGallery, type GalleryItem } from './components/GalleryOverlay';
+import { AXIS_COLORS, GIZMO_RADIUS, mountGallery, type GalleryItem } from './components/GalleryOverlay';
 import { ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, VILLAGER, type AnimalKind, type CropType } from './world/catalog';
 import { FLOWER_SIZE } from './world/flowers';
 import { FLOWER_KINDS } from './gl/flowerModel';
+import { GIZMO_RING_FRACTION } from './gl/gizmoModel';
 
 type RGB = [number, number, number];
 
@@ -462,21 +463,53 @@ let animation = 0;
 let demolishing = false;
 /** Stück Boden unter den Modellen (Knopf "Boden"). */
 let showGround = false;
+/** Weißes Gitter: 0 aus, 1 über dem Modell, 2 nur das Gitter. */
+let wireMode = 0;
+/** So viele Tiles liegt das Gitter über dem Modell vor den Flächen - genug gegen Flimmern, zu wenig, um verdeckte Kanten durchscheinen zu lassen. */
+const WIRE_BIAS = 0.002;
+/** Ring des Gizmos unter dem Zeiger oder in der Hand, -1 = keiner. */
+let hotAxis = -1;
 const GRASS: RGB = [98, 128, 60];
 
-/** Ein Stück Boden unter den Instanzen ab `from` - ein Quadrat über ihren Umriss mit etwas Rand. */
-function ground(out: EntityInstance[], from: number) {
+/** Boden und Drehpunkt eines Stücks - am Anfang der Animation gemessen. */
+interface Settled {
+  ground: EntityInstance | null;
+  /** Drehpunkt des Gizmos: Mitte des Umrisses auf halber Höhe des höchsten Modells. */
+  pivot: [number, number, number];
+}
+/** Je Stück (Schlüssel: Modell, Animation, Abriss) - einmal festgelegt, dann bleibt es. */
+const settledBy = new Map<string, Settled>();
+
+/**
+ * Boden und Drehpunkt eines Stücks, gemessen am Anfang der Animation (t = 0)
+ * und ungedreht: der Boden wandert und wächst nicht mit, wenn sich das Stück
+ * bewegt, schrumpft oder gedreht wird, und alle Teile drehen sich um
+ * denselben Punkt.
+ */
+function settled(key: string, draw: (out: EntityInstance[]) => void): Settled {
+  let found = settledBy.get(key);
+  if (!found) {
+    const at: EntityInstance[] = [];
+    draw(at);
+    const g = groundUnder(at);
+    const top = Math.max(0, ...at.map((e) => (renderer.modelHeight(e.shape) ?? 0) * e.size));
+    found = { ground: g, pivot: [g ? g.x + 0.5 : 0, g ? g.y + 0.5 : 0, top / 2] };
+    settledBy.set(key, found);
+  }
+  return found;
+}
+
+function groundUnder(list: EntityInstance[]): EntityInstance | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (let i = from; i < out.length; i++) {
-    const e = out[i];
+  for (const e of list) {
     const r = e.size / 2;
     x0 = Math.min(x0, e.x + 0.5 - r); x1 = Math.max(x1, e.x + 0.5 + r);
     y0 = Math.min(y0, e.y + 0.5 - r); y1 = Math.max(y1, e.y + 0.5 + r);
   }
-  if (x1 < x0) return;
+  if (x1 < x0) return null;
   const size = Math.max(x1 - x0, y1 - y0) * 1.3;
   // Bodenhöhe mitgeben - ohne sie fragte der Shader das Gelände, das es hier nicht gibt.
-  out.push({ x: (x0 + x1) / 2 - 0.5, y: (y0 + y1) / 2 - 0.5, size, color: GRASS, shape: SHAPE.flat, alpha: 1, ground: 0, motion: [0, 0, 0, 1] });
+  return { x: (x0 + x1) / 2 - 0.5, y: (y0 + y1) / 2 - 0.5, size, color: GRASS, shape: SHAPE.flat, alpha: 1, ground: 0, motion: [0, 0, 0, 1] };
 }
 
 const { canvas, labels: labelEls, titles: titleEls, show, files, vertices, gizmo } = mountGallery(
@@ -491,20 +524,29 @@ const { canvas, labels: labelEls, titles: titleEls, show, files, vertices, gizmo
       demolishing = !demolishing;
       choose(current, animation, false);
     },
-    rotate: (step) => {
-      setViewRotation(viewRotation() + step);
-      if (current >= 0) frame0();
-    },
-    wireframe: () => (renderer.wireframe = !renderer.wireframe),
+    wireframe: () => (wireMode = (wireMode + 1) % 3),
     ground: () => (showGround = !showGround),
-    whiteWire: () => !!(renderer.wireColor = renderer.wireColor ? null : [1, 1, 1, 1]),
     plain: () => (renderer.plain = !renderer.plain),
     turn: (axis, radians) => turnModel(axis, radians),
+    reset: () => {
+      renderer.modelRotation.set([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+      spin = 0;
+      setViewElevation(Math.PI / 6);
+      if (current >= 0) frame0();
+    },
+    hover: (axis) => {
+      hotAxis = axis;
+    },
+    zoom: (factor) => {
+      zoom = Math.min(MAX_ZOOM, Math.max(12, zoom * factor));
+    },
   },
 );
 
 const gl = canvas.getContext('webgl2', { antialias: true, depth: true, alpha: false })!;
 const renderer = new EntityRenderer(gl);
+// Das Gitter ist immer weiß - auf dem dunklen Grund und über dem Modell gut zu sehen.
+renderer.wireColor = [1, 1, 1, 1];
 // Kein Boden, in dem ein Sockel verschwinden könnte.
 renderer.skirts = false;
 
@@ -599,7 +641,8 @@ function fit() {
   if (x1 < 0) return;
   const pr = pixelRatio;
   // Bühne: rechts der Liste, unter der Hilfe, über Name und Knöpfen.
-  const left = LIST_WIDTH * pr, right = w - 16 * pr, top = 50 * pr, bottom = h - 150 * pr;
+  // Rechts oben steht der Dreh-Gizmo - rechts davon bleibt frei.
+  const left = LIST_WIDTH * pr, right = w - 180 * pr, top = 50 * pr, bottom = h - 150 * pr;
   const clipped = x0 <= 2 || y0 <= 2 || x1 >= w - 3 || y1 >= h - 3;
   const f = clipped ? 0.5 : Math.min(((right - left) * 0.8) / (x1 - x0 + 1), ((bottom - top) * 0.8) / (y1 - y0 + 1));
   const newZoom = Math.min(MAX_ZOOM, Math.max(12, zoom * f));
@@ -709,44 +752,115 @@ function spinAll(out: EntityInstance[], angle: number) {
 }
 
 /**
- * Dreh-Gizmo: das Modell um die Weltachse `axis` (0 x, 1 y, 2 z oben)
- * weiterdrehen - die neue Drehung kommt vor die bisherige (R = D * R).
+ * Dreh-Gizmo: das Modell um seine eigene Achse `axis` (0 x, 1 y, 2 z oben)
+ * weiterdrehen - die Ringe drehen sich mit, die neue Drehung kommt darum
+ * hinter die bisherige (R = R * D).
  */
 function turnModel(axis: number, radians: number) {
   const c = Math.cos(radians), s = Math.sin(radians);
   const [i, j] = [(axis + 1) % 3, (axis + 2) % 3];
   const r = renderer.modelRotation;
-  // Spaltenweise: r[col * 3 + row]. D dreht in der Ebene (i, j).
-  for (let col = 0; col < 3; col++) {
-    const a = r[col * 3 + i], b = r[col * 3 + j];
-    r[col * 3 + i] = c * a - s * b;
-    r[col * 3 + j] = s * a + c * b;
+  // Spaltenweise: r[col * 3 + row]. D dreht in der Ebene (i, j) - es mischt die Spalten i und j.
+  for (let row = 0; row < 3; row++) {
+    const a = r[i * 3 + row], b = r[j * 3 + row];
+    r[i * 3 + row] = c * a + s * b;
+    r[j * 3 + row] = -s * a + c * b;
   }
 }
 
-/** Die Ringe des Gizmos um die Modellmitte, auf den Bildschirm gebracht. */
+/** Ein Punkt des Modells (Weltachsen um seine Mitte) mit der Drehung des Gizmos. */
+function rotated([x, y, z]: number[]): [number, number, number] {
+  const r = renderer.modelRotation;
+  return [r[0] * x + r[3] * y + r[6] * z, r[1] * x + r[4] * y + r[7] * z, r[2] * x + r[5] * y + r[8] * z];
+}
+
+/**
+ * Die Ringe des Gizmos in der Ecke: je Achse des Modells ein Kreis - mit ihm
+ * gedreht -, so auf den Bildschirm gebracht, wie die Kamera gerade schaut -
+ * um (0, 0), Radius 1.
+ */
 function placeGizmo() {
-  const main = instances.find((e) => renderer.modelHeight(e.shape) !== undefined);
-  if (current < 0 || !main) return gizmo(null);
-  const view: IsoView = { centerX: camX, centerY: camY, tileSize: zoom, width: window.innerWidth, height: window.innerHeight };
-  const height = renderer.modelHeight(main.shape)! * main.size;
-  const cx = main.x + 0.5, cy = main.y + 0.5, cz = height / 2;
-  const radius = Math.max(height, main.size) * 0.6;
-  const center = worldToScreen(view, cx, cy, cz);
-  gizmo(center, [0, 1, 2].map((axis) => {
+  if (current < 0) return gizmo(null);
+  const view: IsoView = { centerX: 0, centerY: 0, tileSize: 1, width: 0, height: 0 };
+  const rings = [0, 1, 2].map((axis) => {
     const pts: { x: number; y: number }[] = [];
     for (let k = 0; k <= 48; k++) {
       const t = (k / 48) * Math.PI * 2;
       const q = [0, 0, 0];
-      q[(axis + 1) % 3] = Math.cos(t) * radius;
-      q[(axis + 2) % 3] = Math.sin(t) * radius;
-      pts.push(worldToScreen(view, cx + q[0], cy + q[1], cz + q[2]));
+      q[(axis + 1) % 3] = Math.cos(t);
+      q[(axis + 2) % 3] = Math.sin(t);
+      pts.push(worldToScreen(view, ...rotated(q)));
     }
-    // Umlaufsinn auf dem Bildschirm (y nach unten): > 0 im Uhrzeigersinn.
-    let area = 0;
-    for (let k = 0; k < 48; k++) area += pts[k].x * pts[k + 1].y - pts[k + 1].x * pts[k].y;
-    return { points: pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '), winding: area >= 0 ? 1 : -1 };
-  }));
+    return pts;
+  });
+  // Maßstab: Radius des Umrisses der Einheitskugel auf dem Bildschirm (größter
+  // Singulärwert der Projektion) - hängt nur an der Kamera, der Gizmo pumpt
+  // beim Drehen des Modells nicht.
+  const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map(([x, y, z]) => worldToScreen(view, x, y, z));
+  const xx = axes.reduce((sum, p) => sum + p.x * p.x, 0);
+  const yy = axes.reduce((sum, p) => sum + p.y * p.y, 0);
+  const xy = axes.reduce((sum, p) => sum + p.x * p.y, 0);
+  const r = Math.sqrt((xx + yy) / 2 + Math.sqrt(((xx - yy) / 2) ** 2 + xy * xy));
+  const box = gizmo(rings.map((pts) => pts.map((p) => ({ x: p.x / r, y: p.y / r }))));
+  if (box) drawGizmo(box, r);
+}
+
+/** Größe der Gizmo-Ringe (Instanzgröße) - beliebig, der Zoom gleicht sie aus. */
+const GIZMO_SIZE = 2;
+const gizmoRings: EntityInstance[] = [SHAPE.gizmoX, SHAPE.gizmoY, SHAPE.gizmoZ].map((shape) => ({
+  x: -0.5, y: -0.5, size: GIZMO_SIZE, color: [0, 0, 0], shape, alpha: 1, motion: [0, 0, 0, 0],
+}));
+/** Die Flächen in den Ringen: in der Farbe des Rings, stark durchsichtig. */
+const gizmoDiscs: EntityInstance[] = [SHAPE.gizmoDiscX, SHAPE.gizmoDiscY, SHAPE.gizmoDiscZ].map((shape) => ({
+  x: -0.5, y: -0.5, size: GIZMO_SIZE, color: [0, 0, 0], shape, alpha: 0.2, motion: [0, 0, 0, 0],
+}));
+const AXIS_RGB = AXIS_COLORS.map((c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)) as RGB);
+
+/**
+ * Die drei Ringe als 3D-Modell in das Feld des Gizmos (CSS-Pixel): eigener
+ * Ausschnitt mit eigener Tiefe, gedreht wie das Modell (modelRotation), so
+ * groß, dass sie auf den Greifflächen liegen - `silhouette` ist der Radius der
+ * Einheitskugel auf dem Bildschirm je Tile (placeGizmo).
+ */
+function drawGizmo(box: DOMRect, silhouette: number) {
+  const pr = pixelRatio;
+  const [x, y, w, h] = [Math.round(box.left * pr), Math.round(canvas.height - box.bottom * pr), Math.round(box.width * pr), Math.round(box.height * pr)];
+  gizmoRings.forEach((e, axis) => {
+    // Unter dem Zeiger heller.
+    e.color = axis === hotAxis ? AXIS_RGB[axis].map((c) => Math.round(c + (255 - c) * 0.45)) as RGB : AXIS_RGB[axis];
+    // Die Fläche des gegriffenen Rings deckt mehr.
+    gizmoDiscs[axis].color = AXIS_RGB[axis];
+    gizmoDiscs[axis].alpha = axis === hotAxis ? 0.4 : 0.2;
+  });
+  // Kamera auf die Mitte der Ringe (halbe Höhe), Ringradius = GIZMO_RADIUS Pixel.
+  const ppt = (GIZMO_RADIUS / (GIZMO_SIZE * GIZMO_RING_FRACTION * silhouette)) * pr;
+  const mid = worldToScreen({ centerX: 0, centerY: 0, tileSize: 1, width: 0, height: 0 }, 0, 0, GIZMO_SIZE / 2);
+  const center = groundToWorld(mid.x, mid.y);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(x, y, w, h);
+  gl.viewport(x, y, w, h);
+  gl.clearColor(0.09, 0.1, 0.12, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  // Die Ringe immer voll - auch wenn das Modell als Gitter gezeigt wird.
+  const wire = renderer.wireframe;
+  renderer.wireframe = false;
+  renderer.targetSize = { width: w, height: h };
+  const camera = { centerX: center.x, centerY: center.y, pixelsPerTile: ppt, reliefScale: 0 };
+  // Die Ringe drehen sich um ihre eigene Mitte - danach wieder der Punkt des Stücks.
+  const pivot = [...renderer.modelPivot];
+  renderer.modelPivot.set([0, 0, GIZMO_SIZE / 2]);
+  renderer.render(gizmoRings, camera, 0, pr);
+  // Flächen danach, ohne Tiefe zu schreiben: sie schneiden sich und sind durchsichtig -
+  // so verdeckt keine die andere, die Ringe davor verdecken sie aber.
+  renderer.depthWrite = false;
+  renderer.render(gizmoDiscs, camera, 0, pr);
+  renderer.depthWrite = true;
+  gl.depthMask(true);
+  renderer.modelPivot.set(pivot);
+  renderer.targetSize = null;
+  renderer.wireframe = wire;
+  gl.disable(gl.SCISSOR_TEST);
+  gl.viewport(0, 0, canvas.width, canvas.height);
 }
 
 function frame(now: number) {
@@ -755,16 +869,19 @@ function frame(now: number) {
   // Solange die Kamera sich einpasst (fit), ohne Boden - sonst passte sie den Boden ein.
   const withGround = showGround && fitPasses === 0;
   if (current < 0) {
-    for (const p of placed) {
-      const from = instances.length;
+    placed.forEach((p, i) => {
       p.item.draw(t, p.x, p.y, instances);
-      if (withGround) ground(instances, from);
-    }
+      const g = withGround && settled(`alle:${i}`, (out) => p.item.draw(0, p.x, p.y, out)).ground;
+      if (g) instances.push(g);
+    });
   } else {
     const s = SHOWCASE[current];
-    (demolishing && s.demolish ? s.demolish[animation] : s.exhibits[animation]).draw(t, 0, 0, instances);
+    const exhibit = demolishing && s.demolish ? s.demolish[animation] : s.exhibits[animation];
+    exhibit.draw(t, 0, 0, instances);
     spinAll(instances, spin);
-    if (withGround) ground(instances, 0);
+    const st = settled(`${current}:${animation}:${demolishing}`, (out) => exhibit.draw(0, 0, 0, out));
+    renderer.modelPivot.set(st.pivot);
+    if (withGround && st.ground) instances.push(st.ground);
     files([...new Set(instances.map((e) => renderer.modelFile(e.shape)).filter((f) => f !== undefined))]);
   }
 
@@ -774,13 +891,23 @@ function frame(now: number) {
   // Ohne Relief: alles steht auf einer flachen Ebene, die nicht gezeichnet wird.
   const camera = snapCamera({ centerX: camX, centerY: camY, pixelsPerTile: zoom * pixelRatio, reliefScale: 0 }, canvas.width, canvas.height);
   const drawnBefore = renderer.drawnVertices;
+  renderer.wireframe = wireMode === 2;
   renderer.render(instances, camera, 0, pixelRatio);
   if (current >= 0) vertices(renderer.drawnVertices - drawnBefore);
-  placeGizmo();
+  if (wireMode === 1) {
+    // Gitter über dem Modell: ein zweiter Durchgang nur mit den Kanten, ohne den Boden.
+    renderer.wireframe = true;
+    renderer.wireBias = WIRE_BIAS;
+    renderer.render(instances.filter((e) => e.shape !== SHAPE.flat), camera, 0, pixelRatio);
+    renderer.wireBias = 0;
+    renderer.wireframe = false;
+  }
   if (fitPasses > 0 && current >= 0) {
     fitPasses--;
     fit();
   }
+  // Nach dem Einpassen - fit liest das Bild und sähe sonst die Ringe.
+  placeGizmo();
 
   if (current < 0) {
     const view: IsoView = { centerX: camX, centerY: camY, tileSize: zoom, width: window.innerWidth, height: window.innerHeight };

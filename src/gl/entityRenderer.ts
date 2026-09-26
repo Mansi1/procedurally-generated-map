@@ -66,6 +66,7 @@ import gold1Model from '../models/gold_1.glb?model';
 import gold2Model from '../models/gold_2.glb?model';
 import gold3Model from '../models/gold_3.glb?model';
 import berryBush1Model from '../models/berry_bush_1.glb?model';
+import { gizmoModel } from './gizmoModel';
 import { FLOWER_KINDS, flowerModel } from './flowerModel';
 import berryBush2Model from '../models/berry_bush_2.glb?model';
 import berryBush3Model from '../models/berry_bush_3.glb?model';
@@ -235,6 +236,14 @@ export const SHAPE = {
   flowerClover: 112,
   /** Hopfenfeld - wie die Felder oben, nur hinter den Blumen: ab 86 war kein Platz mehr für neun Furchen. */
   farmHop: 113,
+  /** Dreh-Gizmo der Galerie: je Achse ein Ring (gl/gizmoModel.ts), in der Instanzfarbe. */
+  gizmoX: 122,
+  gizmoY: 123,
+  gizmoZ: 124,
+  /** Die Flächen in den Ringen - halbdurchsichtig, ohne Tiefe zu schreiben (depthWrite). */
+  gizmoDiscX: 125,
+  gizmoDiscY: 126,
+  gizmoDiscZ: 127,
 } as const;
 
 /** Die Blumen-Formen, in der Reihenfolge von FLOWER_KINDS. */
@@ -649,7 +658,9 @@ uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 // sich von selbst bewegt.
 uniform float uModelScale;
 uniform float uModelTop;     // Höhe des Modells in Modell-Einheiten (Bäume: Absägen)
-uniform mat3 uModelRot;      // Galerie: Drehung um die Modellmitte in Weltachsen (Dreh-Gizmo), sonst Einheit
+uniform mat3 uModelRot;      // Galerie: Drehung aller Modelle um uModelPivot (Dreh-Gizmo), sonst Einheit
+uniform vec3 uModelPivot;    // Galerie: Drehpunkt in der Welt (Tiles, z Höhe)
+uniform float uWireBias;     // Galerie: Gitter über dem Modell so viele Tiles zur Kamera, sonst 0
 uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
@@ -1138,11 +1149,6 @@ void main() {
     float heading = field ? 0.0 : aMotion.x;
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
-    // Galerie: in Weltachsen um die halbe Modellhöhe drehen, dann zurück in
-    // Modellachsen - der Rest (Blickrichtung, Umfallen ...) bleibt gleich.
-    vec3 pivot = vec3(0.0, 0.0, uModelTop * 0.5);
-    vec3 turned = uModelRot * (vec3(forward * p.x + left * p.y, p.z) - pivot) + pivot;
-    p = vec3(dot(turned.xy, forward), dot(turned.xy, left), turned.z);
     vec2 offset = (forward * p.x + left * p.y) * scale;
 
     // Laub wie eine weiche Kugel beleuchten statt Fläche für Fläche: die
@@ -1225,6 +1231,10 @@ void main() {
     // Wand unter der Erde heraus.
     if (uSkirt > 0.5 && !figure && !natural && !field && !beast && p.z < 0.001) z = base - 1.0;
     world = vec3(xy, z);
+    // Galerie: alles zusammen um einen Punkt drehen - erst nach Animation,
+    // Blickrichtung und Lage, so bleiben Teile (Werkzeug in der Hand, Blumen
+    // einer Wiese) zueinander, wie sie sind.
+    world = uModelRot * (world - uModelPivot) + uModelPivot;
   } else if (shape == 17) {
     // Staub: ein zur Kamera gedrehter Fleck. Mitte in der Welt, Ausdehnung
     // in Bildschirmpixeln - so wirkt die Wolke von jeder Seite rund.
@@ -1309,6 +1319,8 @@ void main() {
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
   if (${FIELD_TEST}) gl_Position.z -= 0.2 / uDepthRange;
+  // Galerie: Gitter über dem Modell ein Stück zur Kamera - sonst flimmerte es mit den Flächen.
+  gl_Position.z -= uWireBias / uDepthRange;
 }
 `;
 
@@ -2591,6 +2603,10 @@ const MODELS: {
   // Blumen: ein Modell für alle Arten, die Blüte malt der Shader je Form.
   // In Breite 1 gebaut - die Instanzgröße ist ihre Breite in Tiles.
   ...FLOWERS.map((shape) => ({ shape, model: FLOWER_MODEL, scale: 1 })),
+  ...[SHAPE.gizmoX, SHAPE.gizmoY, SHAPE.gizmoZ, SHAPE.gizmoDiscX, SHAPE.gizmoDiscY, SHAPE.gizmoDiscZ].map((shape, k) => {
+    const { obj, mtl } = gizmoModel(k % 3, k >= 3);
+    return { shape, model: loadModel(obj, mtl, 'width'), scale: 1 };
+  }),
   ...natural(SHAPE.berryBush, berryBush1Model.obj, berryBush1Model.mtl, BUSH_METERS),
   ...natural(SHAPE.berryBush2, berryBush2Model.obj, berryBush2Model.mtl, BUSH_METERS),
   ...natural(SHAPE.berryBush3, berryBush3Model.obj, berryBush3Model.mtl, BUSH_METERS),
@@ -2826,14 +2842,20 @@ export class EntityRenderer {
   flatCount = 0;
   /** Gebäude mit Sockel in den Boden - ohne Gelände (Galerie) stünden sie auf Stelzen. */
   skirts = true;
+  /** Modelle schreiben Tiefe - aus für Durchsichtiges, das sich schneidet (Flächen des Gizmos). */
+  depthWrite = true;
   /** Nur die Kanten der Dreiecke zeichnen (Galerie) - siehe draw(). */
   wireframe = false;
   /** Galerie: Farbe des Drahtgitters (RGBA 0..1), null = Materialfarben. */
   wireColor: [number, number, number, number] | null = null;
   /** Galerie: ohne Texturen, nur Materialfarben. */
   plain = false;
-  /** Galerie: Drehung der Modelle um ihre Mitte in Weltachsen (spaltenweise 3x3), sonst Einheit. */
+  /** Galerie: Drehung aller Modelle um modelPivot in Weltachsen (spaltenweise 3x3), sonst Einheit. */
   modelRotation = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  /** Galerie: Drehpunkt dazu, in der Welt (Tiles, z Höhe). */
+  modelPivot = new Float32Array(3);
+  /** Galerie: Gitter über dem gezeichneten Modell so viele Tiles zur Kamera gezogen. */
+  wireBias = 0;
   /** Gezeichnete Eckpunkte der Modelle seit dem Start - die Galerie liest den Zuwachs je Bild. */
   drawnVertices = 0;
   /** Kanten je Dreieck (3i-3i+1, 3i+1-3i+2, 3i+2-3i) für das Drahtgitter, wächst bei Bedarf. */
@@ -2866,7 +2888,8 @@ export class EntityRenderer {
   /** Die Baumbilder der jetzigen Blickrichtung und Zoomstufe - erst gerendert, wenn sie gebraucht werden. */
   private billboardSet: BillboardSet | null = null;
   /** Zeichenfläche, wenn nicht ins Canvas gezeichnet wird (die Baumbilder). */
-  private targetSize: { width: number; height: number } | null = null;
+  /** Zeichenfläche statt des Canvas - Baumbilder, Dreh-Gizmo der Galerie (eigener Ausschnitt). */
+  targetSize: { width: number; height: number } | null = null;
   /** Ein Rechteck aus zwei Dreiecken - die Fläche eines Billboards. */
   private quad: Mesh;
   /** Clip-Uniforms je Modell (Form): erste Zeile jedes Clips in clipTexture, Länge, Pose ... */
@@ -3404,6 +3427,8 @@ export class EntityRenderer {
     gl.uniform1i(this.location('uFlatCount'), this.flatCount);
     gl.uniform1i(this.location('uPlain'), this.plain ? 1 : 0);
     gl.uniformMatrix3fv(this.location('uModelRot'), false, this.modelRotation);
+    gl.uniform3fv(this.location('uModelPivot'), this.modelPivot);
+    gl.uniform1f(this.location('uWireBias'), this.wireBias);
     gl.uniform4fv(this.location('uWire'), this.wireframe && this.wireColor ? this.wireColor : [0, 0, 0, 0]);
     // Nur Modelle setzen ihr Detail-Bild (drawModel) - alles andere malt nichts auf.
     gl.uniform1i(this.location('uDetailLayer'), -1);
@@ -3417,7 +3442,7 @@ export class EntityRenderer {
     // Gebäude auf demselben Feld nicht verdecken.
     gl.depthMask(false);
     this.draw(this.flat, 0, flats.length);
-    gl.depthMask(true);
+    gl.depthMask(this.depthWrite);
     this.draw(this.building, flats.length, solids.length);
 
     gl.uniform1f(this.location('uTime'), animationTime());
@@ -3497,13 +3522,17 @@ export class EntityRenderer {
       first += m.list.length;
     }
     if (figures.length > 0) {
-      gl.depthMask(false);
-      gl.depthFunc(gl.GREATER);
-      gl.uniform1i(this.location('uSilhouette'), 1);
-      for (const [m, offset] of figures) drawModel(m, offset);
-      gl.uniform1i(this.location('uSilhouette'), 0);
-      gl.depthFunc(gl.LEQUAL);
-      gl.depthMask(true);
+      // Verdecktes als Silhouette - nicht im Gitter: dort würde es die
+      // verdeckten Kanten zeichnen.
+      if (!this.wireframe) {
+        gl.depthMask(false);
+        gl.depthFunc(gl.GREATER);
+        gl.uniform1i(this.location('uSilhouette'), 1);
+        for (const [m, offset] of figures) drawModel(m, offset);
+        gl.uniform1i(this.location('uSilhouette'), 0);
+        gl.depthFunc(gl.LEQUAL);
+        gl.depthMask(true);
+      }
       for (const [m, offset] of figures) drawModel(m, offset);
     }
 

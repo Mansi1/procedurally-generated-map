@@ -152,3 +152,66 @@
   background: linear-gradient(180deg, #d8483a, #8e2e1f);
   box-shadow: 0 0 8px rgba(216, 72, 58, 0.7);
 }
+
+/* Dreh-Gizmo unten rechts, darunter Zoom und Reset. */
+.gal-gizmo {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.gal-gizmo[hidden] {
+  display: none;
+}
+.gal-gizmo-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+/* Greifflächen der Ringe: unsichtbar, breiter als die gezeichneten Ringe. */
+.gal-axis-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: grab;
+}
+/* Feld der 3D-Ringe: das Canvas darunter zeichnet sie, hier nur der Rahmen. */
+.gal-gizmo svg {
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+/* Legende: welche Farbe welche Achse ist - die gerade gegriffene hervorgehoben. */
+.gal-gizmo-legend {
+  display: flex;
+  gap: 12px;
+  font: bold 12px ui-monospace, Menlo, monospace;
+}
+.gal-gizmo-legend span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--cream-muted);
+}
+.gal-gizmo-legend span::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--axis);
+  opacity: 0.75;
+}
+.gal-gizmo-legend span.hot {
+  color: #fff;
+}
+.gal-gizmo-legend span.hot::before {
+  opacity: 1;
+  box-shadow: 0 0 0 2px #fff;
+}
+.gal-gizmo-caption {
+  font-size: 11px;
+  color: var(--cream-muted);
+}

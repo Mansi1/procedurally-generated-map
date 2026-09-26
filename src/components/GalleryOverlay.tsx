@@ -1,7 +1,7 @@
 // GalleryOverlay.tsx
 // Die Seite der Galerie (/galerie): das Canvas, links die Liste der Modelle
 // (nach Gruppen), unten die Animationen des gewählten Modells und Knöpfe zum
-// Drehen und fürs Drahtgitter samt Zahl der Eckpunkte - dazu für die Übersicht aller Modelle die Beschriftungen. Einmal
+// Knöpfe fürs Drahtgitter, den Boden und die Texturen samt Zahl der Eckpunkte - dazu für die Übersicht aller Modelle die Beschriftungen. Einmal
 // gerendert; gallery.ts setzt über die zurückgegebenen Funktionen, was
 // gewählt ist, und über die Elemente, wo die Beschriftungen stehen.
 
@@ -9,6 +9,15 @@ import { createRef, render, type Ref } from 'defuss';
 import './GalleryOverlay.css';
 
 /** Ein Eintrag der Liste: Gruppe, Name und seine Animationen (Namen). */
+/** Die Achsen des Dreh-Gizmos und ihre Farben wie in Blender. */
+const AXES = ['X', 'Y', 'Z'];
+/** Beschriftung des Gitter-Knopfs je Stufe. */
+const WIRE_LABELS = ['Gitter', 'Gitter + Modell', 'Nur Gitter'];
+
+export const AXIS_COLORS = ['#e04848', '#5cc85c', '#4a78e8'];
+/** Radius der Ringe im Gizmo, CSS-Pixel (das Feld ist 140 breit). */
+export const GIZMO_RADIUS = 58;
+
 export interface GalleryItem {
   group: string;
   label: string;
@@ -24,18 +33,20 @@ export interface GalleryHooks {
   animate(index: number): void;
   /** Zusatz (Abriss) ein- oder ausschalten. */
   extra(): void;
-  /** Ansicht drehen: -1 links herum, +1 rechts herum. */
-  rotate(step: number): void;
-  /** Drahtgitter ein oder aus - liefert, ob es jetzt an ist. */
-  wireframe(): boolean;
+  /** Drahtgitter (weiß) weiterschalten: aus, über dem Modell, nur Gitter - liefert die neue Stufe 0..2. */
+  wireframe(): number;
   /** Stück Boden unter den Modellen ein oder aus - liefert, ob es jetzt an ist. */
   ground(): boolean;
-  /** Drahtgitter weiß statt in den Materialfarben - liefert, ob es jetzt weiß ist. */
-  whiteWire(): boolean;
   /** Texturen aus oder an - liefert, ob sie jetzt aus sind. */
   plain(): boolean;
   /** Dreh-Gizmo: das Modell um Achse 0 (x), 1 (y) oder 2 (z, oben) um `radians` weiterdrehen. */
   turn(axis: number, radians: number): void;
+  /** Zurück in den Ursprung: ungedreht, Kamera neu eingepasst. */
+  reset(): void;
+  /** Zoomen um diesen Faktor (> 1 hinein). */
+  zoom(factor: number): void;
+  /** Ring unter dem Zeiger oder in der Hand (0 x, 1 y, 2 z), -1 = keiner - er leuchtet heller. */
+  hover(axis: number): void;
 }
 
 export interface GalleryElements {
@@ -51,11 +62,13 @@ export interface GalleryElements {
   /** Gezeichnete Eckpunkte des gezeigten Modells. */
   vertices(count: number): void;
   /**
-   * Dreh-Gizmo: Mitte (CSS-Pixel) und je Achse die Ringpunkte - null blendet
-   * ihn aus. `winding` je Ring: +1, wenn er auf dem Bildschirm im Uhrzeigersinn
-   * läuft, sonst -1 - daraus die Drehrichtung beim Ziehen.
+   * Dreh-Gizmo in der Ecke: je Achse der Ring als Punkte auf dem Bildschirm,
+   * um (0, 0), Radius 1 = GIZMO_RADIUS Pixel - so, wie die Kamera gerade
+   * schaut. Die Ringe selbst zeichnet gallery.ts als 3D-Modell in das
+   * gelieferte Feld (CSS-Pixel); hier liegen nur die unsichtbaren Greifflächen.
+   * null blendet ihn aus.
    */
-  gizmo(center: { x: number; y: number } | null, ring?: { points: string; winding: number }[]): void;
+  gizmo(rings: { x: number; y: number }[][] | null): DOMRect | null;
 }
 
 /**
@@ -75,18 +88,29 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
   const countLine = createRef<HTMLDivElement>();
   const wireButton = createRef<HTMLButtonElement>();
   const groundButton = createRef<HTMLButtonElement>();
-  const whiteButton = createRef<HTMLButtonElement>();
   const plainButton = createRef<HTMLButtonElement>();
   const gizmoSvg = createRef<SVGSVGElement>();
   /** Stand des Gizmos aus gallery.ts - Mitte und Umlaufsinn der Ringe. */
-  let gizmoCenter = { x: 0, y: 0 };
+  const gizmoPanel = createRef<HTMLDivElement>();
   let windings = [1, 1, 1];
+  const gizmoCaption = createRef<HTMLDivElement>();
+  /** Welcher Ring hervorgehoben ist: beim Überfahren und solange gezogen wird. */
+  let dragging = false;
+  const highlight = (axis: number) => {
+    legend.forEach((l, i) => l.classList.toggle('hot', i === axis));
+    hooks.hover(axis);
+    gizmoCaption.current.textContent = axis < 0 ? 'Ring ziehen zum Drehen' : `Drehen um ${AXES[axis]}`;
+  };
 
   // Ziehen an einem Ring: der Winkel des Zeigers um die Mitte, je nach
   // Umlaufsinn des Rings vorwärts oder rückwärts.
   const startTurn = (e: PointerEvent, axis: number) => {
     e.preventDefault();
-    const angle = (ev: PointerEvent) => Math.atan2(ev.clientY - gizmoCenter.y, ev.clientX - gizmoCenter.x);
+    dragging = true;
+    highlight(axis);
+    const box = gizmoSvg.current.getBoundingClientRect();
+    const [mx, my] = [box.left + box.width / 2, box.top + box.height / 2];
+    const angle = (ev: PointerEvent) => Math.atan2(ev.clientY - my, ev.clientX - mx);
     let last = angle(e);
     const move = (ev: PointerEvent) => {
       const a = angle(ev);
@@ -96,7 +120,11 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
       last = a;
       hooks.turn(axis, d * windings[axis]);
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
+      dragging = false;
+      // Zeiger noch über einem Ring? Dann bleibt der hervorgehoben.
+      const over = (ev.target as Element | null)?.closest?.('.gal-axis-hit');
+      highlight(over ? Number(over.getAttribute('data-axis')) : -1);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
@@ -109,12 +137,22 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
     <>
       <canvas ref={canvas} class="gal-canvas" />
       {/* Übersicht: Beschriftungen, gesetzt je Bild von gallery.ts */}
-      {/* Dreh-Gizmo über dem Modell: X rot, Y grün, Z blau - Ziehen an einem Ring dreht um seine Achse. */}
-      <svg class="gal-gizmo" ref={gizmoSvg} style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none">
-        {['#e04848', '#5cc85c', '#4a78e8'].map((color, axis) => (
-          <polyline fill="none" stroke={color} stroke-width="3" data-axis={String(axis)} style="pointer-events:stroke;cursor:grab" />
-        ))}
-      </svg>
+      {/* Dreh-Gizmo in der Ecke: X rot, Y grün, Z blau - Ziehen an einem Ring dreht um seine Achse. */}
+      <div class="gal-gizmo" ref={gizmoPanel}>
+        {/* Die Ringe zeichnet gallery.ts als 3D-Modell darunter ins Canvas - hier nur, wo man sie greift. */}
+        <svg ref={gizmoSvg} viewBox="-70 -70 140 140" width="140" height="140">
+          {AXIS_COLORS.map((_, axis) => <polyline class="gal-axis-hit" data-axis={String(axis)} />)}
+        </svg>
+        <div class="gal-gizmo-legend">
+          {AXIS_COLORS.map((color, axis) => <span style={`--axis:${color}`}>{AXES[axis]}</span>)}
+        </div>
+        <div class="gal-gizmo-caption" ref={gizmoCaption}>Ring ziehen zum Drehen</div>
+        <div class="gal-gizmo-buttons">
+          <button type="button" class="wood-btn" title="Hinein zoomen" onClick={() => hooks.zoom(1.25)}>+</button>
+          <button type="button" class="wood-btn" title="Heraus zoomen" onClick={() => hooks.zoom(0.8)}>−</button>
+          <button type="button" class="wood-btn" title="Zurück in den Ursprung: ungedreht, neu eingepasst" onClick={() => hooks.reset()}>Reset</button>
+        </div>
+      </div>
       <div class="gal-labels" ref={overview}>
         {labels.map((text, i) => <div ref={labelRefs[i]} class="gal-label">{text}</div>)}
         {titles.map((text, i) => <div ref={titleRefs[i]} class="gal-row-title">{text}</div>)}
@@ -135,21 +173,21 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
         ])}
       </nav>
 
-      {/* Unten: Name, Animationen, Drehen - nur für ein einzelnes Modell. */}
+      {/* Unten: Name, Animationen, Ansicht - nur für ein einzelnes Modell. */}
       <div class="gal-stage" ref={stage}>
         <div class="gal-heading" ref={heading} />
         <div class="gal-file" ref={fileLine} />
         <div class="gal-file" ref={countLine} />
         <div class="gal-chips" ref={chips} />
         <div class="gal-rotate">
-          <button type="button" class="wood-btn" title="Links herum drehen" onClick={() => hooks.rotate(-1)}>⟲</button>
-          <button type="button" class="wood-btn" title="Rechts herum drehen" onClick={() => hooks.rotate(1)}>⟳</button>
-          <button type="button" class="wood-btn gal-chip" ref={wireButton} title="Drahtgitter ein/aus"
-            onClick={() => wireButton.current.classList.toggle('active', hooks.wireframe())}>Gitter</button>
+          <button type="button" class="wood-btn gal-chip" ref={wireButton} title="Weißes Drahtgitter: aus, über dem Modell, nur Gitter"
+            onClick={() => {
+              const mode = hooks.wireframe();
+              wireButton.current.classList.toggle('active', mode > 0);
+              wireButton.current.textContent = WIRE_LABELS[mode];
+            }}>{WIRE_LABELS[0]}</button>
           <button type="button" class="wood-btn gal-chip" ref={groundButton} title="Stück Boden unter den Modellen ein/aus"
             onClick={() => groundButton.current.classList.toggle('active', hooks.ground())}>Boden</button>
-          <button type="button" class="wood-btn gal-chip" ref={whiteButton} title="Drahtgitter weiß statt in den Materialfarben"
-            onClick={() => whiteButton.current.classList.toggle('active', hooks.whiteWire())}>Gitter weiß</button>
           <button type="button" class="wood-btn gal-chip" ref={plainButton} title="Texturen aus/an - nur die Materialfarben"
             onClick={() => plainButton.current.classList.toggle('active', hooks.plain())}>Ohne Texturen</button>
         </div>
@@ -160,8 +198,13 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
   );
 
   // Die Ringe des Gizmos - wie die Knöpfe der Liste nicht über Refs (siehe unten).
-  const rings = [...root.querySelectorAll<SVGPolylineElement>('.gal-gizmo polyline')];
-  rings.forEach((ring, axis) => ring.addEventListener('pointerdown', (e) => startTurn(e, axis)));
+  const hits = [...root.querySelectorAll<SVGPolylineElement>('.gal-axis-hit')];
+  const legend = [...root.querySelectorAll<HTMLSpanElement>('.gal-gizmo-legend span')];
+  hits.forEach((hit, axis) => {
+    hit.addEventListener('pointerdown', (e) => startTurn(e as PointerEvent, axis));
+    hit.addEventListener('pointerenter', () => dragging || highlight(axis));
+    hit.addEventListener('pointerleave', () => dragging || highlight(-1));
+  });
 
   // Die Knöpfe der Liste - Refs in der verschachtelten Liste setzt defuss nicht.
   const itemButtons = [...root.querySelectorAll<HTMLButtonElement>('.gal-item[data-index]')];
@@ -199,12 +242,17 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
       const text = names.join(' · ');
       if (fileLine.current.textContent !== text) fileLine.current.textContent = text;
     },
-    gizmo: (center, ring) => {
-      gizmoSvg.current.style.display = center ? '' : 'none';
-      if (!center || !ring) return;
-      gizmoCenter = center;
-      windings = ring.map((r) => r.winding);
-      ring.forEach((r, i) => rings[i].setAttribute('points', r.points));
+    gizmo: (ringPoints) => {
+      gizmoPanel.current.hidden = !ringPoints;
+      if (!ringPoints) return null;
+      ringPoints.forEach((pts, i) => {
+        hits[i].setAttribute('points', pts.map((p) => `${(p.x * GIZMO_RADIUS).toFixed(1)},${(p.y * GIZMO_RADIUS).toFixed(1)}`).join(' '));
+        // Umlaufsinn auf dem Bildschirm (y nach unten): > 0 im Uhrzeigersinn - daraus die Drehrichtung beim Ziehen.
+        let area = 0;
+        for (let k = 0; k + 1 < pts.length; k++) area += pts[k].x * pts[k + 1].y - pts[k + 1].x * pts[k].y;
+        windings[i] = area >= 0 ? 1 : -1;
+      });
+      return gizmoSvg.current.getBoundingClientRect();
     },
     vertices: (count) => {
       const text = `${count.toLocaleString('de-DE')} Eckpunkte · ${Math.round(count / 3).toLocaleString('de-DE')} Dreiecke`;
