@@ -5,13 +5,12 @@ Veraltetes löschen, Geändertes an Ort und Stelle korrigieren.
 
 ## Umgebung
 
-- 2026-09-26: `npm test` scheitert unter Node 24 mit "Cannot find module …/tests" - `node --test tests/` nimmt kein Verzeichnis mehr an. Bis PR #4 gemergt ist: `node --test tests/*.test.mjs`. Danach diesen Eintrag löschen.
 - 2026-09-26, Mac (M4): Headless-Chrome aus `tools/ui/browser.mjs` rendert über Metal auf der echten GPU (`ANGLE Metal Renderer: Apple M4`), kein Software-Renderer; `EXT_disjoint_timer_query_webgl2` ist vorhanden. Messwerte aus Playwright sind echt.
 - Bench, Rauchtest und Screenshots brauchen den laufenden Dev-Server (`npm run dev`, http://localhost:5173).
 
-## Branches und PRs
+## Repo
 
-- 2026-09-26: PR #4 (`fix-smooth-zoom`, von `origin` kyr0/soliva nach `upstream` Mansi1/procedurally-generated-map) enthält Render-Stats, Bench, Optimierungsplan und die ersten Optimierungen. PR #5 (`add-agents-md`) basiert auf `main` - dort gibt es Bench und Render-Stats erst nach dem Merge von #4. Der lokale Branch `optimization-plan` ist ein Duplikat von `fix-smooth-zoom` und kann weg.
+- `main` folgt `upstream` (Mansi1/procedurally-generated-map). PR-Branches werden nach `origin` (kyr0/soliva) gepusht, die PRs laufen gegen `upstream`.
 
 ## Messen
 
@@ -24,7 +23,7 @@ Veraltetes löschen, Geändertes an Ort und Stelle korrigieren.
 
 ## Optimierungsplan
 
-- 2026-09-26: Falsch im Plan, am Code geprüft: 2.2 ist nicht bit-identisch (ein grober Vorlauf überspringt schmale Grate); ein Early-out in `World.armoryStock` ändert das Verhalten, weil `world/render.ts` `has()` prüft. Die Zeilenangaben des Plans stimmen seit PR #4 nicht mehr.
+- 2026-09-26: Falsch im Plan, am Code geprüft: 2.2 ist nicht bit-identisch (ein grober Vorlauf überspringt schmale Grate); ein Early-out in `World.armoryStock` ändert das Verhalten, weil `world/render.ts` `has()` prüft. Die Zeilenangaben des Plans stimmen seit 2026-09-26 (Merge von PR #4) nicht mehr.
 
 ## Offen
 

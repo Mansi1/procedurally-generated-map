@@ -272,7 +272,7 @@ Reuse a few explicit scratch arrays/vectors instead.
 
 ## Soliva: messen und belegen
 
-Die Werkzeuge kommen mit PR #4 (`fix-smooth-zoom`); Hintergrund und Plan in `docs/OPTIMIZATION_PLAN.md`.
+Hintergrund und Plan: `docs/OPTIMIZATION_PLAN.md`.
 
 **Render-Stats für die Diagnose.** `window.getRenderStats()` (`src/renderStats.ts`) liefert die letzten 30 Sekunden, je Sekunde ein JSON-Objekt: fps, `frameMs`/`cpuMs` samt Aufteilung (`simMs`, `collectMs`, `renderMs`, `minimapMs`, `pickMs`), `longTaskMs`, `drawCalls`, `vertices`, `terrainVertices`, `terrainTexels`, `instances`/`batched` und mehr. Vor einer Vermutung über die Ursache erst dort nachsehen, per Playwright mit `page.evaluate(() => window.getRenderStats())`. Neue teure Pfade melden ihre Kosten mit `addRenderStats(key, value)`. Das gilt je Bild. `window.getRenderInfo()` liefert die Umstände eines Laufs: GPU, Pixel-Verhältnis und Einstellungen.
 
