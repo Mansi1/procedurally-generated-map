@@ -1,7 +1,7 @@
 // GalleryOverlay.tsx
 // Die Seite der Galerie (/galerie): das Canvas, links die Liste der Modelle
 // (nach Gruppen), unten die Animationen des gewählten Modells und Knöpfe zum
-// Drehen - dazu für die Übersicht aller Modelle die Beschriftungen. Einmal
+// Drehen und fürs Drahtgitter samt Zahl der Eckpunkte - dazu für die Übersicht aller Modelle die Beschriftungen. Einmal
 // gerendert; gallery.ts setzt über die zurückgegebenen Funktionen, was
 // gewählt ist, und über die Elemente, wo die Beschriftungen stehen.
 
@@ -26,6 +26,10 @@ export interface GalleryHooks {
   extra(): void;
   /** Ansicht drehen: -1 links herum, +1 rechts herum. */
   rotate(step: number): void;
+  /** Drahtgitter ein oder aus - liefert, ob es jetzt an ist. */
+  wireframe(): boolean;
+  /** Stück Boden unter den Modellen ein oder aus - liefert, ob es jetzt an ist. */
+  ground(): boolean;
 }
 
 export interface GalleryElements {
@@ -38,6 +42,8 @@ export interface GalleryElements {
   show(item: number, animation: number, extra: boolean): void;
   /** Die Dateien der gezeigten Modelle (src/models) unter dem Namen. */
   files(names: readonly string[]): void;
+  /** Gezeichnete Eckpunkte des gezeigten Modells. */
+  vertices(count: number): void;
 }
 
 /**
@@ -54,6 +60,9 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
   const heading = createRef<HTMLDivElement>();
   const fileLine = createRef<HTMLDivElement>();
   const chips = createRef<HTMLDivElement>();
+  const countLine = createRef<HTMLDivElement>();
+  const wireButton = createRef<HTMLButtonElement>();
+  const groundButton = createRef<HTMLButtonElement>();
 
   const groups = [...new Set(items.map((it) => it.group))];
   render(
@@ -84,10 +93,15 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
       <div class="gal-stage" ref={stage}>
         <div class="gal-heading" ref={heading} />
         <div class="gal-file" ref={fileLine} />
+        <div class="gal-file" ref={countLine} />
         <div class="gal-chips" ref={chips} />
         <div class="gal-rotate">
           <button type="button" class="wood-btn" title="Links herum drehen" onClick={() => hooks.rotate(-1)}>⟲</button>
           <button type="button" class="wood-btn" title="Rechts herum drehen" onClick={() => hooks.rotate(1)}>⟳</button>
+          <button type="button" class="wood-btn gal-chip" ref={wireButton} title="Drahtgitter ein/aus"
+            onClick={() => wireButton.current.classList.toggle('active', hooks.wireframe())}>Gitter</button>
+          <button type="button" class="wood-btn gal-chip" ref={groundButton} title="Stück Boden unter den Modellen ein/aus"
+            onClick={() => groundButton.current.classList.toggle('active', hooks.ground())}>Boden</button>
         </div>
       </div>
       <div class="gal-help">Ziehen dreht in alle Richtungen · rechts ziehen verschiebt · Mausrad zoomt · Q/E drehen · W/S neigen · ↑/↓ Modell · ←/→ Animation</div>
@@ -130,6 +144,10 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
     files: (names) => {
       const text = names.join(' · ');
       if (fileLine.current.textContent !== text) fileLine.current.textContent = text;
+    },
+    vertices: (count) => {
+      const text = `${count.toLocaleString('de-DE')} Eckpunkte · ${Math.round(count / 3).toLocaleString('de-DE')} Dreiecke`;
+      if (countLine.current.textContent !== text) countLine.current.textContent = text;
     },
   };
 }

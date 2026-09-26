@@ -24,6 +24,14 @@ const CLUMP_CHANCE = 0.8;
 /** Chance einer Zelle für eine einzelne Blume außerhalb der Gruppen. */
 const STRAY_CHANCE = 0.004;
 
+/**
+ * Breite einer Blume über die Blätter, in Tiles (dazu je Blume 0.8-1.25fach) -
+ * die Blüte ist etwa ein Drittel davon: rund 9 cm Radius, 16 cm hoch, passend
+ * zu den Tomaten. Wie r in flower() im Gelände-Shader - beim Wechsel zu 3D
+ * springt die Größe nicht.
+ */
+export const FLOWER_SIZE = 0.052;
+
 interface Clump { x: number; y: number; r: number; kind: number }
 /** Nah heran ist der Bildschirm klein - so viele Stücke reichen weit darüber hinaus. */
 const MAX_CHUNKS = 1200;
@@ -114,10 +122,7 @@ export class FlowerField {
     // Art: meist die der Gruppe, jede fünfte eine andere.
     const kindRnd = hash(gx, gy, 23) < 0.2 ? hash(gx, gy, 24) : groupKind;
     const kind = Math.min(FLOWER_KINDS.length - 1, Math.floor(kindRnd * FLOWER_KINDS.length));
-    // Breite über die Blätter - die Blüte ist etwa ein Drittel davon: rund
-    // 9 cm Radius, 16 cm hoch, passend zu den Tomaten. Wie r in flower()
-    // im Gelände-Shader - beim Wechsel zu 3D springt die Größe nicht.
-    const size = 0.052 * (0.8 + 0.45 * hash(gx, gy, 26));
+    const size = FLOWER_SIZE * (0.8 + 0.45 * hash(gx, gy, 26));
     const ground = reliefZ(this.mapGen.heightAt(x, y));
     const petal = FLOWER_KINDS[kind].petal;
     out.push({

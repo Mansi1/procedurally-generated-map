@@ -98,7 +98,10 @@ export const SHAPE = {
   circle: 1,
   triangle: 2,
   diamond: 3,
-  /** Flächig, ohne Rand - für Overlays wie erschöpfte Vorkommen. */
+  /**
+   * Flächig, ohne Rand - für Overlays wie erschöpfte Vorkommen, leicht über
+   * dem Boden. motion[3] = 1: genau auf dem Boden (Boden der Galerie).
+   */
   flat: 4,
   /** Mensch mit Armen und Beinen, läuft und arbeitet - Dorfbewohner (models/villager_male.obj). */
   villager: 5,
@@ -1233,7 +1236,7 @@ void main() {
     // Schrägansicht nach oben und säße hinter der Figur statt unter ihr.
     // Mit mitgegebener Bodenhöhe (Mitte) liegt er waagerecht darauf.
     float ground = aGround > ${GROUND_UNKNOWN / 10}.0 ? aGround * uReliefScale : groundZ(p);
-    world = vec3(p, ground + (shape == ${SHAPE_RING} ? 0.012 : 0.15));
+    world = vec3(p, ground + (shape == ${SHAPE_RING} ? 0.012 : aMotion.w > 0.5 ? 0.0 : 0.15));
   } else {
     float size = max(aParams.z, uMinSizeTiles);
     // x = Anteil der Grundfläche, y = Wandhöhe, z = Dachhöhe (je Kantenlänge)
@@ -2038,7 +2041,10 @@ function edgeValue(object: string): number {
  * Achsen einer Blattkarte aus ihren Eckpunkten: Mitte, Längsachse a (zeigt
  * nach unten, v = 0 am oberen Ende), Querachse b, Wertebereiche und ein Zufall.
  */
-function frameOf(points: number[][], index: number) {
+function frameOf(corners: number[][], index: number) {
+  // Jede Ecke einmal: aus Dreiecken zählten die Ecken an der Teilungskante
+  // doppelt und zögen die Achse auf die Diagonale.
+  const points = [...new Map(corners.map((p) => [p.join(), p])).values()];
   const n = points.length;
   const c = [0, 1, 2].map((i) => points.reduce((sum, p) => sum + p[i], 0) / n);
   const cov = [0, 1, 2].map((i) => [0, 1, 2].map((j) => points.reduce((sum, p) => sum + (p[i] - c[i]) * (p[j] - c[j]), 0)));
@@ -2048,15 +2054,23 @@ function frameOf(points: number[][], index: number) {
     return v.map((x) => x / l);
   };
   // Größte Hauptachse durch wiederholtes Multiplizieren, die zweite ebenso
-  // nach Abzug der ersten.
-  let a = norm([0.3, 0.1, 1]);
-  for (let i = 0; i < 30; i++) a = norm(mul(a));
-  let b = norm([1, 0.2, 0.1]);
-  for (let i = 0; i < 30; i++) {
-    const m = mul(b);
+  // nach Abzug der ersten. Bei fast quadratischen Karten (Blüte: 4 %
+  // Unterschied) braucht das Hunderte Schritte - bis sich nichts mehr ändert.
+  const settle = (v: number[], step: (v: number[]) => number[]) => {
+    for (let i = 0; i < 2000; i++) {
+      const w = step(v);
+      const done = Math.abs(w[0] * v[0] + w[1] * v[1] + w[2] * v[2]) > 1 - 1e-12;
+      v = w;
+      if (done) break;
+    }
+    return v;
+  };
+  let a = settle(norm([0.3, 0.1, 1]), (v) => norm(mul(v)));
+  let b = settle(norm([1, 0.2, 0.1]), (v) => {
+    const m = mul(v);
     const d = m[0] * a[0] + m[1] * a[1] + m[2] * a[2];
-    b = norm([m[0] - d * a[0], m[1] - d * a[1], m[2] - d * a[2]]);
-  }
+    return norm([m[0] - d * a[0], m[1] - d * a[1], m[2] - d * a[2]]);
+  });
   // v ist die senkrechtere der beiden Achsen und wächst nach unten; u zeigt
   // vom Stamm weg (Astkarten beginnen am Stamm, bei x = y = 0).
   if (Math.abs(b[2]) > Math.abs(a[2])) [a, b] = [b, a];
@@ -2766,6 +2780,13 @@ export class EntityRenderer {
   flatCount = 0;
   /** Gebäude mit Sockel in den Boden - ohne Gelände (Galerie) stünden sie auf Stelzen. */
   skirts = true;
+  /** Nur die Kanten der Dreiecke zeichnen (Galerie) - siehe draw(). */
+  wireframe = false;
+  /** Gezeichnete Eckpunkte der Modelle seit dem Start - die Galerie liest den Zuwachs je Bild. */
+  drawnVertices = 0;
+  /** Kanten je Dreieck (3i-3i+1, 3i+1-3i+2, 3i+2-3i) für das Drahtgitter, wächst bei Bedarf. */
+  private edgeBuffer: WebGLBuffer | null = null;
+  private edgeVertices = 0;
   /** Spielerfarbe (0..255) - Felder bekommen sie als Uniform (siehe uPlayerColor). */
   playerColor: [number, number, number] = [64, 160, 72];
   private models: ModelSlot[];
@@ -3215,7 +3236,24 @@ export class EntityRenderer {
     gl.vertexAttribPointer(4, 4, gl.FLOAT, false, bytes, offset + 32);
     gl.vertexAttribPointer(5, 3, gl.FLOAT, false, bytes, offset + 48);
     gl.vertexAttribPointer(7, 1, gl.FLOAT, false, bytes, offset + 60);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.vertices, count);
+    if (this.wireframe) {
+      // Die Meshes sind Dreieckslisten ohne Index - eine Kantenliste passt auf alle.
+      if (mesh.vertices > this.edgeVertices) {
+        this.edgeVertices = mesh.vertices;
+        const edges = new Uint32Array(mesh.vertices * 2);
+        for (let i = 0; i < mesh.vertices; i += 3) edges.set([i, i + 1, i + 1, i + 2, i + 2, i], i * 2);
+        this.edgeBuffer ??= gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.edgeBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, edges, gl.STATIC_DRAW);
+      }
+      // Die Bindung gehört zum VAO des Meshes.
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.edgeBuffer);
+      gl.drawElementsInstanced(gl.LINES, mesh.vertices * 2, gl.UNSIGNED_INT, 0, count);
+    } else {
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.vertices, count);
+    }
+    // Nur Modelle - Flächen (Auswahl, Boden der Galerie) zählen nicht mit.
+    if (mesh !== this.flat) this.drawnVertices += mesh.vertices * count;
     addRenderStats('drawCalls', 1);
     addRenderStats('vertices', mesh.vertices * count);
   }

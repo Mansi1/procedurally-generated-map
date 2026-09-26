@@ -10,7 +10,7 @@
 // rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, FIELDS, POSE, SHAPE, animationTime,
+  ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, FIELDS, FLOWERS, POSE, SHAPE, animationTime,
   buildingHeading, figureProps, frozenMillMotion, millMotion, modelWorkSpot,
   type EntityInstance,
 } from './gl/entityRenderer';
@@ -19,6 +19,8 @@ import {
 } from './gl/iso';
 import { mountGallery, type GalleryItem } from './components/GalleryOverlay';
 import { ANIMALS, BUILDINGS, CROPS, FIELD_ROWS, VILLAGER, type AnimalKind, type CropType } from './world/catalog';
+import { FLOWER_SIZE } from './world/flowers';
+import { FLOWER_KINDS } from './gl/flowerModel';
 
 type RGB = [number, number, number];
 
@@ -188,6 +190,59 @@ function field(crop: CropType): Exhibit {
 }
 
 /**
+ * Wiese: je Art ein Horst wie in world/flowers.ts - dicht in der Mitte, zum
+ * Rand lichter. Mehrere Arten liegen im Kreis nebeneinander, jede fünfte
+ * Blume eine andere Art wie im Spiel, dazwischen ein paar einzelne; eine Art
+ * allein zeigt nur sie.
+ */
+function meadow(label: string, kinds: number[]): Exhibit {
+  const rnd = (i: number, k: number) => {
+    const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  const plant = (out: EntityInstance[], x: number, y: number, kind: number, i: number) => {
+    const petal = FLOWER_KINDS[kind].petal;
+    out.push({ x: x - 0.5, y: y - 0.5, size: FLOWER_SIZE * (0.8 + 0.45 * rnd(i, 3)), shape: FLOWERS[kind], alpha: 1,
+      color: [Math.round(petal[0] * 255), Math.round(petal[1] * 255), Math.round(petal[2] * 255)],
+      motion: [rnd(i, 4) * Math.PI * 2, 0, 0, 1] });
+  };
+  return {
+    label,
+    draw: (_t, x, y, out) => {
+      kinds.forEach((kind, c) => {
+        const a = (c / kinds.length) * Math.PI * 2;
+        const [cx, cy] = kinds.length > 1 ? [x + Math.cos(a) * 0.9, y + Math.sin(a) * 0.9] : [x, y];
+        for (let i = 0; i < 26; i++) {
+          // Näher zur Mitte dichter: Radius quadratisch statt über die Fläche verteilt.
+          const r = 0.45 * (i / 26) * (0.7 + 0.3 * rnd(i + c * 97, 1));
+          const b = i * 2.39996 + rnd(i + c * 97, 2);
+          const own = kinds.length > 1 && rnd(i + c * 97, 5) < 0.2;
+          plant(out, cx + Math.cos(b) * r, cy + Math.sin(b) * r, own ? Math.floor(rnd(i + c * 97, 6) * FLOWER_KINDS.length) : kind, i + c * 97);
+        }
+      });
+      if (kinds.length > 1) {
+        for (let i = 0; i < 8; i++) {
+          const b = i * 2.39996, r = 1.2 + 0.5 * rnd(i, 7);
+          plant(out, x + Math.cos(b) * r, y + Math.sin(b) * r, Math.floor(rnd(i, 8) * FLOWER_KINDS.length), 500 + i);
+        }
+      }
+    },
+  };
+}
+
+/** Eine einzelne Blume, zum genauen Ansehen - in echter Größe wie auf der Wiese. */
+function oneFlower(kind: number): Exhibit {
+  const petal = FLOWER_KINDS[kind].petal;
+  return {
+    label: FLOWER_KINDS[kind].name,
+    draw: (_t, x, y, out) => {
+      out.push({ x: x - 0.5, y: y - 0.5, size: FLOWER_SIZE, shape: FLOWERS[kind], alpha: 1,
+        color: [Math.round(petal[0] * 255), Math.round(petal[1] * 255), Math.round(petal[2] * 255)], motion: [0.6, 0, 0, 1] });
+    },
+  };
+}
+
+/**
  * Die Reihen der Galerie, von oben nach unten. `gap`: Abstand der Stücke,
  * `depth`: Platz bis zur nächsten Reihe (Tiles) - hohe Modelle brauchen mehr.
  */
@@ -256,8 +311,12 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
     ],
   },
   {
-    title: 'Felder', gap: 4.4, depth: 0,
+    title: 'Felder', gap: 4.4, depth: 4.4,
     items: [field('wheat'), field('corn'), field('tomato'), field('potato'), field('hop')],
+  },
+  {
+    title: 'Wiese', gap: 3.6, depth: 0,
+    items: [meadow('Wiese', FLOWER_KINDS.map((_, k) => k))],
   },
 ];
 
@@ -375,6 +434,9 @@ const SHOWCASE: Showcase[] = [
   showcase('Felder', 'Tomaten', [field('tomato')], 130, 0.6, ['säen, wachsen, ernten']),
   showcase('Felder', 'Kartoffeln', [field('potato')], 130, 0.5, ['säen, wachsen, ernten']),
   showcase('Felder', 'Hopfen', [field('hop')], 130, 0.7, ['säen, wachsen, ernten']),
+  showcase('Wiese', 'Blumen', [meadow('Wiese', FLOWER_KINDS.map((_, k) => k)),
+    ...FLOWER_KINDS.map((f, k) => meadow(f.name, [k]))], 420, 0.1),
+  showcase('Wiese', 'Blume', FLOWER_KINDS.map((_, k) => oneFlower(k)), 3000, 0.02),
 ];
 
 // --- Seite ------------------------------------------------------------------
@@ -398,8 +460,26 @@ const titleAt = ROWS.map((row, r) => {
 let current = 0;
 let animation = 0;
 let demolishing = false;
+/** Stück Boden unter den Modellen (Knopf "Boden"). */
+let showGround = false;
+const GRASS: RGB = [98, 128, 60];
 
-const { canvas, labels: labelEls, titles: titleEls, show, files } = mountGallery(
+/** Ein Stück Boden unter den Instanzen ab `from` - ein Quadrat über ihren Umriss mit etwas Rand. */
+function ground(out: EntityInstance[], from: number) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = from; i < out.length; i++) {
+    const e = out[i];
+    const r = e.size / 2;
+    x0 = Math.min(x0, e.x + 0.5 - r); x1 = Math.max(x1, e.x + 0.5 + r);
+    y0 = Math.min(y0, e.y + 0.5 - r); y1 = Math.max(y1, e.y + 0.5 + r);
+  }
+  if (x1 < x0) return;
+  const size = Math.max(x1 - x0, y1 - y0) * 1.3;
+  // Bodenhöhe mitgeben - ohne sie fragte der Shader das Gelände, das es hier nicht gibt.
+  out.push({ x: (x0 + x1) / 2 - 0.5, y: (y0 + y1) / 2 - 0.5, size, color: GRASS, shape: SHAPE.flat, alpha: 1, ground: 0, motion: [0, 0, 0, 1] });
+}
+
+const { canvas, labels: labelEls, titles: titleEls, show, files, vertices } = mountGallery(
   document.getElementById('app')!,
   SHOWCASE,
   placed.map((p) => p.item.label),
@@ -415,6 +495,8 @@ const { canvas, labels: labelEls, titles: titleEls, show, files } = mountGallery
       setViewRotation(viewRotation() + step);
       if (current >= 0) frame0();
     },
+    wireframe: () => (renderer.wireframe = !renderer.wireframe),
+    ground: () => (showGround = !showGround),
   },
 );
 
@@ -436,6 +518,8 @@ resize();
 let camX = 0;
 let camY = 0;
 let zoom = 100;
+/** Größter Zoom (CSS-Pixel je Tile) - eine einzelne Blume ist nur 0,065 Tiles breit. */
+const MAX_ZOOM = 8000;
 /** Mitte der Bühne rechts der Liste - dort steht das Modell. */
 const LIST_WIDTH = 224;
 
@@ -514,7 +598,7 @@ function fit() {
   const left = LIST_WIDTH * pr, right = w - 16 * pr, top = 50 * pr, bottom = h - 150 * pr;
   const clipped = x0 <= 2 || y0 <= 2 || x1 >= w - 3 || y1 >= h - 3;
   const f = clipped ? 0.5 : Math.min(((right - left) * 0.8) / (x1 - x0 + 1), ((bottom - top) * 0.8) / (y1 - y0 + 1));
-  const newZoom = Math.min(900, Math.max(12, zoom * f));
+  const newZoom = Math.min(MAX_ZOOM, Math.max(12, zoom * f));
   const scale = newZoom / zoom;
   // Mitte des Umrisses (vom Bildmittelpunkt aus) nach dem Zoomen an die Mitte der Bühne.
   const ox = ((x0 + x1) / 2 - w / 2) * scale;
@@ -568,7 +652,7 @@ window.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
-  zoom = Math.min(900, Math.max(12, zoom * Math.exp(-e.deltaY * 0.0015)));
+  zoom = Math.min(MAX_ZOOM, Math.max(12, zoom * Math.exp(-e.deltaY * 0.0015)));
 }, { passive: false });
 // Pfeiltasten: hoch/runter das Modell, links/rechts die Animation; Q/E drehen,
 // W/S neigen (W = mehr von oben).
@@ -623,11 +707,19 @@ function spinAll(out: EntityInstance[], angle: number) {
 function frame(now: number) {
   const t = (now - start) / 1000;
   instances.length = 0;
-  if (current < 0) for (const p of placed) p.item.draw(t, p.x, p.y, instances);
-  else {
+  // Solange die Kamera sich einpasst (fit), ohne Boden - sonst passte sie den Boden ein.
+  const withGround = showGround && fitPasses === 0;
+  if (current < 0) {
+    for (const p of placed) {
+      const from = instances.length;
+      p.item.draw(t, p.x, p.y, instances);
+      if (withGround) ground(instances, from);
+    }
+  } else {
     const s = SHOWCASE[current];
     (demolishing && s.demolish ? s.demolish[animation] : s.exhibits[animation]).draw(t, 0, 0, instances);
     spinAll(instances, spin);
+    if (withGround) ground(instances, 0);
     files([...new Set(instances.map((e) => renderer.modelFile(e.shape)).filter((f) => f !== undefined))]);
   }
 
@@ -636,7 +728,9 @@ function frame(now: number) {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   // Ohne Relief: alles steht auf einer flachen Ebene, die nicht gezeichnet wird.
   const camera = snapCamera({ centerX: camX, centerY: camY, pixelsPerTile: zoom * pixelRatio, reliefScale: 0 }, canvas.width, canvas.height);
+  const drawnBefore = renderer.drawnVertices;
   renderer.render(instances, camera, 0, pixelRatio);
+  if (current >= 0) vertices(renderer.drawnVertices - drawnBefore);
   if (fitPasses > 0 && current >= 0) {
     fitPasses--;
     fit();
