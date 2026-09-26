@@ -1,11 +1,12 @@
 
 import { MapGenerator } from './noise';
 import {
+  MAX_RELIEF,
   TILT_DEFAULT,
   TILT_MAX,
   TILT_MIN,
   centerFor,
-  pickWorld,
+  groundToWorld,
   setViewElevation,
   type IsoView,
   viewElevation,
@@ -281,7 +282,6 @@ function applyFacing(dir: string) {
   const pivot = focusPoint();
   rotateToFace(dir);
   keepFocus(pivot);
-  autoFlat = hiddenAtCenter(pivot.x, pivot.y);
   compass.update();
   // Die Blickrichtung bleibt beim Neuladen.
   settings.facing = dir;
@@ -311,12 +311,13 @@ world.groundAt = (x, y) => ground.groundAt(x, y);
 const picker = new Picker(world, resources, camera, ground, () => simulation.blend);
 
 /** Was der Spieler tut: auswählen, Befehle, bauen, ausbilden, abreißen (game/actions.ts). */
-const actions = new PlayerActions({ world, camera, selection, placement, picker, ground, sound }, {
+const actions = new PlayerActions({ world, camera, selection, placement, picker, sound }, {
   hint: (text) => ui.hint(text),
   refreshSelection: () => ui.refreshSelection(),
   refreshResources: () => ui.refreshResources(),
   refreshPointer,
   setPlacing: (type) => ui.setPlacing(type),
+  lookAt,
 });
 
 /** Die Maus über dem Spielfeld (game/MouseInput.ts) - hier, was sie im Spiel bedeutet. */
@@ -394,28 +395,75 @@ function keepFocus(f: NonNullable<typeof focus>) {
 // --- Gelände im Weg --------------------------------------------------------
 
 /**
- * Gelände automatisch flachlegen, wie mit gehaltener Leertaste: wenn nach dem
- * Neigen oder Drehen ein Berg den angeschauten Punkt verdeckt - etwa das
- * Haupthaus hinter einem Hang. Der Punkt bleibt dabei in der Bildmitte.
- * Aufgerichtet wird wieder, sobald die Bildmitte auch bei vollem Relief frei
- * ist (verschoben, zurückgedreht, steiler geneigt).
+ * Gelände automatisch flachlegen, wie mit gehaltener Leertaste, wenn man in
+ * einen Berg schaut: der Sichtstrahl durch die Bildmitte trifft bei vollem
+ * Relief einen Hang, tritt dahinter wieder aus und trifft weiter hinten
+ * erneut Gelände - was eigentlich in der Mitte läge, verdeckt der Berg davor,
+ * im Bild nur noch seine steile Flanke. Geprüft bei jeder Änderung der
+ * Ansicht: Verschieben, Zoomen, Neigen, Drehen, Sprünge. Flachgelegt wird
+ * sofort, aufgerichtet erst, wenn die Sicht eine Weile frei ist - sonst
+ * flackerte es beim Verschieben durchs Gebirge.
  */
 let autoFlat = false;
-/** Ab so viel Abstand (Tiles) zwischen Punkt und erstem Treffer des Sichtstrahls gilt er als verdeckt. */
-const HIDDEN_TILES = 1;
-/** Kamera-Stand, für den autoFlat zuletzt geprüft wurde. */
+/** Ab so viel Abstand (Tiles) zwischen Hang vorn und Gelände dahinter gilt die Mitte als verdeckt - kleine Buckel zählen nicht. */
+const HIDDEN_TILES = 3;
+/** So lange (ms) muss die Sicht frei sein, bevor sich das Gelände wieder aufrichtet. */
+const CLEAR_MS = 400;
+/** Schrittweite (Tiles Höhe) beim Abtasten des Sichtstrahls. */
+const RAY_STEP = 1;
+/**
+ * Höchstens so oft (ms) prüfen - der Sichtstrahl fragt Dutzende Geländehöhen
+ * ab; je Bild geprüft, kostete das beim Neigen und Verschieben gemessen
+ * spürbar Bildrate.
+ */
+const CHECK_MS = 120;
+/** Kamera-Stand, für den zuletzt geprüft wurde, wann, und seit wann die Sicht frei ist. */
 let autoFlatView = '';
+let lastCheck = 0;
+let clearSince = 0;
 
 /**
- * Wäre der Punkt (x, y) bei vollem Relief verdeckt, wenn er in der Bildmitte
- * läge? Der Sichtstrahl durch die Mitte trifft dann vorher einen Hang.
+ * Springt auf die Stelle (x, y): mit ihrer Geländehöhe in die Bildmitte, als
+ * festgehaltener Blickpunkt (focus) - das Haupthaus, ein Untätiger, eine
+ * Stelle auf der Minimap. Liegt ein Berg davor, legt die Prüfung in loop()
+ * das Gelände flach.
  */
-function hiddenAtCenter(x: number, y: number): boolean {
-  const view = camera.view();
-  const center = centerFor(view, x, y, ground.groundAt(x, y), camera.centerX, camera.centerY);
-  const hit = pickWorld({ ...view, centerX: center.x, centerY: center.y }, camera.centerX, camera.centerY,
-    (a, b) => ground.groundAt(a, b));
-  return Math.hypot(hit.x - x, hit.y - y) > HIDDEN_TILES;
+function lookAt(x: number, y: number) {
+  focus = { x, y, height: ground.groundAt(x, y), cameraX: 0, cameraY: 0 };
+  keepFocus(focus);
+}
+
+/**
+ * Schaut man in einen Berg? Der Sichtstrahl durch die Bildmitte, von vorn
+ * (hoch) nach hinten (tief) abgetastet, bei vollem Relief: tritt er nach dem
+ * ersten Treffer wieder aus dem Gelände und trifft weiter hinten erneut
+ * welches, verdeckt der Hang davor die Gegend dahinter. Die Ansicht ist die
+ * bei vollem Relief - mit festgehaltenem Blickpunkt steht der dann in der
+ * Mitte, sonst bleibt die Kamera, wie sie ist.
+ */
+function lookingIntoMountain(): boolean {
+  let view = camera.view();
+  const f = heldFocus();
+  if (f) {
+    const c = centerFor(view, f.x, f.y, f.height, camera.centerX, camera.centerY);
+    view = { ...view, centerX: c.x, centerY: c.y };
+  }
+  const zs = viewZScreen();
+  let first: { x: number; y: number } | null = null;
+  let inside = false;
+  for (let z = MAX_RELIEF; z >= -RAY_STEP; z -= RAY_STEP) {
+    // Punkt des Strahls in Höhe z - wie pickWorld für die Bildmitte.
+    const d = groundToWorld(0, zs * z);
+    const x = view.centerX + d.x;
+    const y = view.centerY + d.y;
+    const below = ground.coarseGroundAt(x, y) >= z;
+    if (below && !inside) {
+      if (!first) first = { x, y };
+      else if (Math.hypot(x - first.x, y - first.y) > HIDDEN_TILES) return true;
+    }
+    inside = below;
+  }
+  return false;
 }
 
 /** Neigen mit Alt und rechter Maustaste: Radiant je Pixel (wie in der Galerie). */
@@ -457,7 +505,6 @@ function updateTilt(dt: number, now: number): boolean {
   const pivot = focusPoint();
   setViewElevation(next);
   keepFocus(pivot);
-  autoFlat = hiddenAtCenter(pivot.x, pivot.y);
   if (next === tiltTarget) {
     // Der Blickwinkel bleibt beim Neuladen - wie die Blickrichtung.
     settings.tilt = Math.round((next * 180) / Math.PI * 10) / 10;
@@ -555,7 +602,7 @@ minimapCanvas.addEventListener('click', (e) => {
   if (!minimap.inside(e.clientX - rect.left, e.clientY - rect.top)) return;
   const target = minimap.toWorld(e.clientX - rect.left, e.clientY - rect.top, minimapView());
   // Die angeklickte Stelle mit ihrer Höhe in die Bildmitte - nicht den Punkt auf Meereshöhe.
-  camera.centerOn(target.x, target.y, ground.heightAt(target.x, target.y));
+  lookAt(target.x, target.y);
   refreshPointer();
 });
 
@@ -736,14 +783,23 @@ function loop(now: number) {
   const steered = steerCamera(camera, renderer, keyboard, dt, settings.scroll, start.isOpen(), autoFlat);
   if (held && renderer.relief !== reliefBefore && camera.x === cameraX && camera.y === cameraY) keepFocus(held);
   if (steered || zoomed || tilted) refreshPointer();
-  // Flachgelegt, weil Gelände im Weg war: aufrichten, sobald die Bildmitte
-  // auch bei vollem Relief frei ist - geprüft, wenn sich die Ansicht ändert.
-  if (autoFlat) {
+  // Schaut man in einen Berg? Geprüft, wenn sich die Ansicht ändert - und
+  // solange flachgelegt ist, bis die Sicht eine Weile frei ist.
+  if (!start.isOpen()) {
     const seen = `${camera.x},${camera.y},${camera.zoom},${viewRotation()},${viewElevation()}`;
-    if (seen !== autoFlatView) {
+    if ((seen !== autoFlatView || (autoFlat && clearSince > 0)) && now - lastCheck >= CHECK_MS) {
       autoFlatView = seen;
-      const p = heldFocus() ?? picker.point(camera.centerX, camera.centerY);
-      autoFlat = hiddenAtCenter(p.x, p.y);
+      lastCheck = now;
+      if (lookingIntoMountain()) {
+        autoFlat = true;
+        clearSince = 0;
+      } else if (autoFlat) {
+        clearSince ||= now;
+        if (now - clearSince > CLEAR_MS) {
+          autoFlat = false;
+          clearSince = 0;
+        }
+      }
     }
   }
 
