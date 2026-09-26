@@ -111,9 +111,18 @@ interface ResourceNode {
   total: number;
   /** Größe, wenn noch nichts abgebaut ist. */
   size: number;
+  /** Höhe des Objekts in Tiles - für die Sichtprüfung (OnScreen). */
+  top: number;
   /** Wird je Bild nur angepasst, nicht neu angelegt. */
   instance: EntityInstance;
 }
+
+/**
+ * Steht ein Objekt im Bild? Fuß in der Mitte (x, y) auf Geländehöhe `ground`,
+ * `height` Tiles hoch. Genauer als das Rechteck um die Bildraute
+ * (visibleWorldRect), siehe onScreenTest in main.ts.
+ */
+export type OnScreen = (x: number, y: number, ground: number, height: number) => boolean;
 
 /** Deterministischer Zufall 0..1 je Tile und Kanal - gleiche Welt, gleiche Bäume. */
 export function hash(x: number, y: number, channel: number): number {
@@ -232,6 +241,7 @@ export class ResourceField {
           shape,
           total: found.amount,
           size,
+          top: (modelSize(shape)?.height ?? 1) * size,
           instance: {
             x: ox,
             y: oy,
@@ -297,10 +307,11 @@ export class ResourceField {
    */
   instances(view: ViewRect, world: World, out: EntityInstance[],
             selected: { x: number; y: number } | null = null, blend = 1,
-            statics?: { batcher: Batcher; out: StaticBatch[] }) {
+            statics?: { batcher: Batcher; out: StaticBatch[] }, onScreen?: OnScreen) {
     const x1 = view.x + view.width;
     const y1 = view.y + view.height;
-    const inView = (n: ResourceNode) => n.x >= view.x && n.x <= x1 && n.y >= view.y && n.y <= y1;
+    const inView = (n: ResourceNode) => n.x >= view.x && n.x <= x1 && n.y >= view.y && n.y <= y1
+      && (!onScreen || onScreen(n.instance.x + 0.5, n.instance.y + 0.5, n.instance.ground ?? 0, n.top));
     if (!statics) {
       for (let cy = Math.floor(view.y / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
         for (let cx = Math.floor(view.x / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++) {

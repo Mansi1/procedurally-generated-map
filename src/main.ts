@@ -8,7 +8,9 @@ import {
   type IsoView,
   viewElevation,
   viewRotation,
+  viewZScreen,
   visibleWorldRect,
+  worldToGround,
 } from './gl/iso';
 import {
   MapRenderer,
@@ -46,7 +48,7 @@ import { mountGame } from './components/Hud';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
 import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
-import { ResourceField } from './world/resources';
+import { ResourceField, type OnScreen } from './world/resources';
 import { FlowerField } from './world/flowers';
 import { Sound } from './audio';
 import { Music } from './music';
@@ -606,6 +608,39 @@ const minimapOverlay: EntityInstance[] = [];
  * Feld und Gebäudetyp gleich bleiben; sonst liefe die Suche je Bild neu.
  */
 
+/**
+ * Feste Puffer für die Vorkommen (Regionen von 64x64 Tiles) nur weit draußen,
+ * unter so vielen CSS-Pixeln je Tile (Zoom 1, die Bäume als Bild): dort
+ * stehen Tausende Bäume im Bild, und die Puffer sparen das Einsammeln. Näher
+ * heran werden die Vorkommen einzeln eingesammelt, nur was im Bild steht
+ * (onScreenTest) - ganze Regionen zu zeichnen hieß gemessen 18-28 Mio.
+ * Eckpunkte je Bild, auch für nur 31 sichtbare Tiles; einzeln sind es bei
+ * Zoom 2 bis 5 noch 6,3 / 4,2 / 2,1 / 1,0 Mio., bei gleichen Bildzeiten.
+ */
+const STATIC_BATCHES_BELOW = 16;
+
+/**
+ * Steht ein Objekt im Bild (OnScreen in world/resources.ts)? In
+ * Bodenkoordinaten gegen den Bildausschnitt: im Bild rückt es um seine
+ * Geländehöhe und seine eigene Höhe nach oben. visibleWorldRect ist das
+ * achsenparallele Rechteck um die Bildraute - fast doppelt so groß, dazu der
+ * Rand für die höchsten Gipfel. Ein Tile Rand, und seitlich eine Objekthöhe
+ * (ein fallender Baum kippt zur Seite).
+ */
+function onScreenTest(): OnScreen {
+  const c = worldToGround(camera.x, camera.y);
+  const zs = viewZScreen();
+  const relief = renderer.relief;
+  const halfU = camera.width / 2 / camera.tileSize + 1;
+  const halfV = camera.height / 2 / camera.tileSize + 1;
+  return (x, y, ground, height) => {
+    const g = worldToGround(x, y);
+    if (Math.abs(g.u - c.u) > halfU + height) return false;
+    const foot = g.v - c.v - zs * ground * relief;
+    return foot > -halfV && foot - zs * height < halfV;
+  };
+}
+
 /** Alles, was über dem Gelände gezeichnet wird: Vorkommen, Welt, Auswahl und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
@@ -613,7 +648,11 @@ function collectOverlay(blend: number) {
   const visible = visibleWorldRect(camera.view());
   if (camera.tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camera.x, camera.y);
-    resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
+    if (camera.tileSize < STATIC_BATCHES_BELOW) {
+      resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
+    } else {
+      resources.instances(visible, world, overlay, selection.resource, blend, undefined, onScreenTest());
+    }
   }
   if (renderer.flowerObjects) {
     flowers.update(visible, camera.x, camera.y);
