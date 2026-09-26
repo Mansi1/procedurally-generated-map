@@ -10,7 +10,7 @@
 
 import type { RGB } from '../functions/Color';
 import {
-  PROJECT_GLSL, cameraDirection, groundToWorld, setCameraUniforms, viewRotation, viewZScreen, worldToGround, type GpuCamera,
+  PROJECT_GLSL, cameraDirection, groundToWorld, setCameraUniforms, viewGroundV, viewRotation, viewZScreen, worldToGround, type GpuCamera,
 } from './iso';
 import { uploadTerrainParams } from './terrainRenderer';
 import humanoidClipsGlb from '../models/humanoid_clips.glb?inline';
@@ -3148,13 +3148,16 @@ export class EntityRenderer {
   }
 
   /**
-   * Die Baumbilder für die jetzige Blickrichtung und Zoomstufe - je Baumart
-   * erst, wenn sie im Bild vorkommt (`shapes`), direkt in eine Textur dieses
-   * Renderers. Nach dem Drehen oder Zoomen wird neu gerendert. false, wenn es
-   * keine Bilder gibt.
+   * Die Baumbilder für die jetzige Blickrichtung, Zoomstufe und Neigung - je
+   * Baumart erst, wenn sie im Bild vorkommt (`shapes`), direkt in eine Textur
+   * dieses Renderers. Nach dem Drehen, Zoomen oder Neigen wird neu gerendert.
+   * Zoom und Neigung kommen als die des Gelände-Caches (GpuCamera.cache*):
+   * die bleiben stehen, solange weich gezoomt oder geneigt wird - mit dem
+   * jetzigen Zoom würde je Bild neu gerendert, das kostete jedes Mal
+   * Dutzende Millisekunden. false, wenn es keine Bilder gibt.
    */
-  private ensureBillboards(pixelsPerTile: number, pixelRatio: number, shapes: Iterable<number>): boolean {
-    const key = `${viewRotation()}|${pixelsPerTile}|${pixelRatio}|${this.leafReady}|${this.imagesLoaded}`;
+  private ensureBillboards(pixelsPerTile: number, groundV: number, pixelRatio: number, shapes: Iterable<number>): boolean {
+    const key = `${viewRotation()}|${pixelsPerTile}|${groundV.toFixed(4)}|${pixelRatio}|${this.leafReady}|${this.imagesLoaded}`;
     if (this.billboardSet?.key !== key) {
       for (const band of this.billboardSet?.shapes.values() ?? []) if (band.texture) this.gl.deleteTexture(band.texture);
       this.billboardSet = this.planBillboards(key, pixelsPerTile);
@@ -3212,7 +3215,7 @@ export class EntityRenderer {
     const shown = new Set<number>();
     for (const batch of batches) for (const shape of batch.ranges.keys()) if (TREES.includes(shape)) shown.add(shape);
     const billboards = shown.size > 0 && cssPixelsPerTile < this.billboardBelow
-      && this.ensureBillboards(camera.pixelsPerTile, pixelRatio, shown);
+      && this.ensureBillboards(camera.cachePixelsPerTile ?? camera.pixelsPerTile, camera.cacheGroundV ?? viewGroundV(), pixelRatio, shown);
     this.billboardsActive = billboards;
 
     // Overlays zuerst, dann die Gebäude von hinten nach vorn - halbtransparente
