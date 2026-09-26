@@ -98,7 +98,7 @@ export class FlowerField {
     const kindRnd = own ? hash(gx, gy, 24) : hash(Math.floor(x * 0.7), Math.floor(y * 0.7), 25);
     const kind = Math.min(FLOWER_KINDS.length - 1, Math.floor(kindRnd * FLOWER_KINDS.length));
     // Breite über die Blätter - die Blüte ist etwa ein Drittel davon.
-    const size = 0.16 * (0.8 + 0.45 * hash(gx, gy, 26));
+    const size = 0.13 * (0.8 + 0.45 * hash(gx, gy, 26));
     const ground = reliefZ(this.mapGen.heightAt(x, y));
     const petal = FLOWER_KINDS[kind].petal;
     out.push({
