@@ -1,6 +1,6 @@
 import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
-import { EntityRenderer, type EntityInstance } from './gl/entityRenderer';
+import { EntityRenderer, type EntityInstance, type StaticBatch } from './gl/entityRenderer';
 import { TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
@@ -81,7 +81,13 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, Color> = {
  * erste legt grob fest, in welcher Gegend etwas vorkommt, das zweite teilt die
  * Gegend in kleine Vorkommen von einigen Tiles - wie in AoE2 ein paar
  * Beerensträucher oder ein Häufchen Stein statt einer ganzen Wiese voll.
- * Die Menge ist (r + 1) * yield, abgerundet.
+ * `threshold: -Infinity` heißt: in jeder Gegend - jeder Wald trägt Holz, und
+ * Beeren gibt es auf der ganzen Wiese. Die Menge ist (r + 1) * yield,
+ * abgerundet, mindestens yield (r unter 0 zählt wie 0).
+ *
+ * Mit `clump` statt Häufchen-Rauschen: runde Gruppen dicht an dicht, je eine
+ * in manchen Zellen eines Rasters (siehe ResourceClump) - Beerensträucher
+ * stehen so zusammen wie in AoE2, statt als lange Streifen.
  *
  * Die Reihenfolge ist Teil der Regel - die erste passende gewinnt. Gold steht
  * deshalb vor Stein: beide liegen im Gebirge, Gold nur in der oberen Spitze
@@ -94,17 +100,63 @@ export interface ResourceRule {
   biome: TileType;
   type: Exclude<ResourceType, "none">;
   threshold: number;
-  /** Schwelle fürs Häufchen-Rauschen (-1..1); unter -1 zählt es nicht (Wälder). */
+  /**
+   * Schwelle fürs Häufchen-Rauschen (-1..1); unter -1 zählt es nicht (Wälder).
+   * Mit `clump` ist der Wert 1 in der Mitte einer Gruppe und 0 an ihrem Rand.
+   */
   cluster: number;
   yield: number;
+  clump?: ResourceClump;
+}
+
+/**
+ * Gruppen statt Häufchen-Rauschen: Die Welt ist in Zellen von `cell` Tiles
+ * geteilt; mit der Wahrscheinlichkeit `chance` liegt in einer Zelle eine
+ * runde Gruppe mit Radius `radius` Tiles (bei 1,5 sind das 6-9 Tiles), ganz
+ * innerhalb der Zelle - so bleiben zwischen den Gruppen Wege frei.
+ */
+export interface ResourceClump {
+  cell: number;
+  radius: number;
+  chance: number;
 }
 
 export const RESOURCE_RULES: readonly ResourceRule[] = [
-  { biome: "forest", type: "wood", threshold: 0.15, cluster: -2, yield: 50 },
+  { biome: "forest", type: "wood", threshold: -Infinity, cluster: -2, yield: 50 },
   { biome: "mountain", type: "gold", threshold: 0.4, cluster: 0.75, yield: 40 },
   { biome: "mountain", type: "stone", threshold: 0.1, cluster: 0.72, yield: 40 },
-  { biome: "grass", type: "berries", threshold: 0.3, cluster: 0.7, yield: 30 },
+  {
+    biome: "grass", type: "berries", threshold: -Infinity, cluster: 0, yield: 30,
+    clump: { cell: 12, radius: 1.5, chance: 0.3 },
+  },
 ];
+
+/** Deterministischer Zufall 0..1 je Zelle, Kanal und Welt. */
+function cellHash(x: number, y: number, channel: number, seed: number): number {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(channel, 2246822519) ^ seed;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Wert der Gruppe am Tile (x, y): 1 in der Mitte, 0 am Rand, darunter außerhalb. */
+export function clumpValue(x: number, y: number, clump: ResourceClump, seed: number): number {
+  const cx = Math.floor(x / clump.cell);
+  const cy = Math.floor(y / clump.cell);
+  if (cellHash(cx, cy, 0, seed) >= clump.chance) return -1;
+  // Mitte so, dass die ganze Gruppe in der Zelle liegt.
+  const margin = clump.radius + 1;
+  const span = clump.cell - 2 * margin;
+  const mx = cx * clump.cell + margin + cellHash(cx, cy, 1, seed) * span;
+  const my = cy * clump.cell + margin + cellHash(cx, cy, 2, seed) * span;
+  return 1 - Math.hypot(x + 0.5 - mx, y + 0.5 - my) / clump.radius;
+}
+
+/** Zahl aus dem Namen der Welt - für clumpValue(). */
+function seedNumber(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  return h;
+}
 
 /**
  * Maßstab des Häufchen-Rauschens: ein Vorkommen misst einige Tiles. Jede
@@ -116,7 +168,7 @@ const RESOURCE_CLUSTER_OFFSET = [40, 68] as const;
 
 /**
  * Wertet RESOURCE_RULES aus - erste passende Regel gewinnt. `cluster(i)` ist
- * das Häufchen-Rauschen für Regel i an diesem Tile.
+ * das Häufchen-Rauschen (bzw. der Wert der Gruppe) für Regel i an diesem Tile.
  */
 export function resourceFromNoise(
   tileType: TileType,
@@ -126,7 +178,7 @@ export function resourceFromNoise(
   for (let i = 0; i < RESOURCE_RULES.length; i++) {
     const rule = RESOURCE_RULES[i];
     if (rule.biome === tileType && r > rule.threshold && (rule.cluster < -1 || cluster(i) > rule.cluster)) {
-      return { type: rule.type, amount: Math.floor((r + 1) * rule.yield) };
+      return { type: rule.type, amount: Math.floor((Math.max(r, 0) + 1) * rule.yield) };
     }
   }
   return { type: "none", amount: 0 };
@@ -254,19 +306,25 @@ export const TERRAIN_PALETTE = {
 export class Terrain {
   private resourceNoise: FractalNoise;
   private clusterNoise: SimplexNoise;
+  private clumpSeed: number;
 
   constructor(private mapGen: MapGenerator, seed: string) {
     // Wenige Oktaven + niedrige Frequenz: Ressourcen sollen zusammenhängende
     // Vorkommen bilden, kein Konfetti über die ganze Karte.
     this.resourceNoise = new FractalNoise(new SimplexNoise(seed + "_resources"), 2, 0.5, 2);
     this.clusterNoise = new SimplexNoise(seed + "_resource_clusters");
+    this.clumpSeed = seedNumber(seed + "_resource_clumps");
   }
 
-  /** Häufchen-Rauschen für Regel `rule` an Tile (x, y). */
+  /** Häufchen-Rauschen bzw. Wert der Gruppe für Regel `rule` an Tile (x, y). */
   private cluster(x: number, y: number) {
-    return (rule: number) => this.clusterNoise.noise2D(
-        x * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[0],
-        y * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[1]);
+    return (rule: number) => {
+      const clump = RESOURCE_RULES[rule].clump;
+      if (clump) return clumpValue(x, y, clump, this.clumpSeed + rule);
+      return this.clusterNoise.noise2D(
+          x * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[0],
+          y * RESOURCE_CLUSTER_SCALE + rule * RESOURCE_CLUSTER_OFFSET[1]);
+    };
   }
 
   private generateResources(tile: MapTile): { type: ResourceType; amount: number } {
@@ -349,6 +407,25 @@ export class MapRenderer {
     this.entities.playerColor = rgb;
   }
 
+  /** Feste Puffer für Instanzen, die sich nicht ändern (world/resources.ts). */
+  createBatch(instances: readonly EntityInstance[]): StaticBatch {
+    return this.entities.createBatch(instances);
+  }
+
+  deleteBatch(batch: StaticBatch) {
+    this.entities.deleteBatch(batch);
+  }
+
+  /** Unter so vielen CSS-Pixeln je Tile zeichnen Bäume als Bild (0: nie) - Einstellung "Bäume als Bild". */
+  set billboardBelow(cssPixelsPerTile: number) {
+    this.entities.billboardBelow = cssPixelsPerTile;
+  }
+
+  /** Ob im letzten Bild Bäume als Bild gezeichnet wurden. */
+  get billboardsActive(): boolean {
+    return this.entities.billboardsActive;
+  }
+
   /** Umgepflügte Äcker für den Gelände-Shader (siehe TerrainRenderer.setFields). */
   setFields(x: number, y: number, data: Uint8Array | null) {
     this.terrain.setFields(x, y, data);
@@ -371,6 +448,7 @@ export class MapRenderer {
       mouseTileX?: number,
       mouseTileY?: number,
       overlay: EntityInstance[] = [],
+      batches: readonly StaticBatch[] = [],
   ): boolean {
     const canvas = this.terrain.context.canvas;
     // Auf einer Zoomstufe (Zweierpotenz) genau so fein wie das Bild; dazwischen
@@ -409,7 +487,7 @@ export class MapRenderer {
     // Mindestens acht Geräte-Pixel: kleiner wird ein Gebäude auf der
     // herausgezoomten Karte zum Einzelpunkt und ist nicht mehr zu erkennen.
     this.entities.groundStep = this.terrain.gridCell;
-    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true);
+    this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true, batches);
     return true;
   }
 }

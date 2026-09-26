@@ -7,14 +7,17 @@
 import { centerFor, panDelta, type IsoView } from '../gl/iso';
 
 /**
- * Zoom als Zweierlogarithmus der CSS-Pixel je Welt-Tile: 0 = 1 px, 7 = 128 px.
- * Ganze Zahlen sind die Zoomstufen - Verdopplung je Stufe, die Schrittweite
- * der Abtastung ist dort immer eine Zweierpotenz. Dazwischen gleitet der Zoom
- * nur hindurch und kommt immer auf einer Stufe zur Ruhe. Erst die letzte
- * Stufe (128) zeigt die Dorfbewohner groß genug für ihre Details.
+ * Zoom als Zweierlogarithmus der CSS-Pixel je Welt-Tile: 3 = 8 px, 7 = 128 px.
+ * Ganze Zahlen sind die Zoomstufen - im Spiel "Zoom 1" (weit draußen) bis
+ * "Zoom 5" (ganz nah), angezeigt unter der Minimap. Verdopplung je Stufe: die
+ * Schrittweite der Abtastung ist dort immer eine Zweierpotenz. Dazwischen
+ * gleitet der Zoom nur hindurch und kommt immer auf einer Stufe zur Ruhe.
+ * Erst die letzte Stufe (128) zeigt die Dorfbewohner groß genug für ihre Details.
  */
-const MIN_ZOOM = 0;
+const MIN_ZOOM = 3;
 const MAX_ZOOM = 7;
+/** Die Zoomstufen in CSS-Pixeln je Tile (Zoom 1 bis 5). */
+export const ZOOM_LEVELS = Array.from({ length: MAX_ZOOM - MIN_ZOOM + 1 }, (_, i) => 2 ** (MIN_ZOOM + i));
 /** Wie schnell der Zoom seinem Ziel folgt (je Sekunde) - nach 0,2 s ist er fast da. */
 const ZOOM_RATE = 18;
 /** So lange nach der letzten Eingabe (ms) rastet das Ziel auf eine Stufe ein. */
@@ -51,6 +54,11 @@ export class Camera {
   /** CSS-Pixel je Tile am Zoomziel - dorthin gleitet die Kamera gerade. */
   get targetTileSize(): number {
     return 2 ** this.targetZoom;
+  }
+
+  /** Die Zoomstufe, wie das Spiel sie zeigt: 1 (weit draußen) bis 5 (ganz nah) - die, auf der der Zoom einrastet. */
+  get zoomNumber(): number {
+    return Math.round(this.targetZoom) - MIN_ZOOM + 1;
   }
 
   /**

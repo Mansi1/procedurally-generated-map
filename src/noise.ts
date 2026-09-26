@@ -297,7 +297,13 @@ const SHADE_GAIN = 52;
  * Wiesen zu mehrere Tiles hohen Buckeln an.
  */
 /** So viele Tiles steigt das gesamte Flachland von der Küste bis zum Gebirgsfuß. */
-const LOWLAND_RELIEF = 4;
+const LOWLAND_RELIEF = 2;
+/**
+ * Anteil der Hangschattierung im Flachland (unter MOUNTAIN_FOOT). Sie macht
+ * jede kleine Neigung sichtbar - auf Wiesen sonst als dunkle Wellen. Zum
+ * Gebirgsfuß hin wächst sie auf die volle Stärke.
+ */
+const LOWLAND_SHADE = 0.35;
 /** Ab dieser Höhe beginnt der Anstieg - etwas unter HILL_LEVEL, damit das Gebirge einen Fuß hat. */
 const MOUNTAIN_FOOT = 0.55;
 /** Höchster Gipfel über dem Meer, in Tiles. */
@@ -329,6 +335,7 @@ export const TERRAIN_PARAMS = {
   reliefHeight: RELIEF_HEIGHT,
   reliefExponent: RELIEF_EXPONENT,
   lowlandRelief: LOWLAND_RELIEF,
+  lowlandShade: LOWLAND_SHADE,
   mountainFoot: MOUNTAIN_FOOT,
   lapseRate: LAPSE_RATE,
   deepWaterLevel: DEEP_WATER_LEVEL,

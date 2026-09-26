@@ -7,6 +7,7 @@ import {
   setViewElevation,
   type IsoView,
   viewElevation,
+  viewRotation,
   visibleWorldRect,
 } from './gl/iso';
 import {
@@ -14,7 +15,7 @@ import {
   MiniMap,
   Terrain,
 } from './map';
-import type { EntityInstance } from './gl/entityRenderer';
+import type { EntityInstance, StaticBatch } from './gl/entityRenderer';
 import { setAnimationSpeed, setAnimationsPaused } from './gl/entityRenderer';
 import {
   player,
@@ -44,7 +45,7 @@ import { minimapDots, placementOverlay, selectionOverlay } from './game/overlay'
 import { mountGame } from './components/Hud';
 import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
-import { loadSettings, saveSettings } from './settings';
+import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
 import { Sound } from './audio';
 import { Music } from './music';
@@ -455,8 +456,14 @@ function updateZoom(dt: number, now: number): boolean {
   renderer.tileSize = camera.tileSize;
   // ... und danach wieder genau unter den Anker legen.
   camera.centerOn(anchor.x, anchor.y, anchor.z, ax, ay);
-  devPanel.showZoom(camera.tileSize);
+  showZoom();
   return true;
+}
+
+/** Zoomstufe unter der Minimap ("Zoom 1" bis "Zoom 5") und in den Entwickler-Infos. */
+function showZoom() {
+  document.getElementById('zoom-level')!.textContent = `Zoom ${camera.zoomNumber}`;
+  devPanel.showZoom(camera);
 }
 
 /** Tastatur: gehaltene Tasten und die Belegung (game/keyboard.ts) - hier, was sie im Spiel tut. */
@@ -557,6 +564,20 @@ function updateHoverInfo() {
 }
 
 let lastTime = performance.now();
+
+/**
+ * Steht die Kamera (verschieben, zoomen, drehen) so lange still, zeichnet das
+ * Spiel nur noch IDLE_FPS Bilder je Sekunde - schont Akku und Lüfter. Die
+ * Welt läuft gleich schnell weiter, nur seltener gezeichnet.
+ */
+const IDLE_AFTER_MS = 1000;
+const IDLE_FPS = 30;
+let lastMove = performance.now();
+let lastFrame = 0;
+/** So oft je Sekunde wird die Minimap gezeichnet - sie bewegt sich langsam (Einstellung minimapFps). */
+const MINIMAP_FPS = 10;
+let lastMinimap = 0;
+let lastView = '';
 /** Die Simulation läuft in festen Schritten von 0.1 s (game/timing.ts). */
 const simulation = new FixedStep(0.1);
 /** Vorrat, Auswahl und Hover fünfmal je Sekunde - je Bild wäre es nur unruhig und teuer. */
@@ -572,6 +593,8 @@ const autosave = new Interval(60_000);
 
 /** Wird je Frame neu befüllt statt neu angelegt. */
 const overlay: EntityInstance[] = [];
+/** Feste Puffer der Vorkommen, an denen niemand arbeitet (world/resources.ts). */
+const staticBatches: StaticBatch[] = [];
 const minimapOverlay: EntityInstance[] = [];
 
 /**
@@ -583,13 +606,15 @@ const minimapOverlay: EntityInstance[] = [];
 /** Alles, was über dem Gelände gezeichnet wird: Vorkommen, Welt, Auswahl und - im Baumodus - die Vorschau. */
 function collectOverlay(blend: number) {
   overlay.length = 0;
+  staticBatches.length = 0;
   const visible = visibleWorldRect(camera.view());
   if (camera.tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camera.x, camera.y);
-    resources.instances(visible, world, overlay, selection.resource, blend);
+    resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
   }
   const hovered = pointer.tile ? world.at(pointer.tile.x, pointer.tile.y)?.anchor : undefined;
-  worldInstances(world, visible, overlay, blend, selection, hovered);
+  worldInstances(world, visible, overlay, blend, selection, hovered,
+    (kind) => camera.tileSize < (settings.animalsBelow[kind] ?? ANIMALS_BELOW_DEFAULT));
   selectionOverlay(world, selection, blend, overlay);
   const tile = pointer.tile;
   if (placement.placingType !== null && tile) {
@@ -599,6 +624,19 @@ function collectOverlay(blend: number) {
 }
 
 function loop(now: number) {
+  // Stufenloser Zoom und Neigung zählen mit - beides bewegt die Ansicht.
+  const view = `${camera.x},${camera.y},${camera.zoom},${viewRotation()},${viewElevation()}`;
+  if (view !== lastView) {
+    lastView = view;
+    lastMove = now;
+  }
+  // Etwas Spiel, damit bei 60 Hz jedes zweite Bild kommt und nicht jedes dritte.
+  if (settings.idleFps && now - lastMove > IDLE_AFTER_MS && now - lastFrame < 1000 / IDLE_FPS - 4) {
+    requestAnimationFrame(loop);
+    return;
+  }
+  lastFrame = now;
+
   // Begrenzt, damit die Kamera nach einem Tab-Wechsel nicht quer über die Karte
   // springt (dt wäre dann die gesamte Zeit im Hintergrund).
   const dt = Math.min((now - lastTime) / 1000, 0.1);
@@ -617,7 +655,8 @@ function loop(now: number) {
   if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
   collectOverlay(simulation.blend);
   renderer.setPlayerColor(player.color.toRGB());
-  const drawn = renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay);
+  renderer.billboardBelow = settings.billboards;
+  const drawn = renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay, staticBatches);
   // Das Bild für den Dreh-Übergang nur, wenn gerade gezeichnet wurde - sonst
   // ist der WebGL-Puffer leer und der Übergang begänne schwarz.
   if (pendingFacing && drawn) {
@@ -630,11 +669,15 @@ function loop(now: number) {
     turnAnimation.play(turned === -180 ? 180 : -turned);
   }
 
-  const seen = minimapView();
-  minimapDots(world, minimap, seen, minimapOverlay);
-  minimap.render(seen, minimapOverlay);
+  if (!settings.minimapFps || now - lastMinimap >= 1000 / MINIMAP_FPS - 4) {
+    lastMinimap = now;
+    const seen = minimapView();
+    minimapDots(world, minimap, seen, minimapOverlay);
+    minimap.render(seen, minimapOverlay);
+    devPanel.minimapFrame();
+  }
 
-  devPanel.frame(now, camera);
+  devPanel.frame(now, camera, renderer.billboardsActive);
 
   if (uiRefresh.due(now)) {
     ui.refreshResources();
@@ -645,7 +688,7 @@ function loop(now: number) {
   requestAnimationFrame(loop);
 }
 
-devPanel.showZoom(camera.tileSize);
+showZoom();
 // Blickrichtung und Pause wie beim letzten Mal. Die Kamera bleibt auf dem
 // Feld aus der Adresse - gedreht wird nur die Ansicht.
 if (isDirection(settings.facing)) rotateToFace(settings.facing);

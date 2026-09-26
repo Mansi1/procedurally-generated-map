@@ -82,6 +82,7 @@ export function uploadTerrainParams(
   f('uReliefHeight', p.reliefHeight);
   f('uReliefExponent', p.reliefExponent);
   f('uLowlandRelief', p.lowlandRelief);
+  f('uLowlandShade', p.lowlandShade);
   f('uMountainFoot', p.mountainFoot);
   gl.uniform1i(location('uMicroOctaves'), p.microOctaves);
 }

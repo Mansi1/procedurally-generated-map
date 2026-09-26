@@ -289,13 +289,17 @@ export function setViewUniforms(gl: WebGL2RenderingContext, location: (name: str
   gl.uniform1f(location('uZScreen'), zScreen);
 }
 
-/** Kamera-Uniforms für PROJECT_GLSL. */
+/**
+ * Kamera-Uniforms für PROJECT_GLSL.
+ * @param size Größe der Zeichenfläche - sonst das Canvas (z. B. ein Ausschnitt eines Framebuffers)
+ */
 export function setCameraUniforms(
     gl: WebGL2RenderingContext,
     location: (name: string) => WebGLUniformLocation | null,
     camera: GpuCamera,
+    size: { width: number; height: number } = gl.canvas,
 ) {
-  const { width, height } = gl.canvas;
+  const { width, height } = size;
   gl.uniform2f(location('uResolution'), width, height);
   const g = worldToGround(camera.centerX, camera.centerY);
   gl.uniform2f(location('uCameraGround'), g.u, g.v);
