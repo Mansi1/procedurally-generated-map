@@ -26,6 +26,7 @@ import {
   type Clip, type Rig,
 } from './clips';
 import { TERRAIN_COMMON } from './terrainShader';
+import { addRenderStats } from '../renderStats';
 import { FLATTEN_GLSL, MAX_FLAT_ZONES } from '../world/flatten';
 import { parseMtl, parseMtlImages, parseObj, type ObjTriangle, type RGB01 } from './obj';
 import villagerMaleModel from '../models/villager_male.glb?model';
@@ -3198,6 +3199,8 @@ export class EntityRenderer {
     gl.vertexAttribPointer(5, 3, gl.FLOAT, false, bytes, offset + 48);
     gl.vertexAttribPointer(7, 1, gl.FLOAT, false, bytes, offset + 60);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, mesh.vertices, count);
+    addRenderStats('drawCalls', 1);
+    addRenderStats('vertices', mesh.vertices * count);
   }
 
   /**
@@ -3227,6 +3230,10 @@ export class EntityRenderer {
     const billboards = shown.size > 0 && cssPixelsPerTile < this.billboardBelow
       && this.ensureBillboards(camera.cachePixelsPerTile ?? camera.pixelsPerTile, camera.cacheGroundV ?? viewGroundV(), pixelRatio, shown);
     this.billboardsActive = billboards;
+    // Einzeln je Bild gepackt gegen fest in Puffern (createBatch) - und ob Bäume als Bild.
+    addRenderStats('instances', instances.length);
+    for (const batch of batches) for (const range of batch.ranges.values()) addRenderStats('batched', range.count);
+    if (billboards) addRenderStats('billboards', 1);
 
     // Overlays zuerst, dann die Gebäude von hinten nach vorn - halbtransparente
     // Vorschau-Klötze mischen sich sonst mit dem falschen Hintergrund.

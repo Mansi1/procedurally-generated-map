@@ -24,6 +24,7 @@ import {
   type GpuCamera,
 } from './iso';
 import type { Color } from '../functions/Color';
+import { addRenderStats } from '../renderStats';
 
 /** Reihenfolge muss zu den B_*-Konstanten im Shader passen. */
 export interface TerrainPalette {
@@ -675,6 +676,8 @@ export class TerrainRenderer {
     gl.disable(gl.SCISSOR_TEST);
     gl.bindVertexArray(null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // Geländeerzeugung ist teuer (ein Bild voll ~180 ms) - neu berechnete Texel.
+    addRenderStats('terrainTexels', spent + spentRest);
     return spent + spentRest;
   }
 
@@ -871,7 +874,10 @@ export class TerrainRenderer {
     }
 
     // Nur die nötigen Zeilen - die Indizes liegen zeilenweise hintereinander.
-    gl.drawElements(gl.TRIANGLES, (rows - 1) * (stride - 1) * 6, gl.UNSIGNED_INT, 0);
+    const indices = (rows - 1) * (stride - 1) * 6;
+    gl.drawElements(gl.TRIANGLES, indices, gl.UNSIGNED_INT, 0);
+    addRenderStats('drawCalls', 1);
+    addRenderStats('vertices', indices);
     gl.bindVertexArray(null);
     return true;
   }

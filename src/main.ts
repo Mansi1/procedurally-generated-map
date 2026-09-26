@@ -54,6 +54,7 @@ import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField, type OnScreen } from './world/resources';
 import { FlowerField } from './world/flowers';
 import { Sound } from './audio';
+import { addRenderStats, renderStatsFrame, startRenderStats, withoutRenderStats } from './renderStats';
 import { Music } from './music';
 import { currentSeed, deleteSave, switchWorld, takeStartRequest } from './worlds';
 
@@ -765,6 +766,9 @@ function loop(now: number) {
     return;
   }
   lastFrame = now;
+  const workStart = performance.now();
+  // Gedrosselt, weil die Kamera steht - dann sind 30 Bilder je Sekunde gewollt.
+  if (settings.idleFps && now - lastMove > IDLE_AFTER_MS) addRenderStats('idle', 1);
 
   // Begrenzt, damit die Kamera nach einem Tab-Wechsel nicht quer über die Karte
   // springt (dt wäre dann die gesamte Zeit im Hintergrund).
@@ -803,15 +807,27 @@ function loop(now: number) {
     }
   }
 
+  // Wohin die Zeit eines Bildes geht (renderStats.ts, getRenderStats()).
+  let mark = performance.now();
+  const lap = (key: string) => {
+    const t = performance.now();
+    addRenderStats(key, t - mark);
+    mark = t;
+  };
   simulation.advance(paused || start.isOpen() ? 0 : dt * settings.speed, (step) => world.tick(step));
+  lap('simMs');
 
   ground.update(now);
   // Wild rund um die Kamera - neue Stücke nur ab und zu prüfen.
   if (animalCheck.due(now)) world.ensureAnimals(camera.x, camera.y);
   collectOverlay(simulation.blend);
+  lap('collectMs');
   renderer.setPlayerColor(player.color.toRGB());
   renderer.billboardBelow = settings.billboards;
   const drawn = renderer.render(camera.x, camera.y, pointer.tile?.x, pointer.tile?.y, overlay, staticBatches);
+  lap('renderMs');
+  addRenderStats('tileSize', camera.tileSize);
+  addRenderStats('relief', renderer.relief);
   // Das Bild für den Dreh-Übergang nur, wenn gerade gezeichnet wurde - sonst
   // ist der WebGL-Puffer leer und der Übergang begänne schwarz.
   if (pendingFacing && drawn) {
@@ -828,8 +844,10 @@ function loop(now: number) {
     lastMinimap = now;
     const seen = minimapView();
     minimapDots(world, minimap, seen, minimapOverlay);
-    minimap.render(seen, minimapOverlay);
+    // Ihre Kosten zählen nur als minimapMs - Draw-Calls usw. sind die der Hauptansicht.
+    withoutRenderStats(() => minimap.render(seen, minimapOverlay));
     devPanel.minimapFrame();
+    lap('minimapMs');
   }
 
   devPanel.frame(now, camera, renderer.billboardsActive);
@@ -839,6 +857,7 @@ function loop(now: number) {
     updateHoverInfo();
   }
   if (autosave.due(now)) world.save();
+  renderStatsFrame(now, performance.now() - workStart);
 
   requestAnimationFrame(loop);
 }
@@ -855,5 +874,6 @@ ui.refreshResources();
 const request = takeStartRequest();
 if (request === 'new') startNewGame();
 else if (request !== 'continue') start.open();
+startRenderStats();
 requestAnimationFrame(loop);
 document.title = `Soliva - ${seed}`;
