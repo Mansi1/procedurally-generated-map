@@ -270,6 +270,56 @@ The render loop should preferably allocate nothing, but do not build object pool
 
 Reuse a few explicit scratch arrays/vectors instead.
 
+## Soliva: messen und belegen
+
+Die Werkzeuge kommen mit PR #4 (`fix-smooth-zoom`); Hintergrund und Plan in `docs/OPTIMIZATION_PLAN.md`.
+
+**Render-Stats für die Diagnose.** `window.getRenderStats()` (`src/renderStats.ts`) liefert die letzten 30 Sekunden, je Sekunde ein JSON-Objekt: fps, `frameMs`/`cpuMs` samt Aufteilung (`simMs`, `collectMs`, `renderMs`, `minimapMs`, `pickMs`), `longTaskMs`, `drawCalls`, `vertices`, `terrainVertices`, `terrainTexels`, `instances`/`batched` und mehr. Vor einer Vermutung über die Ursache erst dort nachsehen, per Playwright mit `page.evaluate(() => window.getRenderStats())`. Neue teure Pfade melden ihre Kosten mit `addRenderStats(key, value)`. Das gilt je Bild. `window.getRenderInfo()` liefert die Umstände eines Laufs: GPU, Pixel-Verhältnis und Einstellungen.
+
+**Bench bei jeder Änderung am Rendering oder an der Leistung.** Vorher und nachher `npm run bench` ausführen, der Dev-Server muss laufen. Das Skript vergleicht die Mediane von vier festen Szenen mit `tools/perf/baseline.json`. `npm run bench -- --save` setzt die Basis neu, das nur bewusst und nur auf demselben Rechner tun. So lesen:
+- Zählwerte (`drawCalls`, `vertices`, `terrainVertices`, `terrainTexels`) rauschen um ±2 %. Sie sind die harten Belege.
+- Zeiten um 1 ms (`cpuMs`, `renderMs`) rauschen bis ±40 %. Kleine Zeitunterschiede belegen nichts.
+- `fps` steht bei 60 an (vsync). Ein Gewinn zeigt sich in `cpuMs` und den Zählwerten, nicht in `fps`.
+- Die Bench-Ausgabe gehört mit Vorher/Nachher in Commit oder PR. Zeigt die Messung keinen Effekt, das offen sagen und keinen behaupten.
+
+**Screenshots bei jeder Shader-Änderung** (`src/gl/*Shader*`, GLSL in `src/gl/`):
+1. Vorher feste Szenen aufnehmen, mit Playwright bei festem Fenster (1280×800) und Pixel-Verhältnis 1. Das Spiel dabei anhalten (`paused` in `pgm.settings`) und die Maus aus dem Bild nehmen. Die Szenen sollen weit, mittel, nah, Stadt (Welt `Demo`) und Wasser oder Fels abdecken.
+2. Einen zweiten Lauf desselben Codes aufnehmen, sein Pixel-Unterschied ist das Rauschen der Animationen.
+3. Nach der Änderung dieselben Szenen aufnehmen und pixelweise vergleichen.
+- Liegt der Unterschied im Rauschen, ist das Bild gleich. Liegt er darüber, die Bilder ansehen und die Änderung begründen oder zurücknehmen.
+- Soll sich das Bild nicht ändern (reine Optimierung), muss die Abweichung im Rauschen liegen.
+
+### Stolperfallen, in die schon ein Agent gelaufen ist
+
+- **`npm test` scheitert unter Node 24:** Die Meldung lautet „Cannot find module …/tests“. Das liegt nicht an deiner Änderung: `node --test tests/` nimmt ab Node 24 kein Verzeichnis mehr an. Stattdessen `node --test tests/*.test.mjs` ausführen, das läuft unter jeder Version. Die Korrektur von `package.json` kommt mit PR #4. Danach ist `npm test` wieder richtig, und dieser Punkt kann weg.
+- **Szenen per Playwright aufsetzen:** `entry.ts` lädt `main.ts` erst nach dem `load`-Ereignis nach.
+  - Wer Welt und Start-Vermerk setzt (`pgm.seed`, `sessionStorage` `pgm.start`), muss vorher warten, bis `window.getRenderStats` existiert. Sonst verbraucht die laufende Seite den Vermerk, und gemessen wird das Hauptmenü, mit plausibel aussehenden Zahlen.
+  - Danach prüfen, dass `#start` verborgen ist, und in den Stats nachsehen, ob `tileSize` zur Szene passt.
+- **Stillstand ist keine Langsamkeit:** Steht die Kamera eine Sekunde, zeichnet das Spiel absichtlich nur 30 fps (`idleFps`). Das erkennt man in den Stats an `idle` nahe 1. Zum Messen `idleFps: false` setzen, der Bench tut das schon.
+- **Headless-Chrome nutzt die echte GPU:** Auf dem Mac läuft Playwright (`tools/ui/browser.mjs`) über Metal auf der echten Grafikkarte, nicht auf einem Software-Renderer. `EXT_disjoint_timer_query_webgl2` ist vorhanden. Messwerte aus Playwright sind also echt. Das Pixel-Verhältnis ist dort aber 1, bei einem Retina-Bildschirm 2. Nur gleiche Umstände vergleichen, dafür gibt es `getRenderInfo()`.
+- **Schichten beim Import:** `src/gl/` importiert nie aus `src/game/`, sondern nur aus `src/world/`, `src/noise.ts`, `src/functions/` und aus `src/gl/` selbst. `src/game/` und `src/main.ts` sitzen darüber. Code, den beide Seiten brauchen, liegt in `src/` selbst, zum Beispiel `renderStats.ts`. Vor einer neuen Datei die Imports der Nachbarn ansehen.
+- **`docs/OPTIMIZATION_PLAN.md` ist ein Hinweis, keine Tatsache:**
+  - Zeilenangaben dort sind veraltet. Nach Funktionsnamen suchen, nicht nach Zeilennummern.
+  - Befunde vor dem Umsetzen am Code prüfen. Mindestens eine Behauptung war falsch: 2.2 soll „bit-identisch“ sein, kann aber schmale Grate überspringen.
+  - Ein „harmloser“ Early-out (`armoryStock`) hätte das Verhalten geändert, weil der Aufrufer `has()` prüft.
+  - Umgesetztes und bewusst Ausgelassenes vermerkt der Plan zu Beginn von Abschnitt 2. Das bei jeder Änderung nachführen.
+- **`Array.find` durch eine Map ersetzen:** `find` liefert den *ersten* Treffer, `new Map(entries)` behält den *letzten*. Bei möglichen Doppelten die Map aus der umgekehrten Liste bauen.
+
+---
+
+# memory.md: eigenes Gedächtnis des Agenten
+
+In `memory.md` (Projektwurzel) hältst du fest, was du beim Arbeiten gelernt hast und was nicht schon im Code, in dieser Datei oder in `docs/` steht. Beispiele: gemessene Werte und Rauschen, Eigenheiten der Umgebung, Sackgassen samt Grund, offene Folgearbeiten.
+
+- **Zu Beginn lesen**, vor der ersten Änderung.
+- **Knapp:** je Eintrag ein bis drei Zeilen. Das Datum steht absolut (JJJJ-MM-TT), dazu, wenn es hilft, Branch oder Commit.
+- **Bewusst überarbeiten, nicht nur anhängen:**
+  - Bei jedem Besuch die Einträge prüfen, die deine Arbeit berühren.
+  - Was nicht mehr stimmt oder nicht mehr gebraucht wird, *löschen*. Das betrifft etwa behobene Fehler, erledigte Folgearbeiten und Werte, die eine neue Messung ersetzt.
+  - Was sich geändert hat, an Ort und Stelle *korrigieren*, statt einen zweiten, widersprechenden Eintrag anzulegen.
+  - Ein veralteter Eintrag ist schädlicher als ein fehlender: Der nächste Agent handelt danach.
+- **Nichts doppeln:** Gilt etwas dauerhaft für alle Agenten, gehört es hierher in `AGENTS.md`. Aus `memory.md` wird es dann gelöscht.
+
 ## Loop unrolling
 
 Loop unrolling is a valid optimization when the iteration count is **small, fixed, and hot**, especially in GLSL ES 1.00 where older ES2-era compilers/drivers may optimize or accept statically expanded code more reliably than dynamic loop structures.
