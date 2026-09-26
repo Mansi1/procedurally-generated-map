@@ -54,7 +54,7 @@ import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField, type OnScreen } from './world/resources';
 import { FlowerField } from './world/flowers';
 import { Sound } from './audio';
-import { addRenderStats, renderStatsFrame, startRenderStats, withoutRenderStats } from './renderStats';
+import { addRenderStats, renderStatsFrame, setRenderInfo, startRenderStats, withoutRenderStats } from './renderStats';
 import { Music } from './music';
 import { currentSeed, deleteSave, switchWorld, takeStartRequest } from './worlds';
 
@@ -828,6 +828,8 @@ function loop(now: number) {
   lap('renderMs');
   addRenderStats('tileSize', camera.tileSize);
   addRenderStats('relief', renderer.relief);
+  // Geräte-Pixel in Millionen - Retina ist viermal so viel Arbeit.
+  addRenderStats('mpx', (canvas.width * canvas.height) / 1e6);
   // Das Bild für den Dreh-Übergang nur, wenn gerade gezeichnet wurde - sonst
   // ist der WebGL-Puffer leer und der Übergang begänne schwarz.
   if (pendingFacing && drawn) {
@@ -875,5 +877,22 @@ const request = takeStartRequest();
 if (request === 'new') startNewGame();
 else if (request !== 'continue') start.open();
 startRenderStats();
+// Umstände der Messung für getRenderInfo() - ohne sie sind Läufe nicht vergleichbar.
+setRenderInfo(() => {
+  const gl = canvas.getContext('webgl2');
+  const debug = gl?.getExtension('WEBGL_debug_renderer_info');
+  return {
+    gpu: gl && debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl?.getParameter(gl.RENDERER),
+    pixelRatio: camera.pixelRatio,
+    width: camera.width,
+    height: camera.height,
+    seed,
+    idleFps: settings.idleFps,
+    minimapFps: settings.minimapFps,
+    billboards: settings.billboards,
+    tilt: settings.tilt,
+    facing: settings.facing,
+  };
+});
 requestAnimationFrame(loop);
 document.title = `Soliva - ${seed}`;

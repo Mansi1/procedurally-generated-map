@@ -773,7 +773,10 @@ export class TerrainRenderer {
       if (ready && left > 0 && (!active.moved || b.scale > active.scale)) left -= this.fillPending(b, camera, left, 0);
     }
     if (smooth && left > 0) this.fillPending(active, camera, 0, left);
-    if (frozen && !ready) return false;
+    if (frozen && !ready) {
+      addRenderStats('frozen', 1);
+      return false;
+    }
 
     // Wie viel vom alten Cache zu sehen ist: ganz, solange der neue fehlt,
     // dann weich ausgeblendet.
@@ -877,7 +880,8 @@ export class TerrainRenderer {
     const indices = (rows - 1) * (stride - 1) * 6;
     gl.drawElements(gl.TRIANGLES, indices, gl.UNSIGNED_INT, 0);
     addRenderStats('drawCalls', 1);
-    addRenderStats('vertices', indices);
+    // Eigener Wert: jeder Gelände-Eckpunkt rechnet die ganze Höhenfunktion, viel teurer als einer eines Modells.
+    addRenderStats('terrainVertices', indices);
     gl.bindVertexArray(null);
     return true;
   }

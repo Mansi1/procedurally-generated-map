@@ -1,6 +1,7 @@
 # Optimierungsplan: 3D-Rendering
 
 Stand: 2026-09-26. Reine Analyse — es wurde noch nichts verändert.
+Erweiterung 2026-09-26: Abschnitte 10–12 ergänzt (Unsicherheiten der Einschätzung, weitere Prüf-Optionen, Umsetzungs-Checklisten für Coding Agents).
 Grundlage: Vollständige Durchsicht von `src/gl/` (entityRenderer, terrainRenderer, terrainShader, iso, clips, obj), `src/main.ts`, `src/map.ts`, `src/world/` (render, resources, deposits, flowers, villagers, wildlife, world, pathfinding), `src/game/` (Camera, Picker, MouseInput, Ground, DevPanel) sowie der Asset-Pipeline (`vite.config.ts`, `tools/models/glb.mjs`).
 
 ---
@@ -32,7 +33,8 @@ Diese Mechanismen funktionieren bereits auf hohem Niveau und sollen **nicht** an
 
 Damit jede Phase vorher/nachher belegbar ist:
 
-- **Eingerichtet:** `window.getRenderStats()` (`src/renderStats.ts`) — Ringpuffer der letzten 30 Sekunden, je Sekunde ein JSON-Objekt mit fps, Frame- und CPU-Zeit (Mittel/Max), deren Aufteilung (`simMs`, `collectMs`, `renderMs`, `minimapMs`), `drawCalls`, `vertices`, `instances`/`batched`, `billboards`, `terrainTexels`, `tileSize`, `relief`, `idle`. Über Playwright: `await page.evaluate(() => window.getRenderStats())`. Eigene Werte mit `addRenderStats(key, value)`.
+- **Eingerichtet:** `window.getRenderStats()` (`src/renderStats.ts`) — Ringpuffer der letzten 30 Sekunden, je Sekunde ein JSON-Objekt mit fps, Frame- und CPU-Zeit (Mittel/Max), `longTasks`/`longTaskMs` (auch außerhalb der Schleife), deren Aufteilung (`simMs`, `collectMs`, `renderMs`, `minimapMs`, `pickMs`), `drawCalls`, `vertices`/`terrainVertices`, `mpx`, `frozen`, `instances`/`batched`, `billboards`, `terrainTexels`, `tileSize`, `relief`, `idle`. Über Playwright: `await page.evaluate(() => window.getRenderStats())`. Eigene Werte mit `addRenderStats(key, value)`. Umstände des Laufs (GPU, Pixel-Verhältnis, Einstellungen): `window.getRenderInfo()`.
+- **Vergleich:** `npm run bench` fährt vier feste Szenen ab (weit-leer, stadt, nah, zoom-wechsel), verwirft den Anlauf und vergleicht die Mediane mit `tools/perf/baseline.json` (neu setzen mit `npm run bench -- --save`).
 - **Frame-Zeit & FPS:** DevPanel ist vorhanden (`src/game/DevPanel.ts`) — um durchschnittliche/p95-Framezeit erweitern oder extern per Chrome-Performance-Profil.
 - **GL-Calls pro Frame:** Zähler um `draw*`/`uniform*`/`bind*`-Aufrufe legen (oder SpectorJS).
 - **GC-Druck:** `performance.memory` (Chrome) bzw. Allocation-Timeline im Profiler; Ziel: keine Allokations-Spitzen im Render-Loop.
@@ -343,3 +345,166 @@ Nach Impact/Aufwand sortiert; Phasen 1–3 sind risikoarm und unabhängig mergeb
 - **Worker-Offloading der Simulation:** 10-Hz-Tick ist billig genug; Komplexitätsgewinn negativ.
 - **Frustum-Culling für das Display-Gitter:** Das Gitter passt exakt ins Bild — nichts zu cullen; die einzige Verschwendung dort ist über 5.2/2.8 abgedeckt.
 - Kosmetik: doppelter Kommentar `entityRenderer.ts:2287-2288` („Stammstücke bleiben immer" zweimal) — beim nächsten Anfassen der Datei mitnehmen.
+
+
+---
+
+## 10. Unsicherheiten in dieser Einschätzung
+
+Die Analyse beruht auf **statischer Code-Lektüre, nicht auf Messungen**. Die folgenden Punkte sind explizit unsicher und müssen vor bzw. während der Umsetzung validiert werden.
+
+### 10.1 Messunsicherheiten (betreffen alle Impact-Stufen)
+
+1. **CPU- vs. GPU-Engpass unbekannt.** Alle Einstufungen (hoch/mittel/niedrig) sind Schätzungen aus der Code-Analyse. Ob die Frame-Zeit auf der Zielhardware von GL-Calls (CPU), Vertex-Noise (GPU) oder GC-Pausen dominiert wird, ist nicht gemessen. → Vor den Phasen 2–4 Profiling nach §1 durchführen; Reihenfolge in §8 ggf. anpassen.
+2. **Szenario-Annahmen.** Zahlen wie ~350.000 Vertices/Bild, ~714.000 Dreiecke, ~300 Draws, 1.500–3.000 GL-Calls/Frame gelten für ein angenommenes Szenario (2560×1440 Canvas, ppt=16, ~20 sichtbare Regionen, 30–40 nicht-leere Shapes). Andere Fenstergrößen, Zoomstufen und Weltzustände verschieben die Werte deutlich.
+3. **GC-Druck ist unbewiesen.** Dass die Frame-Allokationen (Phase 3) spürbare Pausen erzeugen, hängt von Browser und Gerät ab. Auf Desktop mit viel RAM kann der Effekt nahe null sein, auf Mobilgeräten spürbar. → Allocation-Timeline vor Phase 3.
+4. **GLSL-Kostenzählung vs. Treiber-Realität.** Die snoise-/texelFetch-Zählungen sind statisch aus dem Shader-Quelltext gezählt. Treiber können Konstantfaltung und Dead-Code-Elimination anwenden (senkt die Ist-Kosten). Umgekehrt können die datenabhängigen `if`-Guards (2.4) auf Tiler-GPUs durch Divergenz einen Teil des erwarteten Gewinns auffressen. → Auf echter Hardware beide Varianten messen.
+5. **Fehlende Zielhardware-Definition.** Ohne definiertes Low-End-Profil ist die Frage „GPU-bound oder nicht?" nicht beantwortbar — alle GPU-bezogenen Einstufungen schweben in der Luft (s. Prüf-Option 11.7).
+
+### 10.2 Korrektheits-Risiken einzelner Maßnahmen
+
+| Maßnahme | Unsicherheit | Validierung |
+|---|---|---|
+| 2.2 `pickWorld` grob→fein | Grobschritt 2.0 kann einen schmalen Kamm zwischen zwei Stützstellen überspringen (Peak-Miss), weil das Relief zwischen den Samples über den Strahl ragen kann | A/B-Vergleich alte/neue Funktion über ≥10k Zufalls-Bildschirmpunkte auf mehreren Seeds; Abweichungen dokumentieren; ggf. Grobschritt an die maximale Relief-Steigung koppeln |
+| 2.3 `ground` für Gebäude | Nicht verifiziert, ob `Ground.heightAt` das Shader-Ergebnis inkl. `flattenZ` exakt abbildet — besonders **während** der Einebnungs-Animation an Baustellen | Screenshot-Diff an Baustellen; Höhenvergleich Bau vs. Shader |
+| 2.7 Hillshade auf Tiefwasser | „Minimaler Bilddelta" ist eine Vermutung — an Wasserhängen/Küsten können Übergangskanten sichtbar werden | Screenshot-Diff Küste/Hanggewässer |
+| 3.2 VAO-Cache | VAO-Anzahl wächst mit sichtbaren Regionen × Shapes; ohne Obergrenze/Eviction entsteht Verwaltungs-Overhead statt Gewinn | Obergrenze + LRU; GL-Call-Zähler als Nachweis |
+| 3.4 `BLEND` aus | Unklar, ob „opake" Modelle Alpha-Cutout-Fragmente enthalten (`birch_leaf.png` hat einen Alpha-Kanal); die Überdeckungs-Reihenfolge muss ohne Blend weiter stimmen | Alpha-Pfade im Shader prüfen, dann Screenshot-Diff dichter Wald |
+| 4.4 Sortier-Cache | Die in §4.4 skizzierte Stichproben-Erkennung kann seltene Falsch-Negative liefern → vereinzelt falsche Überdeckung einzelner Gebäude | Sicherere Variante wählen: Revisionszähler aus dem Bau-/Abriss-Code statt Stichprobe |
+| 5.1 Höhen-Cache-Textur | (a) Texel-Ausrichtung: Cache-Texel liegen auf Geräte-Pixel-Mitten, Gitterecken am Weltraster — an Steilhängen können trotz LINEAR-Filterung Stufen sichtbar werden; (b) Quantisierung bei 16-Bit-Float; (c) VRAM verdoppelt sich für bis zu 4 Cache-Texturen — Low-End ungeprüft | Screenshot-Diff Gebirge; VRAM-Budget rechnen; separate R16F-Textur als speicherschonendere Variante erwägen |
+| 5.2 Adaptives `reach` | Die CPU-Höhenabtastung kostet selbst Noise-Auswertungen pro Frame; der Break-even gegen gesparte Vertices ist nicht belegt — und nach 5.1 (Fetch statt Noise) sinkt der Nutzen stark | Erst nach 5.1 neu bewerten, ggf. streichen |
+| 6.1 `sails` einmal backen | Ob der Pivot-Unterschied (`hub`) per Uniform abbildbar ist, ohne die Clip-Zeilen-Indizierung (`uClipRow` pro Modell) umbauen zu müssen, ist im Detail nicht verifiziert | Machbarkeit am Code prüfen, dann `npm run check:anim` |
+| 3.6 Minimap-Teilen | WebGL-Contexts können GL-Objekte **nicht** teilen — die Einsparung beschränkt sich auf CPU-Parse/Bake; Upload und Per-Frame-Kosten bleiben doppelt. Der erwartete Gewinn ist ggf. zu hoch angesetzt | Gegen Prüf-Option 11.2 (Minimal-Modus) abwägen |
+
+### 10.3 Abhängigkeiten, die Prioritäten verschieben
+
+1. **Nach 5.1 (Höhen-Fetch)** wird 2.6 (Tiefwasser-Vertex-Shortcut) obsolet; 5.2 (`reach`) und 5.5 (`pixelRatio`) verlieren deutlich an Wert. Wer 5.1 vorzieht, kann diese drei Punkte streichen oder abwerten — dafür steigt das Risiko früh im Projekt.
+2. **3.1 und 3.6 verstärken sich:** die Minimap verdoppelt die Uniform-Kosten; beide zusammen bringen mehr als die Summe der Einzelteile.
+3. **4.3 und 7.1 gehören zusammen** (gleiche Datenstrukturen, gleiche Key-Umstellung) — als ein Arbeitspaket umsetzen.
+4. **2.10 räumt Teile von 4.2 mit ab** (`CLIPS.find` in `propsOfPose`) — Reihenfolge beachten, um Doppelarbeit zu vermeiden.
+5. **5.3 (Silhouetten-Pass) hängt von 3.1 ab:** der doppelte Uniform-Block der Figuren wird mit den Uniform-Kategorien bereits billiger — danach kann 5.3 an Priorität verlieren.
+
+---
+
+## 11. Weitere Optionen — als Nächstes prüfen
+
+Bevor größere Phasen starten, in dieser Reihenfolge klären:
+
+1. **Profiling statt Schätzung (oberste Priorität).** Chrome-Performance-Profil + SpectorJS + `EXT_disjoint_timer_query_webgl2` auf den drei Pässen (Fill, Display, Entities). Erst dann ist klar, ob Phase 2 (GL-Calls) oder Phase 4 (GPU) zuerst drankommen sollte. Verfügbarkeit der Timer-Extension auf Zielgeräten prüfen — nicht überall vorhanden.
+2. **Minimap radikal vereinfachen statt nur teilen (Alternative zu 3.6).** Braucht die Minimap Skinning, Silhouetten und LOD überhaupt? Wenn ein Minimal-Modus (Punkte/flache Icons) reicht, entfällt der zweite `EntityRenderer` fast komplett — ein größerer Hebel als das Teilen von Daten. Dabei prüfen, ob der Silhouetten-Pass in der Minimap überhaupt sichtbar ist (sonst: doppelt doppelt gezeichnet).
+3. **Adaptive Qualität während Interaktion.** Oktaven-/Detail-Uniforms (`uDetailStrength` u. a.) während Zoom/Pan temporär senken und bei Stillstand wieder hochfahren — glättet die teuerste Phase (Fill) ohne Qualitätsverlust im Endbild. Zu klären: Übergangsstrategie, da der Cache mit Zielqualität befüllt werden muss.
+4. **Speicher-Varianten für 5.1 abwägen.** Separate R16F-Höhen-Textur statt Upgrade aller Caches auf RGBA16F. VRAM-Gesamtbudget rechnen: bis zu 4 Cache-Texturen + Clip-Textur (12,6 MB) + Billboard-Atlanten (2048er-Kacheln) — gegen ein Low-End-Profil prüfen.
+5. **Billboard-Rebake-Empfindlichkeit.** Der Cache-Key nutzt `toFixed(4)` auf Rotation/Zoom/Neigung (`entityRenderer.ts:3165`) — prüfen, ob das bei sanften Kamerafahrten unnötige Atlas-Neubauten auslöst (das Budget von 1 Art/Frame kann trotzdem permanent laufen).
+6. **Fill-Budget-Dynamik.** Prüfen, ob `SMOOTH_BUDGET`/`FILL_BUDGET` (`terrainRenderer.ts:104-120`) adaptiv an die gemessene GPU-Zeit angepasst werden sollten, statt fix auf 250k/1M — deckelt Frame-Einbrüche beim Zoomen auf schwachen Geräten.
+7. **Zielhardware festlegen.** Ein definiertes Low-End-Profil (z. B. iGPU + 4 GB RAM, ggf. Mobil) fehlt; ohne es sind die GPU-Fragen nicht beantwortbar. Alle Messungen nach §1 dagegen normieren.
+8. **`gallery.ts` einordnen (29 KB).** Wurde nicht vollständig analysiert — klären, ob sie im Spiel-Renderpfad hängt oder ein Dev-/Galerie-Tool ist. Falls Renderpfad: eigene Analyse nötig, der Plan deckt sie aktuell nicht ab.
+9. **OffscreenCanvas/Worker-Rendering** als langfristige Option bewerten (Main-Thread-Entlastung). Browser-Support ist inzwischen breit, der Umbau aber groß — nur erwägen, wenn nach den Phasen 1–4 noch ein CPU-Limit bleibt.
+
+---
+
+## 12. Umsetzungs-Checklisten für Coding Agents
+
+**Arbeitsregeln für alle Gruppen:**
+
+- [ ] Vor Beginn: §1-Messmethodik einrichten und eine **Baseline-Messung** der vier Referenzszenarien (a–d) durchführen; Werte hier eintragen: …
+- [ ] Pro Gruppe ein eigener Branch/Commit; nach jeder Gruppe muss `npm run build && npm test` grün sein
+- [ ] Nach jeder Gruppe: dieselben Szenarien erneut messen und das Ergebnis direkt unter der Gruppe in dieser Datei eintragen
+- [ ] Bei Shader- oder Reihenfolge-Änderungen: Screenshot-Vergleich (Gipfel, Wasserhang, Wald, Baustelle) **vor** dem Merge
+- [ ] Unsicherheiten aus §10.2 zur jeweiligen Gruppe lesen, bevor mit der Umsetzung begonnen wird
+
+### Checkliste A — Quick Wins (§2)
+
+- [ ] **A1 Zoom-Pick-Guard (2.1)**
+  - [ ] In `src/main.ts:459` `picker.point(ax, ay)` nur ausführen, wenn `camera.zoom !== camera.targetZoom`
+  - [ ] Abnahme: Build grün; Mausrad-Zoom bleibt am Cursor verankert; Hover funktioniert weiter
+- [ ] **A2 pickWorld grob→fein (2.2)**
+  - [ ] `src/gl/iso.ts:196-217`: Grobschritt 2.0 bis erster Treffer, ein Grobschritt zurück, Feinschritt 0.2, bestehende Bisektion unverändert lassen
+  - [ ] A/B-Vergleichsskript schreiben: alte vs. neue Funktion über ≥10k Zufalls-Bildschirmpunkte auf 3 Seeds; Abweichungen dokumentieren (Peak-Miss-Check, §10.2)
+  - [ ] Abnahme: `npm test` grün; Hover auf Gipfel/Kamm/Küste/Flachland manuell geprüft
+- [ ] **A3 ground für Gebäude (2.3)**
+  - [ ] In `src/world/render.ts:97-112` `ground` pro Gebäude setzen (Wert muss Shader-konsistent inkl. `flattenZ` sein)
+  - [ ] Abnahme: Screenshot-Diff an Baustelle/eingeebnete Zone — nichts schwebt oder sinkt; GPU-Zeit Entities-Pass eingetragen
+- [ ] **A4 GLSL-Guards (2.4–2.7)**
+  - [ ] `groundBump`: Terme mit Gewicht 0 per `if` überspringen (`terrainShader.ts:839-857`)
+  - [ ] `climate()` nur bei `height >= uSeaLevel` (`terrainShader.ts:884`)
+  - [ ] Tiefwasser-Shortcut im **Display**-Vertex-Shader (`terrainShader.ts:247-254`) mit konservativer FeinMax-Marge — **nicht** im Fill-Shader
+  - [ ] Hillshade: Tiefwasser ohne die beiden Nachbar-`elevation()` (`terrainShader.ts:979-984`)
+  - [ ] Abnahme: Screenshot-Diffs (Ozean, Küste, Wiese, Gebirge) ohne sichtbare Änderung; Fill-GPU-Zeit beim Zoomen gemessen und eingetragen
+- [ ] **A5 Grid + Uniform-Kleinkram (2.8–2.9)**
+  - [ ] `ensureGrid`-Wiederverwendungsfaktor 2.5 → 1.3 (`terrainRenderer.ts:394`)
+  - [ ] `uFlat[0]` nur bei Änderung laden (Flag in `setFlatZones`, `map.ts:443-450`); Entity-`uFlat[0]` bei `flatCount === 0` überspringen (`entityRenderer.ts:3277`)
+  - [ ] Konstante `normalize(SUN…)`-Ausdrücke als `const` hinterlegen (`terrainShader.ts:443, 541, 657, 707, 779, 794, 966, 997`)
+- [ ] **A6 Lineare Scans → Sets/Maps (2.10)**
+  - [ ] `FIELDS.includes` → `Set` (`entityRenderer.ts:2728` und `:499`)
+  - [ ] `writeBar`: `MODELS.find` → vorhandenes `modelByShape` (`entityRenderer.ts:3404`)
+  - [ ] Prop-Body-`find` bei Konstruktion auflösen (`entityRenderer.ts:3309`)
+  - [ ] `CLIPS.find` in `propsOfPose` → vorberechnete Tabelle (`entityRenderer.ts:2559`)
+
+### Checkliste B — GL-Calls (§3)
+
+- [ ] **B1 Uniform-Kategorien (3.1)**
+  - [ ] Upload-Set je Modell-Kategorie definieren (Baum/Fels/Gebäude/Figur/Prop)
+  - [ ] Werte-Cache: konstante Uniforms (Clip-Arrays nach `bakeClips`, Body-Maße) nur bei Modell-/Programmwechsel laden
+  - [ ] Abnahme: GL-Call-Zähler vorher/nachher in dieser Datei notiert (Ziel: deutlich unter 1.000 Calls/Frame inkl. Minimap)
+- [ ] **B2 VAO-Cache (3.2)**
+  - [ ] Lazy-VAO je `(mesh, buffer, first)` am `ranges`-Eintrag (`entityRenderer.ts:3187-3201`)
+  - [ ] Obergrenze + LRU-Eviction; VAOs beim Verwerfen von Regionen freigeben (§10.2)
+- [ ] **B3 Draw-Konsolidierung (3.3)**
+  - [ ] Zuerst zählen: sichtbare Regionen × Shapes je Szenario loggen (Basis für die Strategie)
+  - [ ] `WEBGL_multi_draw`-Support auf Zielgeräten prüfen; Fallback-Pfad behalten
+- [ ] **B4 BLEND-Steuerung (3.4)**
+  - [ ] Zuerst Alpha-Pfade der Modelle prüfen (Cutout? `birch_leaf.png`-Alpha?) — erst dann `BLEND` für opake Pässe deaktivieren
+  - [ ] Abnahme: Screenshot-Diff dichter Wald + Baum vor Gebäude
+- [ ] **B5 Instanz-Puffer (3.5)**
+  - [ ] Einmal `bufferData` (Kapazität) + `bufferSubData` pro Frame (`entityRenderer.ts:3270`)
+- [ ] **B6 Minimap (3.6)** — erst nach Prüf-Option 11.2 entscheiden
+  - [ ] Entscheidung dokumentiert: Daten teilen **oder** Minimal-Modus
+  - [ ] Umsetzung + Startzeit-Messung eingetragen
+
+### Checkliste C — Allokationen (§4)
+
+- [ ] **C1 Instanz-Pooling (4.1)** — `world/render.ts`: persistente Instanz-Objekte je Gebäude/Dorfbewohner/Tier/Furche nach dem Muster von `ResourceNode.instance` (`resources.ts:117`)
+- [ ] **C2 figureProps (4.2)** — Out-Struktur wiederverwenden; Pose→Props-Tabelle (deckt A6/`CLIPS.find` mit ab)
+- [ ] **C3 Numerische Tile-Keys (4.3)** — `deposits.ts`, `villagers.ts`, `world.ts` auf das `pack`-Schema (`pathfinding.ts:55`) umstellen; **gemeinsam mit D1 umsetzen**
+- [ ] **C4 Sortier-Cache (4.4)** — Revisionszähler aus dem Bau-/Abriss-Code (nicht die Stichproben-Variante, §10.2)
+- [ ] **C5 updateFlatZones (4.5)** — ereignisgesteuert (Gebäude-Revision/Kamera), numerischer Key statt String, quadrierte Distanz im Komparator
+- [ ] **C6 Hover-Coalescing (4.6)** — mousemove auf rAF legen; nur bei Tile-Wechsel verarbeiten; `terrain.getTile` fürs DevPanel cachen
+- [ ] **C7 resourceObject-Pick (4.7)** — Existenzcheck statt `resourceInfo`; `modelSize` per Map-Lookup
+- [ ] **C8 Kleinigkeiten (4.8)** — die Liste in §4.8 Punkt für Punkt abarbeiten
+- [ ] **C9 Validierung** — Allocation-Timeline zeigt keine Spitzen mehr im Render-Loop; Messung eingetragen
+
+### Checkliste D — Simulation (§7, wegen der C3-Abhängigkeit vorgezogen)
+
+- [ ] **D1 blockedAt (7.1)** — numerische Keys + Re-Check nur alle N Ticks (`villagers.ts:150-165, 176-178`); gemeinsamer Branch mit C3
+- [ ] **D2 Tier-Terrain-Pfad (7.2)** — `terrainAt()` + kleinen Cache statt `getTile` (`world.ts:661-667`)
+- [ ] **D3 Autosave (7.4)** — in `requestIdleCallback` verlegen
+- [ ] **D4 nearestThreat (7.3)** — nur umsetzen, falls eine Messung es zeigt; sonst als „nicht nötig" markieren
+
+### Checkliste E — Strukturelle GPU-Gewinne (§5, erst nach Profiling)
+
+- [ ] **E0 Profiling & Entscheid** — CPU/GPU-Split gemessen (Prüf-Option 11.1); bestätigt die Reihenfolge E vs. B/C; Ergebnis hier eintragen
+- [ ] **E1 Höhen-Cache-Textur (5.1)**
+  - [ ] Speicher-Variante festgelegt (R16F separat vs. RGBA16F) und VRAM-Budget gerechnet (Prüf-Option 11.4)
+  - [ ] Fill-Pass schreibt Höhe; Ringpuffer-Koordinaten wie bei `vCache` (REPEAT)
+  - [ ] Display-Vertex-Shader: ein gefilterter Fetch; `flattenZ` dynamisch darüber
+  - [ ] Optional: `entityRenderer.groundZ` auf dieselbe Textur umstellen (8 Aufrufstellen)
+  - [ ] Abnahme: Screenshot-Diffs (Steilhang, Baustelle) sauber; danach 2.6/5.2/5.5 in dieser Datei neu bewerten (vermutlich streichen/abwerten, §10.3)
+- [ ] **E2 reach adaptiv (5.2)** — nur falls nach E1 noch relevant; Break-even-Messung (CPU-Abtastung vs. gesparte Vertices) eintragen
+- [ ] **E3 Silhouetten-Pass (5.3)** — erst in Szenario (b) messen; dann Bedarfs-Test/Zoom-Schwelle; Screenshot-Diff der Umriss-Optik
+- [ ] **E4 Pause-Redraws (5.4)** — kein Zeichnen bei `paused` + stiller Kamera + keiner UI-Änderung; Einzelbild bei Input
+- [ ] **E5 Qualitätsstufe (5.5)** — `pixelRatio`-Deckel/`cellPixels` als Einstellung in `settings.ts`; nach E1 bewerten
+
+### Checkliste F — Assets (§6)
+
+- [ ] **F1 sails einmal backen (6.1a)** — zuerst Machbarkeit Pivot-per-Uniform am Code verifizieren (§10.2), dann umsetzen; `npm run check:anim` grün
+- [ ] **F2 Idle-Clips kürzen (6.1b)** — Blender-Seite (`tools/blender/`, `tools/export/`); nach Export `npm run check:anim` grün; Optik manuell abgenommen (kein sichtbarer Loop-Sprung)
+- [ ] **F3 Bake lazy/Worker (6.1c)** — erst nach F1/F2 neu bewerten
+- [ ] **F4 Binärformat (6.2)** — `tools/models/glb.mjs` gibt Float32-Assets aus; `src/gl/obj.ts`-Parsing ersetzen; Bundle-Größe + Startzeit vorher/nachher eingetragen; `npm run check:models` grün
+- [ ] **F5 Indizierte Meshes (6.3)** — Indizes bereits im Konverter erzeugen; GPU-Speicher-Messung eintragen
+
+### Checkliste G — Abschluss
+
+- [ ] Alle Messwerte der Gruppen A–F in dieser Datei eingetragen
+- [ ] `npm run build && npm test && npm run smoke` grün
+- [ ] Umgesetzte Punkte hier als erledigt markiert; gestrichene Punkte mit Begründung versehen
+- [ ] `docs/OFFEN.md` und `docs/REFACTOR.md` auf Widersprüche geprüft und ggf. aktualisiert

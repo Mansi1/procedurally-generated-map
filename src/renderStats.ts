@@ -6,13 +6,19 @@
 //
 // Fest dabei: t (Sekunde seit dem Start), fps (gezeichnete Bilder), frameMs
 // und frameMsMax (Abstand der Bilder, Mittel und längster), cpuMs und
-// cpuMsMax (Arbeit der Spielschleife je Bild). Alles aus addRenderStats wird
+// cpuMsMax (Arbeit der Spielschleife je Bild), longTasks und longTaskMs
+// (Aufgaben über 50 ms in dieser Sekunde, auch aus Maus-Events - die zählt
+// cpuMs nicht mit). Alles aus addRenderStats wird
 // über die Sekunde aufsummiert und durch die Zahl der Bilder geteilt - also
 // "je Bild". Mehrere Aufrufe im selben Bild zählen zusammen (Draw-Calls).
 //
 // Derzeit gezählt (nur Hauptansicht, ohne Minimap):
 //   simMs, collectMs, renderMs, minimapMs - Anteile von cpuMs (main.ts)
-//   drawCalls, vertices - GPU-Last (gl/entityRenderer.ts, gl/terrainRenderer.ts)
+//   pickMs - Sichtstrahl unter Zeiger/Bildmitte (game/Picker.ts), auch aus Events
+//   drawCalls - GPU-Aufträge (gl/entityRenderer.ts, gl/terrainRenderer.ts)
+//   vertices, terrainVertices - Eckpunkte der Modelle / des Geländegitters
+//   mpx - Geräte-Pixel in Millionen (Retina: viermal so viele)
+//   frozen - Anteil der Bilder ohne Gelände, weil sein Cache noch fehlt
 //   instances, batched - Objekte einzeln je Bild gepackt / aus festen Puffern
 //   billboards - Anteil der Bilder mit Bäumen als Bild (0..1)
 //   terrainTexels - neu erzeugtes Gelände; hoch = Cache wird befüllt
@@ -37,6 +43,9 @@ let frameMsSum = 0;
 let frameMsMax = 0;
 let cpuMsSum = 0;
 let cpuMsMax = 0;
+/** Aufgaben über 50 ms (PerformanceObserver) - auch außerhalb der Schleife, etwa Maus-Events. */
+let longTasks = 0;
+let longTaskMs = 0;
 
 /** Solange true, zählt addRenderStats nicht - etwa beim Zeichnen der Minimap. */
 let muted = false;
@@ -74,6 +83,22 @@ export function renderStatsFrame(now: number, cpuMs: number) {
   cpuMsMax = Math.max(cpuMsMax, cpuMs);
 }
 
+/** Liefert die Umstände der Messung (main.ts) - erst beim Abruf, das Fenster kann sich ändern. */
+let info: () => Record<string, unknown> = () => ({});
+
+/**
+ * Die Umstände, ohne die Messungen nicht vergleichbar sind: GPU,
+ * Pixel-Verhältnis, Fenstergröße, Welt, Einstellungen mit Einfluss auf die
+ * Bildrate. Einmal je Lauf zu `getRenderStats()` dazulegen.
+ */
+export function getRenderInfo(): Record<string, unknown> {
+  return info();
+}
+
+export function setRenderInfo(source: () => Record<string, unknown>) {
+  info = source;
+}
+
 /** Die letzten bis zu 30 Sekunden, die älteste zuerst - als JSON serialisierbar. */
 export function getRenderStats(): RenderStat[] {
   return buffer.map((s) => ({ ...s }));
@@ -92,6 +117,8 @@ function close() {
     frameMsMax: round(frameMsMax),
     cpuMs: round(frames > 0 ? cpuMsSum / frames : 0),
     cpuMsMax: round(cpuMsMax),
+    longTasks,
+    longTaskMs: round(longTaskMs),
   };
   for (const [key, sum] of Object.entries(sums)) stat[key] = round(frames > 0 ? sum / frames : sum);
   buffer.push(stat);
@@ -103,6 +130,8 @@ function close() {
   frameMsMax = 0;
   cpuMsSum = 0;
   cpuMsMax = 0;
+  longTasks = 0;
+  longTaskMs = 0;
 }
 
 /**
@@ -114,5 +143,16 @@ export function startRenderStats() {
   sums = {};
   started = performance.now();
   setInterval(close, 1000);
-  (globalThis as { getRenderStats?: typeof getRenderStats }).getRenderStats = getRenderStats;
+  // Nicht in jedem Browser (Safari, Firefox) - dann fehlen die Long Tasks eben.
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        longTasks++;
+        longTaskMs += e.duration;
+      }
+    }).observe({ type: 'longtask' });
+  } catch {
+    // kein longtask-Eintrag
+  }
+  Object.assign(globalThis, { getRenderStats, getRenderInfo });
 }
