@@ -1905,6 +1905,14 @@ interface Model {
   hand: [number, number, number];
   /** Breite bzw. Höhe in Datei-Einheiten (Metern), auf die das Modell gebracht ist. */
   meters: number;
+  /** Die Datei in src/models (house.glb) - für die Galerie. */
+  file?: string;
+}
+
+/** Datei eines Modells aus seiner Zeile `mtllib house.mtl` (vite.config.ts). */
+function modelFile(obj: string): string | undefined {
+  const name = /^mtllib (.+)\.mtl$/m.exec(obj)?.[1];
+  return name && name !== 'model' ? `${name}.glb` : undefined;
 }
 
 /** Nummer einer Beere aus ihrem Objektnamen ("Berry.12.Shine" -> 12). */
@@ -2260,6 +2268,7 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   const stand = markerAt(markerPoints('Work.Stand'));
   const aim = markerAt(markerPoints('Work.Aim'));
   return {
+    file: typeof obj === 'string' ? modelFile(obj) : undefined,
     entry: markerAt(entryPoints),
     work: stand && aim && { stand, aim },
     stockSlots,
@@ -2364,6 +2373,7 @@ function natural(shape: number, obj: string, mtl: string, meters: number) {
   // die Größe), gezeichnet werden sie nicht - nur Stamm, Stumpf und Wurzeln.
   const drawn = TREES.includes(shape) ? all.filter((t) => !/^(Grass|Litter)(\.|$)/.test(t.object)) : undefined;
   const model = loadModel(all, mtl, 'width', true, TREES.includes(shape), drawn);
+  model.file = modelFile(obj);
   return [{ shape, model, scale: model.meters / meters }];
 }
 
@@ -2893,6 +2903,11 @@ export class EntityRenderer {
     }
     gl.bindVertexArray(null);
     return { vao, vertices: vertices.length / components };
+  }
+
+  /** Datei des Modells einer Form (tree_oak.glb) - oder keine (Felder, Klötze). */
+  modelFile(shape: number): string | undefined {
+    return this.modelByShape.get(shape)?.model.file;
   }
 
   private location(name: string): WebGLUniformLocation | null {

@@ -6,7 +6,10 @@ import { defineConfig, type Plugin } from 'vite';
 import defuss from 'defuss-vite';
 import { glbToObj } from './tools/models/glb.mjs';
 
-/** `import house from '../models/house.glb?model'` - das Modell als { obj, mtl }-Text (tools/models/glb.mjs). */
+/**
+ * `import house from '../models/house.glb?model'` - das Modell als { obj, mtl }-Text
+ * (tools/models/glb.mjs). Die Zeile `mtllib house.mtl` im OBJ nennt die Datei (Galerie).
+ */
 function glbModels(): Plugin {
   const suffix = '.glb?model';
   return {
@@ -16,7 +19,7 @@ function glbModels(): Plugin {
       if (!id.endsWith(suffix)) return null;
       const file = id.slice(0, -'?model'.length);
       this.addWatchFile(file);
-      return `export default ${JSON.stringify(glbToObj(readFileSync(file)))};`;
+      return `export default ${JSON.stringify(glbToObj(readFileSync(file), `${basename(file, '.glb')}.mtl`))};`;
     },
   };
 }
