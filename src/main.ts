@@ -47,6 +47,7 @@ import { SettingsMenu } from './components/SettingsMenu';
 import { StartScreen } from './components/StartScreen';
 import { ANIMALS_BELOW_DEFAULT, loadSettings, saveSettings } from './settings';
 import { ResourceField } from './world/resources';
+import { FlowerField } from './world/flowers';
 import { Sound } from './audio';
 import { Music } from './music';
 import { currentSeed, deleteSave, switchWorld, takeStartRequest } from './worlds';
@@ -102,6 +103,8 @@ const { x: startX, y: startY } = startPoint(world, terrain, seed);
 // Holzfäller arbeiten am liegenden Stamm - wie lang der ist, weiß die Darstellung.
 world.treeLength = (x, y) => resources.treeLengthAt(x, y);
 const resources = new ResourceField(terrain, mapGen);
+/** Blumen als 3D-Objekte, nah heran (world/flowers.ts). */
+const flowers = new FlowerField(terrain, mapGen);
 const sound = new Sound();
 /** Hintergrundmusik aus assets/music/ - der Ton-Schalter (M) gilt auch für sie. */
 const music = new Music();
@@ -611,6 +614,10 @@ function collectOverlay(blend: number) {
   if (camera.tileSize >= RESOURCE_OBJECTS_MIN_ZOOM) {
     resources.update(visible, camera.x, camera.y);
     resources.instances(visible, world, overlay, selection.resource, blend, { batcher: renderer, out: staticBatches });
+  }
+  if (renderer.flowerObjects) {
+    flowers.update(visible, camera.x, camera.y);
+    flowers.instances(visible, world, overlay);
   }
   const hovered = pointer.tile ? world.at(pointer.tile.x, pointer.tile.y)?.anchor : undefined;
   worldInstances(world, visible, overlay, blend, selection, hovered,

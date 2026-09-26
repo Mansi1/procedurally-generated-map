@@ -65,6 +65,7 @@ import gold1Model from '../models/gold_1.glb?model';
 import gold2Model from '../models/gold_2.glb?model';
 import gold3Model from '../models/gold_3.glb?model';
 import berryBush1Model from '../models/berry_bush_1.glb?model';
+import { FLOWER_KINDS, flowerModel } from './flowerModel';
 import berryBush2Model from '../models/berry_bush_2.glb?model';
 import berryBush3Model from '../models/berry_bush_3.glb?model';
 import berryBush4Model from '../models/berry_bush_4.glb?model';
@@ -217,7 +218,21 @@ export const SHAPE = {
   propScytheFemale: 105,
   propKnife: 106,
   propKnifeFemale: 107,
+  /**
+   * Blumen auf der Wiese (gl/flowerModel.ts, world/flowers.ts): Stiel, Blüte,
+   * Blätter - je Art eine Form, in FLOWER_KINDS-Reihenfolge ab 108.
+   */
+  flowerDaisy: 108,
+  flowerButtercup: 109,
+  flowerPoppy: 110,
+  flowerCornflower: 111,
+  flowerClover: 112,
 } as const;
+
+/** Die Blumen-Formen, in der Reihenfolge von FLOWER_KINDS. */
+export const FLOWERS: readonly number[] = [
+  SHAPE.flowerDaisy, SHAPE.flowerButtercup, SHAPE.flowerPoppy, SHAPE.flowerCornflower, SHAPE.flowerClover,
+];
 
 /**
  * Mittlere Drehzahl der Mühlenflügel (Radiant je Sekunde) und wie schnell die
@@ -422,8 +437,22 @@ const LEAF_TEX_SIZE = 256;
 const LEAF_CARD_ROLE = 13;
 /** Rolle der Astkarten (Birke): ein ganzer Ast mit hängenden Zweigen und kleinen Blättern. */
 const BRANCH_CARD_ROLE = 14;
+/** Rolle der Blütenkarten (Blumen): der Shader malt die Blüte darauf (blossomCard). */
+const BLOSSOM_CARD_ROLE = 19;
+/** Rolle der Schattenkarten (Blumen): ein weicher dunkler Fleck unter der Blüte. */
+const FLOWER_SHADOW_ROLE = 21;
 /** Materialien der Karten, auf die der Shader malt - sie tragen (u, v, Zufall) statt einer Farbe. */
-const CARD_MATERIALS = new Set(['LeafCard', 'BranchCard']);
+const CARD_MATERIALS = new Set(['LeafCard', 'BranchCard', 'BlossomCard', 'FlowerShadow']);
+
+/** Die Arten als GLSL-Tabelle, aus FLOWER_KINDS - Index = Form - SHAPE.flowerDaisy. */
+const glslList = (type: string, values: string[]) => `${type}[${values.length}](${values.join(', ')})`;
+const glslVec3 = ([r, g, b]: readonly number[]) => `vec3(${r.toFixed(3)}, ${g.toFixed(3)}, ${b.toFixed(3)})`;
+const FLOWER_GLSL = `
+const float FLOWER_PETALS[${FLOWER_KINDS.length}] = ${glslList('float', FLOWER_KINDS.map((k) => k.petals.toFixed(1)))};
+const vec3 FLOWER_PETAL[${FLOWER_KINDS.length}] = ${glslList('vec3', FLOWER_KINDS.map((k) => glslVec3(k.petal)))};
+const vec3 FLOWER_HEART[${FLOWER_KINDS.length}] = ${glslList('vec3', FLOWER_KINDS.map((k) => glslVec3(k.heart)))};
+const float FLOWER_HEART_SIZE[${FLOWER_KINDS.length}] = ${glslList('float', FLOWER_KINDS.map((k) => k.heartSize.toFixed(3)))};
+`;
 /** Materialien, aus denen eine Krone besteht - daraus Mitte und Ausdehnung (Model.canopy). */
 const FOLIAGE_MATERIALS = new Set(['Paint', 'LeafDark', 'LeafLight', 'Needle', 'NeedleDark', 'LeafCard', 'BranchCard']);
 
@@ -437,7 +466,7 @@ const FOLIAGE_SHAPES: number[] = [
 const BEASTS: number[] = [SHAPE.deer, SHAPE.hare, SHAPE.cow, SHAPE.sheep, SHAPE.goat, SHAPE.boar];
 
 export const NATURAL: number[] = [
-  ...TREES,
+  ...TREES, ...FLOWERS,
   SHAPE.stoneRock, SHAPE.stoneRock2, SHAPE.stoneRock3, SHAPE.goldRock, SHAPE.goldRock2, SHAPE.goldRock3,
   SHAPE.berryBush, SHAPE.berryBush2, SHAPE.berryBush3, SHAPE.berryBush4,
 ];
@@ -1606,6 +1635,43 @@ uniform highp int uBillboard;  // wie im Vertex-Shader, sonst lässt sich das Pr
 uniform sampler2D uBillboardTex;
 in vec2 vBillboardUV;
 
+${FLOWER_GLSL}
+// Deckung der Blütenkarte am Rand der Blüte - geht ins Alpha (main).
+float gCardAlpha = 1.0;
+
+// Blütenkarte einer Blume: Blütenblätter mit Fugen und Wölbung, eine gewölbte
+// Mitte mit Glanzpunkt, Klee als Köpfchen aus Tupfen - wie die gemalten Blumen
+// im Gelände (flower() in terrainShader.ts). base = (u, v, Zufall); was
+// außerhalb der Blüte liegt, wird verworfen.
+vec3 blossomCard(vec3 base, int shape) {
+  int k = clamp(shape - ${SHAPE.flowerDaisy}, 0, ${FLOWER_KINDS.length - 1});
+  float petals = FLOWER_PETALS[k];
+  float heartSize = FLOWER_HEART_SIZE[k];
+  // Die Blüte füllt die Karte fast bis an den Rand.
+  vec2 q = (base.xy - 0.5) * 2.0 / 0.95;
+  float d = length(q);
+  // Ein Pixel in Einheiten der Blüte - für weiche, aber scharfe Ränder.
+  float px = max(fwidth(d), 1e-4);
+  float a = atan(q.y, q.x) + base.z * 6.2832;
+  float rim = petals > 0.0 ? 0.5 + 0.5 * pow(abs(cos(a * petals * 0.5)), 0.6) : 0.8;
+  gCardAlpha = smoothstep(rim + px, rim - px, d);
+  if (gCardAlpha < 0.02) discard;
+  // Licht von einer festen Seite der Karte - sie steht je Blume anders gedreht.
+  vec2 toSun = normalize(vec2(-0.45, 0.35));
+  float facing = dot(q, toSun) / max(d, 1e-3);
+  // Blütenblätter: zur Mitte hin tiefer (dunkler), außen heller, dazu die
+  // Wölbung zur Sonne und dunkle Fugen zwischen den Blättern.
+  vec3 col = FLOWER_PETAL[k] * (0.72 + 0.3 * d) * (0.9 + 0.22 * facing * min(d, 1.0));
+  if (petals > 0.0) col *= 0.82 + 0.18 * smoothstep(0.0, 0.35, abs(cos(a * petals * 0.5)));
+  else col *= 0.85 + 0.3 * step(0.5, fract((q.x + q.y) * 3.0) * fract((q.x - q.y) * 3.0) * 4.0);
+  // Die Mitte als kleine Kuppel mit Glanzpunkt.
+  float h = smoothstep(heartSize + px, heartSize - px, d);
+  vec3 hc = FLOWER_HEART[k] * (0.75 + 0.45 * clamp(1.0 - length(q / max(heartSize, 1e-3) - toSun * 0.4), 0.0, 1.0));
+  col = mix(col, hc, h);
+  float gloss = smoothstep(0.22, 0.0, length(q - toSun * max(heartSize, 0.35) * 0.9));
+  return mix(col, vec3(1.0), gloss * 0.35);
+}
+
 // Zur Kamera, in Weltkoordinaten - hängt von der Blickrichtung ab.
 uniform vec3 uToCamera;
 // Licht von links oben im Bild - dieselbe Sonne wie im Gelände-Shader.
@@ -1698,6 +1764,13 @@ void main() {
   if (cutFace) base = vec3(0.86, 0.71, 0.48) * (0.9 + 0.1 * texNoise(vLocal.xy * 6.0));
   else if (vTex == ${IMAGE_ROLE}) base = vSawn > 0.5 ? treeTexture(vec3(0.86, 0.71, 0.48)) : imageTexture(base);
   else if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
+  else if (vTex == ${BLOSSOM_CARD_ROLE}) base = blossomCard(base, shape);
+  else if (vTex == ${FLOWER_SHADOW_ROLE}) {
+    // Schatten der Blüte auf dem Gras: rund und weich, zur Mitte am dunkelsten.
+    gCardAlpha = 0.6 * (1.0 - smoothstep(0.3, 0.85, length(base.xy - 0.5) * 2.0));
+    if (gCardAlpha < 0.004) discard;
+    base = vec3(0.02, 0.05, 0.01);
+  }
   else if (vTex != 0) base = treeTexture(base);
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
@@ -1720,7 +1793,7 @@ void main() {
   }
 
   float light = 0.45 + 0.75 * max(dot(normal, normalize(SUN)), 0.0);
-  fragColor = vec4(base * light, alpha);
+  fragColor = vec4(base * light, alpha * gCardAlpha);
 }
 `;
 
@@ -1829,6 +1902,8 @@ const MATERIAL_ROLE: Record<string, number> = {
   NeedleDark: FOLIAGE_ROLE,
   LeafCard: LEAF_CARD_ROLE,
   BranchCard: BRANCH_CARD_ROLE,
+  BlossomCard: BLOSSOM_CARD_ROLE,
+  FlowerShadow: FLOWER_SHADOW_ROLE,
   // Felder (tools/models/farmsGen.mjs): Getreide, Blätter, Kolben.
   Wheat: 7,
   WheatDark: 7,
@@ -2437,6 +2512,10 @@ function natural(shape: number, obj: string, mtl: string, meters: number) {
  * Instanzgröße - eine Figur der Größe 0.55 ist 0.55 * 1.7 Tiles hoch.
  */
 const PROP_AXE = loadModel(propAxeModel.obj, villagerMtl, 'meters');
+const FLOWER_MODEL = (() => {
+  const { obj, mtl } = flowerModel();
+  return loadModel(obj, mtl, 'width', true);
+})();
 const PROP_KNIFE = loadModel(propKnifeModel.obj, villagerMtl, 'meters');
 
 const MODELS: {
@@ -2490,6 +2569,9 @@ const MODELS: {
   ...natural(SHAPE.goldRock, gold1Model.obj, gold1Model.mtl, GOLD_METERS),
   ...natural(SHAPE.goldRock2, gold2Model.obj, gold2Model.mtl, GOLD_METERS),
   ...natural(SHAPE.goldRock3, gold3Model.obj, gold3Model.mtl, GOLD_METERS),
+  // Blumen: ein Modell für alle Arten, die Blüte malt der Shader je Form.
+  // In Breite 1 gebaut - die Instanzgröße ist ihre Breite in Tiles.
+  ...FLOWERS.map((shape) => ({ shape, model: FLOWER_MODEL, scale: 1 })),
   ...natural(SHAPE.berryBush, berryBush1Model.obj, berryBush1Model.mtl, BUSH_METERS),
   ...natural(SHAPE.berryBush2, berryBush2Model.obj, berryBush2Model.mtl, BUSH_METERS),
   ...natural(SHAPE.berryBush3, berryBush3Model.obj, berryBush3Model.mtl, BUSH_METERS),

@@ -293,6 +293,9 @@ ${CACHE_GLSL}
  * feiner und die Biom-Ränder fangen an zu grieseln.
  */
 uniform float uDetailPixels;
+// Ab so vielen Geräte-Pixeln je Tile stehen die Blumen als 3D-Objekte in der
+// Wiese (world/flowers.ts) - dann malt das Gelände sie nicht mehr.
+uniform float uFlowerObjectPixels;
 // Nur für den Abgleich mit der CPU-Fassung: 1 = Höhe, 2 = Hangneigung,
 // jeweils als 16-Bit-Wert über R und G gepackt.
 uniform int uDebug;
@@ -483,7 +486,7 @@ vec3 grassTexture(vec3 c, vec2 tile, float ds, float moisture, float bloom) {
   c *= 1.0 + max(blades, 0.0) * 0.06;
   float worn = smoothstep(0.62, 0.8, snoise(L_MICRO, tile * 0.18 + vec2(55.0, 91.0)));
   c = mix(c, vec3(0.48, 0.40, 0.28) * (0.92 + 0.16 * blades), worn * 0.5);
-  if (bloom > 0.0) {
+  if (bloom > 0.0 && uPixelsPerTile < uFlowerObjectPixels) {
     float shadow;
     vec4 f = flower(tile, ds, bloom, shadow);
     c *= 1.0 - shadow * 0.35;

@@ -1,7 +1,7 @@
 import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
 import { EntityRenderer, type EntityInstance, type StaticBatch } from './gl/entityRenderer';
-import { TerrainRenderer } from './gl/terrainRenderer';
+import { FLOWER_OBJECT_PIXELS, TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
   setViewElevation,
@@ -388,6 +388,14 @@ export class MapRenderer {
   tilting = false;
   /** Bodenstauchung, für die der Gelände-Cache gerade berechnet ist (0 = noch keine). */
   private cacheGroundV = 0;
+
+  /**
+   * Stehen die Blumen als 3D-Objekte in der Wiese? Hängt an der Stufe des
+   * Gelände-Caches, nicht am Zoom: so malt er sie nie zugleich als Tupfen.
+   */
+  get flowerObjects(): boolean {
+    return this.cacheTileSize * this.pixelRatio >= FLOWER_OBJECT_PIXELS;
+  }
 
   constructor(
       canvas: HTMLCanvasElement,
