@@ -87,6 +87,7 @@ export class SettingsMenu {
   private showHelp = createRef<HTMLInputElement>();
   private showDebug = createRef<HTMLInputElement>();
   private idleFps = createRef<HTMLInputElement>();
+  private minimapFps = createRef<HTMLInputElement>();
   /** Nur im Spiel: Hauptmenü, Pause, Speichern, Weiter spielen - aus dem Hauptmenü heraus stattdessen Zurück. */
   private pauseRow = createRef<HTMLDivElement>();
   private gameButtons = createRef<HTMLDivElement>();
@@ -232,6 +233,15 @@ export class SettingsMenu {
             Steht die Kamera eine Sekunde still, zeichnet das Spiel nur noch 30 Bilder je Sekunde - schont Akku
             und Lüfter. Beim Verschieben, Zoomen oder Drehen sofort wieder volle Bildrate.
           </p>
+          <label class="menu-row">
+            <span>Minimap mit 10 FPS</span>
+            <input type="checkbox" ref={this.minimapFps}
+              onInput={(e: Event) => this.change({ minimapFps: (e.target as HTMLInputElement).checked })} />
+          </label>
+          <p class="menu-hint">
+            Die Minimap wird nur 10-mal je Sekunde gezeichnet - sie bewegt sich langsam, man sieht es kaum.
+            Aus: so oft wie das Spiel.
+          </p>
         </section>
         <section>
           <div class="menu-row">
@@ -316,6 +326,7 @@ export class SettingsMenu {
     this.showHelp.current.checked = s.showHelp;
     this.showDebug.current.checked = s.showDebug;
     this.idleFps.current.checked = s.idleFps;
+    this.minimapFps.current.checked = s.minimapFps;
   }
 
   /** Alle Einstellungen auf ihre Vorgaben - nach Rückfrage. */

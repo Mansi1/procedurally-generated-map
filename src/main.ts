@@ -471,6 +471,9 @@ const IDLE_AFTER_MS = 1000;
 const IDLE_FPS = 30;
 let lastMove = performance.now();
 let lastFrame = 0;
+/** So oft je Sekunde wird die Minimap gezeichnet - sie bewegt sich langsam (Einstellung minimapFps). */
+const MINIMAP_FPS = 10;
+let lastMinimap = 0;
 let lastView = '';
 /** Die Simulation läuft in festen Schritten von 0.1 s (game/timing.ts). */
 const simulation = new FixedStep(0.1);
@@ -558,9 +561,13 @@ function loop(now: number) {
     turnAnimation.play(turned === -180 ? 180 : -turned);
   }
 
-  const seen = minimapView();
-  minimapDots(world, minimap, seen, minimapOverlay);
-  minimap.render(seen, minimapOverlay);
+  if (!settings.minimapFps || now - lastMinimap >= 1000 / MINIMAP_FPS - 4) {
+    lastMinimap = now;
+    const seen = minimapView();
+    minimapDots(world, minimap, seen, minimapOverlay);
+    minimap.render(seen, minimapOverlay);
+    devPanel.minimapFrame();
+  }
 
   devPanel.frame(now, camera, renderer.billboardsActive);
 

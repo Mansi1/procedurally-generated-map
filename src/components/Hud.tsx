@@ -58,6 +58,7 @@ function DebugPanel() {
       </div>
       <div>
         FPS <b id="fps">0</b><span class="sep">|</span>
+        Minimap <b id="minimap-fps">0</b><span class="sep">|</span>
         {/* Bild = Billboards (Menü → Grafik → Bäume als Bild), 3D = Modelle. */}
         Bäume <b id="billboards">3D</b>
       </div>

@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, join, relative } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 
 // import the defuss plugin - JSX for the UI components (resource bar, menu, ...)
@@ -28,6 +28,7 @@ function glbModels(): Plugin {
  */
 function saveBillboards(): Plugin {
   const dir = join(import.meta.dirname, 'tools/export/out/billboards');
+  rmSync(dir, { recursive: true, force: true })
   return {
     name: 'save-billboards',
     apply: 'serve',
@@ -35,15 +36,17 @@ function saveBillboards(): Plugin {
       server.middlewares.use('/__billboards', (req, res) => {
         const name = basename(decodeURIComponent(req.url ?? ''));
         if (req.method !== 'POST' || !/^[\w.-]+\.png$/.test(name)) {
-          res.statusCode = 400;
-          res.end();
-          return;
+          res.statusCode = 400; 
+          res.end(); 
+          return;  
         }
         const chunks: Buffer[] = [];
         req.on('data', (chunk: Buffer) => chunks.push(chunk));
         req.on('end', () => {
           mkdirSync(dir, { recursive: true });
+
           writeFileSync(join(dir, name), Buffer.concat(chunks));
+          console.log(`billboards saved ${relative(import.meta.dirname,join(dir, name))}`)
           res.end('ok');
         });
       });

@@ -35,6 +35,8 @@ export interface Settings {
   animalsBelow: Record<string, number>;
   /** Steht die Kamera eine Sekunde still, nur 30 Bilder je Sekunde (main.ts, IDLE_FPS). */
   idleFps: boolean;
+  /** Die Minimap nur 10-mal je Sekunde zeichnen (main.ts, MINIMAP_FPS). */
+  minimapFps: boolean;
 }
 
 /** Vorgabe für animalsBelow: bei Zoom 1 (8 px je Tile) keine Tiere. */
@@ -42,7 +44,7 @@ export const ANIMALS_BELOW_DEFAULT = 16;
 
 const DEFAULTS: Settings = {
   volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', paused: false,
-  playerColor: 'green', billboards: 16, animalsBelow: {}, idleFps: true,
+  playerColor: 'green', billboards: 16, animalsBelow: {}, idleFps: true, minimapFps: true,
 };
 const STORAGE_KEY = 'pgm.settings';
 
