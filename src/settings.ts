@@ -33,6 +33,8 @@ export interface Settings {
    * trotzdem. Fehlt eine Art, gilt ANIMALS_BELOW_DEFAULT.
    */
   animalsBelow: Record<string, number>;
+  /** Steht die Kamera eine Sekunde still, nur 30 Bilder je Sekunde (main.ts, IDLE_FPS). */
+  idleFps: boolean;
 }
 
 /** Vorgabe für animalsBelow: bei Zoom 1 (8 px je Tile) keine Tiere. */
@@ -40,7 +42,7 @@ export const ANIMALS_BELOW_DEFAULT = 16;
 
 const DEFAULTS: Settings = {
   volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', paused: false,
-  playerColor: 'green', billboards: 16, animalsBelow: {},
+  playerColor: 'green', billboards: 16, animalsBelow: {}, idleFps: true,
 };
 const STORAGE_KEY = 'pgm.settings';
 

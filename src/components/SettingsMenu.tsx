@@ -86,6 +86,7 @@ export class SettingsMenu {
   private track = createRef<HTMLSpanElement>();
   private showHelp = createRef<HTMLInputElement>();
   private showDebug = createRef<HTMLInputElement>();
+  private idleFps = createRef<HTMLInputElement>();
   /** Nur im Spiel: Hauptmenü, Pause, Speichern, Weiter spielen - aus dem Hauptmenü heraus stattdessen Zurück. */
   private pauseRow = createRef<HTMLDivElement>();
   private gameButtons = createRef<HTMLDivElement>();
@@ -222,6 +223,15 @@ export class SettingsMenu {
               Bis zu dieser Zoomstufe wird die Tierart nicht gezeichnet - die Tiere leben trotzdem weiter.
             </p>
           </details>
+          <label class="menu-row">
+            <span>Im Stillstand 30 FPS</span>
+            <input type="checkbox" ref={this.idleFps}
+              onInput={(e: Event) => this.change({ idleFps: (e.target as HTMLInputElement).checked })} />
+          </label>
+          <p class="menu-hint">
+            Steht die Kamera eine Sekunde still, zeichnet das Spiel nur noch 30 Bilder je Sekunde - schont Akku
+            und Lüfter. Beim Verschieben, Zoomen oder Drehen sofort wieder volle Bildrate.
+          </p>
         </section>
         <section>
           <div class="menu-row">
@@ -305,6 +315,7 @@ export class SettingsMenu {
     this.track.current.textContent = title ? `♪ ${title}` : 'Musik beginnt mit dem ersten Klick';
     this.showHelp.current.checked = s.showHelp;
     this.showDebug.current.checked = s.showDebug;
+    this.idleFps.current.checked = s.idleFps;
   }
 
   /** Alle Einstellungen auf ihre Vorgaben - nach Rückfrage. */

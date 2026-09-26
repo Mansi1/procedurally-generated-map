@@ -524,7 +524,7 @@ function loop(now: number) {
     lastMove = now;
   }
   // Etwas Spiel, damit bei 60 Hz jedes zweite Bild kommt und nicht jedes dritte.
-  if (now - lastMove > IDLE_AFTER_MS && now - lastFrame < 1000 / IDLE_FPS - 4) {
+  if (settings.idleFps && now - lastMove > IDLE_AFTER_MS && now - lastFrame < 1000 / IDLE_FPS - 4) {
     requestAnimationFrame(loop);
     return;
   }
