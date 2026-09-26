@@ -610,6 +610,12 @@ uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
 float gSawn = 0.0;
+// Bäume: Höhe des Schnitts beim Absägen (Modell-Einheiten) - der Stamm wird
+// darüber im Fragment-Shader abgeschnitten (vCut). 1e9: kein Schnitt.
+float gCut = 1e9;
+// Bäume: Richtung der Stammachse in der Welt (gekippt, wenn gefällt) - die
+// Normale der Schnittfläche (vCapNormal).
+vec3 gCapNormal = vec3(0.0, 0.0, 1.0);
 // Lage in Ruhelage (Modell-Einheiten des Körpers) - für die Texturen (vLocal).
 // Anhänge liegen in Metern im Rahmen der Hand und werden erst auf den Körper gebracht.
 vec3 gRest = vec3(0.0);
@@ -645,6 +651,9 @@ flat out vec3 vTeam;     // Instanzfarbe (Spielerfarbe) - für den Umriss verdec
 // und die Lage im Modell in Metern - die Textur haftet am Stamm, auch wenn
 // er umfällt.
 flat out int vTex;
+// Bäume beim Absägen: Schnitthöhe in Metern (Ruhelage wie vLocal), Normale der Schnittfläche.
+flat out float vCut;
+flat out vec3 vCapNormal;
 // Gesägt (1) - bei Bildtexturen je Eckpunkt, ihre Farbe ist ja (u, v, Schicht).
 out float vSawn;
 out vec3 vLocal;
@@ -958,11 +967,11 @@ void main() {
         // unterste auf dem Stumpf): weg. Flach gedrückt ergäbe ein schräger
         // Stamm eine lange Platte auf dem Stumpf.
         p = vec3(0.0);
-      } else if (p.z > cut) {
-        // Das Stück, durch das gerade gesägt wird: auf die Schnitthöhe
-        // gedrückt - die Schnittfläche, hell wie frisch gesägtes Holz.
-        p.z = cut;
-        gSawn = 1.0;
+      } else if (part == P_TRUNK && aMotion.w < 0.999) {
+        // Das Stück, durch das gerade gesägt wird: der Fragment-Shader
+        // schneidet es auf Schnitthöhe ab und malt, wo man in den offenen
+        // Stamm hineinsieht, die Schnittfläche - rund, auch am schrägen Stamm.
+        gCut = cut;
       }
     }
 
@@ -1123,6 +1132,7 @@ void main() {
       float lift = up - hinge;
       offset = across + dir * (along * c + lift * s);
       up = hinge - along * s + lift * c;
+      gCapNormal = vec3(dir * s, c);
       // Gegen Ende rutscht der Stamm vom Stumpf: sein abgesägtes Ende liegt
       // dann neben dem Stumpf auf dem Boden, nicht obendrauf.
       float slide = smoothstep(0.75, 1.0, aMotion.y / ${FALL_LYING.toFixed(4)});
@@ -1210,6 +1220,8 @@ void main() {
   vTeam = aColor;
   vTex = 0;
   vSawn = gSawn;
+  vCut = 1e9;
+  vCapNormal = gCapNormal;
   vLocal = vec3(0.0);
   if (shape >= 5 && shape != ${SHAPE_RING}) {
     // Modelle färben nach Material: Kittel bzw. Anstrich in der Instanzfarbe,
@@ -1229,6 +1241,7 @@ void main() {
       : villager && (role == 1 || role == 2) ? ${FIGURE_TEX.cloth}
       : role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
     vLocal = gRest * uMeters;
+    if (gCut < 1e8) vCut = gCut * uMeters;
     // Bauvorschau: halbdurchsichtig ganz in der Vorschaufarbe - rot, wenn
     // der Platz nicht geht.
     if (!${FIGURE_TEST} && aParams.y < 0.99 && aMotion.w == 0.0) vColor = aColor;
@@ -1255,6 +1268,8 @@ in vec3 vWorld;
 in vec3 vColor;
 flat in vec3 vTeam;
 flat in int vTex;
+flat in float vCut;
+flat in vec3 vCapNormal;
 in float vSawn;
 in vec3 vLocal;
 in vec3 vBent;
@@ -1663,6 +1678,12 @@ void main() {
   // Flächennormale aus den Bildschirm-Ableitungen - die Klötze sind eckig,
   // eine Normale je Fläche ist genau richtig und spart ein Attribut.
   vec3 normal = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+  // Stamm beim Absägen: über dem Schnitt weg. Die Stammflächen zeigen nach
+  // außen (loadModel) - sieht man ihre Rückseite, blickt man durch den
+  // Schnitt in den Stamm und sieht dort die Schnittfläche.
+  if (vLocal.z > vCut) discard;
+  bool cutFace = vCut < 1e8 && gl_FrontFacing;
+  if (cutFace) normal = normalize(vCapNormal);
   if (dot(normal, uToCamera) < 0.0) normal = -normal;
 
   if (uSilhouette == 1) {
@@ -1674,7 +1695,8 @@ void main() {
   }
 
   vec3 base = vColor;
-  if (vTex == ${IMAGE_ROLE}) base = vSawn > 0.5 ? treeTexture(vec3(0.86, 0.71, 0.48)) : imageTexture(base);
+  if (cutFace) base = vec3(0.86, 0.71, 0.48) * (0.9 + 0.1 * texNoise(vLocal.xy * 6.0));
+  else if (vTex == ${IMAGE_ROLE}) base = vSawn > 0.5 ? treeTexture(vec3(0.86, 0.71, 0.48)) : imageTexture(base);
   else if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
   else if (vTex != 0) base = treeTexture(base);
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
@@ -2085,6 +2107,36 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   }
   const onCut = (t: ObjTriangle) => t.points.every((q) => Math.abs(q[1] - stumpTop) < 1e-3);
 
+  // Bäume: die Stammstücke (außer dem Stumpf) zeigen mit ihrer Vorderseite
+  // nach außen - beim Absägen sieht man durch den Schnitt ihre Rückseite und
+  // malt dort die Schnittfläche (siehe vCut). Je Stück: zeigen die Flächen im
+  // Ganzen nach innen (Fluss durch die Hülle, von ihrer Mitte aus gemessen),
+  // werden sie umgedreht.
+  const isLog = (t: ObjTriangle) => sawable && t.object.startsWith('Trunk') && !t.object.startsWith('Trunk.Stump');
+  const inward = new Set<number>();
+  if (sawable) {
+    const sums = new Map<number, number[]>();
+    for (const t of triangles) {
+      if (!isLog(t)) continue;
+      const c = sums.get(t.index) ?? [0, 0, 0, 0];
+      for (const q of t.points) for (let i = 0; i < 3; i++) c[i] += q[i];
+      c[3] += 3;
+      sums.set(t.index, c);
+    }
+    const flux = new Map<number, number>();
+    for (const t of triangles) {
+      if (!isLog(t)) continue;
+      const c = sums.get(t.index)!;
+      const [a, b, d] = t.points;
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const w = [d[0] - a[0], d[1] - a[1], d[2] - a[2]];
+      const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+      const m = [0, 1, 2].map((i) => (a[i] + b[i] + d[i]) / 3 - c[i] / c[3]);
+      flux.set(t.index, (flux.get(t.index) ?? 0) + m[0] * n[0] + m[1] * n[1] + m[2] * n[2]);
+    }
+    for (const [index, f] of flux) if (f < 0) inward.add(index);
+  }
+
   // Blattkarten: je Karte (Objekt) ihre Achsen - die längste Richtung ist v
   // (0 oben, wo sie am Ast hängt), die zweitlängste u. Gefunden über die
   // Hauptachsen ihrer Eckpunkte; die Karte liegt ja beliebig im Raum.
@@ -2117,7 +2169,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     const image = images.get(t.material);
     const layer = image && t.uvs ? imageLayer(image, color) : undefined;
     const vertexRole = layer === undefined ? role : IMAGE_ROLE;
-    for (const [k, p] of t.points.entries()) {
+    for (const k of inward.has(t.index) && isLog(t) ? [0, 2, 1] : [0, 1, 2]) {
+      const p = t.points[k];
       const [x, y, z] = local(p);
       let rgb = color;
       if (layer !== undefined) rgb = [t.uvs![k][0], t.uvs![k][1], layer];
