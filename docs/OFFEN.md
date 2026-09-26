@@ -38,13 +38,40 @@ Was danach noch zu tun bleibt, grob nach Wichtigkeit.
 - **Symbole neu zeichnen:** Nach Änderungen an Modellen `npm run gen:ui`
   laufen lassen - die Symbole der Rohstoffleiste zeigen die Modelle.
 
+## Vorhaben: Animationen und Modelle verbessern (ab 26.09.2026)
+
+Beschlossen, in dieser Reihenfolge. Erledigte Schritte hier streichen und
+in docs/ANIMATION.md unter „Stand“ festhalten.
+
+0. **Blender anbinden (`blender-mcp`).** Mit dem Add-on kann ein Agent Blender
+   live steuern, also Modelle ansehen und ändern. Das Add-on und der Server
+   (`uvx blender-mcp`) laufen in Python, aber außerhalb des Repos. Im Repo
+   bleibt kein Python. Seit 26.09.2026 eingerichtet, aus dem lokalen
+   Checkout `~/Projects/py/mcp-for-blender`: Das Add-on liegt in Blender 4.3,
+   der Server ist in Claude Code als `blender` eingetragen (Telemetrie aus).
+   In Blender das Add-on „MCP for Blender“ einschalten, dann N → „MCP for
+   Blender“ → Start MCP Server. Clips *nicht* über
+   Blender speichern, solange die Export-Einstellungen fehlen (siehe oben,
+   „Zuerst“).
+1. **Übergänge überblenden:** Posen springen heute sofort um. Geplant ist,
+   etwa 0,2 s zu überblenden, z. B. von Gehen zu Hacken. Dazu braucht jede
+   Figur einen zweiten Clip (den vorigen) und ein Gewicht. Gemischt wird im
+   Shader zwischen den beiden Posen aus der Clip-Textur.
+2. **Schichten** (`walk` für die Beine, `carry` oder `aim` für die Arme):
+   Das baut auf Schritt 1 auf und nutzt denselben zweiten Clip, gewichtet je
+   Knochen statt je Figur. Erster Fall: Tragen beim Gehen.
+3. **Clips verkleinern:** `humanoid_clips.glb` hat 1,2 MB, vor allem wegen
+   `stand` (34 s Schleife, jedes Bild voll gespeichert). Die Schleife soll
+   kürzer werden oder weniger Bilder haben. `npm run check:anim` muss dabei
+   halten.
+4. **Bewegungen natürlicher, Modelle verbessern:** Über Blender (Schritt 0)
+   oder direkt in den `.glb` mit `tools/models/glb.mjs`. Welche Clips und
+   Modelle zuerst drankommen, legt der Nutzer mit Beispielen fest.
+
+Jede Änderung am Rendering wird mit Bench und Screenshots belegt (AGENTS.md).
+
 ## Bewegungen (docs/ANIMATION.md)
 
-- **Übergänge:** Posen springen sofort um. Überblenden (etwa 0,2 s von Gehen
-  zu Hacken) braucht einen zweiten Clip und ein Gewicht je Figur.
-- **Schichten** (`walk` für die Beine + `carry` oder `aim` für die Arme):
-  vorbereitet im Plan, gebaut erst, wenn es eine echte Kombination gibt, z. B.
-  einen Bogenschützen, der geht und zielt.
 - **Weiche Haut:** Die Körper sind starr in Teile geschnitten, jeder Eckpunkt
   folgt genau einem Knochen (aus seinem Namen). Gewichte aus Blender
   (Ellbogen, Knie, Schultern biegen weich) brauchen Skinning-Gewichte im
@@ -55,9 +82,6 @@ Was danach noch zu tun bleibt, grob nach Wichtigkeit.
   Spiel aus dem Körper.
 - **Weitere Werkzeuge** als Anhänge: Spitzhacke, Hacke, Speer - heute hält
   jeder beim Hacken, Pflügen und Jagen das Beil.
-- **Größe der Clips:** `humanoid_clips.glb` hat 1,2 MB, vor allem durch
-  `stand` (34 s Schleife, jedes Bild voll gespeichert). Weniger Bilder oder
-  eine kürzere Schleife würden es deutlich verkleinern.
 - **Einsturz:** bleibt prozedural. Möglich wäre je Gebäude ein gestalteter
   Einsturz-Clip.
 
