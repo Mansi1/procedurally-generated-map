@@ -196,7 +196,9 @@ export function glbToObj(bytes, mtllib = 'model.mtl') {
     if (image?.bufferView !== undefined) {
       const bv = gltf.bufferViews[image.bufferView];
       const data = bin.subarray(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + bv.byteLength);
-      mtl.push(`map_Kd data:${image.mimeType};base64,${Buffer.from(data).toString('base64')}`);
+      // Ein Bild "Detail…" ist aufgemalt (Augen, Nähte …) statt Bildtextur.
+      const keyword = /^detail/i.test(image.name ?? '') ? 'map_detail' : 'map_Kd';
+      mtl.push(`${keyword} data:${image.mimeType};base64,${Buffer.from(data).toString('base64')}`);
     }
   }
   return { obj: `${lines.join('\n')}\n`, mtl: `${mtl.join('\n')}\n` };
@@ -219,12 +221,17 @@ export function readModel(name, dir = models) {
 export function objToGlb(objText, mtlText) {
   const colors = new Map();
   const maps = new Map();
+  const details = new Set();
   let current = null;
   for (const raw of mtlText.split('\n')) {
     const [keyword, ...args] = raw.trim().split(/\s+/);
     if (keyword === 'newmtl') current = args.join(' ');
     if (keyword === 'Kd' && current) colors.set(current, args.slice(0, 3).map(Number));
     if (keyword === 'map_Kd' && current) maps.set(current, args.join(' '));
+    if (keyword === 'map_detail' && current) {
+      maps.set(current, args.join(' '));
+      details.add(current);
+    }
   }
 
   const positions = [];
@@ -300,7 +307,7 @@ export function objToGlb(objText, mtlText) {
       if (image) {
         gltf.images ??= [];
         gltf.textures ??= [];
-        gltf.images.push({ bufferView: addView(Buffer.from(image[2], 'base64')), mimeType: image[1] });
+        gltf.images.push({ bufferView: addView(Buffer.from(image[2], 'base64')), mimeType: image[1], ...(details.has(name) && { name: 'Detail' }) });
         gltf.textures.push({ source: gltf.images.length - 1 });
         material.pbrMetallicRoughness.baseColorTexture = { index: gltf.textures.length - 1 };
       }

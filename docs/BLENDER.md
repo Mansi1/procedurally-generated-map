@@ -71,8 +71,16 @@ Höhe - wird ein Gebäude breiter, wirkt es im Spiel also kleiner.
   und `Tunic` werden zur Spielerfarbe. Materialnamen beim Bearbeiten
   behalten; ein neues Material mit neuem Namen bekommt nur seine Farbe.
 - **Die Farbe des Materials:** Base Color des Principled BSDF, genau der
-  Zahlenwert (in glTF `baseColorFactor`). Texturen und alles andere am
-  Material liest das Spiel nicht.
+  Zahlenwert (in glTF `baseColorFactor`). Eine Bildtextur ersetzt die Farbe
+  (Blattkarten, Blüten); alles andere am Material liest das Spiel nicht.
+- **Aufgemalte Details:** Heißt das Bild `Detail…` (auch `detail.png`), legt
+  das Spiel es über Farbe und Muster, nach der Deckkraft des Bilds. Das
+  Material behält seine Farbe, die Hose bleibt in der Spielerfarbe. Ein Bild
+  je Modell, alle bemalten Materialien teilen es (Image Texture → Mix
+  *Multiply* mit der Farbe → Base Color). Durchsichtig und weiß heißt:
+  nichts gemalt. So trägt `villager_male` Augen, Bart, Sixpack, Rücken,
+  Armbänder, Nähte und Schnürung. Export mit Texturkoordinaten, ohne
+  Normalen.
 
 Namen mit Bedeutung (nicht umbenennen, beim Kopieren mitnehmen):
 

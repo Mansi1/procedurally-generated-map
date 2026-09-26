@@ -64,9 +64,13 @@ in docs/ANIMATION.md unter „Stand“ festhalten.
    `stand` (34 s Schleife, jedes Bild voll gespeichert). Die Schleife soll
    kürzer werden oder weniger Bilder haben. `npm run check:anim` muss dabei
    halten.
-4. **Bewegungen natürlicher, Modelle verbessern:** Über Blender (Schritt 0)
-   oder direkt in den `.glb` mit `tools/models/glb.mjs`. Welche Clips und
-   Modelle zuerst drankommen, legt der Nutzer mit Beispielen fest.
+4. **Bewegungen natürlicher, Modelle verbessern:** Stand 26.09.2026: Der
+   Mann (`villager_male`) ist neu geformt, mit runden Gliedern und
+   aufgemalten Details (docs/BLENDER.md). Er hat 3 092 statt 4 900 Dreiecke,
+   Gelenke und Clips sind unverändert. Offen: die Frau, danach die Tiere.
+   Gearbeitet wird über Blender (Schritt 0) oder direkt in den `.glb` mit
+   `tools/models/glb.mjs`. Welche Clips und Modelle zuerst drankommen, legt
+   der Nutzer mit Beispielen fest.
 
 Jede Änderung am Rendering wird mit Bench und Screenshots belegt (AGENTS.md).
 

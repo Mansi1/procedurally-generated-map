@@ -479,7 +479,7 @@ function ground(out: EntityInstance[], from: number) {
   out.push({ x: (x0 + x1) / 2 - 0.5, y: (y0 + y1) / 2 - 0.5, size, color: GRASS, shape: SHAPE.flat, alpha: 1, ground: 0, motion: [0, 0, 0, 1] });
 }
 
-const { canvas, labels: labelEls, titles: titleEls, show, files, vertices } = mountGallery(
+const { canvas, labels: labelEls, titles: titleEls, show, files, vertices, gizmo } = mountGallery(
   document.getElementById('app')!,
   SHOWCASE,
   placed.map((p) => p.item.label),
@@ -497,6 +497,9 @@ const { canvas, labels: labelEls, titles: titleEls, show, files, vertices } = mo
     },
     wireframe: () => (renderer.wireframe = !renderer.wireframe),
     ground: () => (showGround = !showGround),
+    whiteWire: () => !!(renderer.wireColor = renderer.wireColor ? null : [1, 1, 1, 1]),
+    plain: () => (renderer.plain = !renderer.plain),
+    turn: (axis, radians) => turnModel(axis, radians),
   },
 );
 
@@ -529,6 +532,7 @@ function choose(i: number, a: number, reframe = i !== current) {
   if (i !== current) {
     demolishing = false;
     spin = 0;
+    renderer.modelRotation.set([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     setViewElevation(Math.PI / 6);
   }
   current = Math.max(-1, Math.min(SHOWCASE.length - 1, i));
@@ -704,6 +708,47 @@ function spinAll(out: EntityInstance[], angle: number) {
   }
 }
 
+/**
+ * Dreh-Gizmo: das Modell um die Weltachse `axis` (0 x, 1 y, 2 z oben)
+ * weiterdrehen - die neue Drehung kommt vor die bisherige (R = D * R).
+ */
+function turnModel(axis: number, radians: number) {
+  const c = Math.cos(radians), s = Math.sin(radians);
+  const [i, j] = [(axis + 1) % 3, (axis + 2) % 3];
+  const r = renderer.modelRotation;
+  // Spaltenweise: r[col * 3 + row]. D dreht in der Ebene (i, j).
+  for (let col = 0; col < 3; col++) {
+    const a = r[col * 3 + i], b = r[col * 3 + j];
+    r[col * 3 + i] = c * a - s * b;
+    r[col * 3 + j] = s * a + c * b;
+  }
+}
+
+/** Die Ringe des Gizmos um die Modellmitte, auf den Bildschirm gebracht. */
+function placeGizmo() {
+  const main = instances.find((e) => renderer.modelHeight(e.shape) !== undefined);
+  if (current < 0 || !main) return gizmo(null);
+  const view: IsoView = { centerX: camX, centerY: camY, tileSize: zoom, width: window.innerWidth, height: window.innerHeight };
+  const height = renderer.modelHeight(main.shape)! * main.size;
+  const cx = main.x + 0.5, cy = main.y + 0.5, cz = height / 2;
+  const radius = Math.max(height, main.size) * 0.6;
+  const center = worldToScreen(view, cx, cy, cz);
+  gizmo(center, [0, 1, 2].map((axis) => {
+    const pts: { x: number; y: number }[] = [];
+    for (let k = 0; k <= 48; k++) {
+      const t = (k / 48) * Math.PI * 2;
+      const q = [0, 0, 0];
+      q[(axis + 1) % 3] = Math.cos(t) * radius;
+      q[(axis + 2) % 3] = Math.sin(t) * radius;
+      pts.push(worldToScreen(view, cx + q[0], cy + q[1], cz + q[2]));
+    }
+    // Umlaufsinn auf dem Bildschirm (y nach unten): > 0 im Uhrzeigersinn.
+    let area = 0;
+    for (let k = 0; k < 48; k++) area += pts[k].x * pts[k + 1].y - pts[k + 1].x * pts[k].y;
+    return { points: pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '), winding: area >= 0 ? 1 : -1 };
+  }));
+}
+
 function frame(now: number) {
   const t = (now - start) / 1000;
   instances.length = 0;
@@ -731,6 +776,7 @@ function frame(now: number) {
   const drawnBefore = renderer.drawnVertices;
   renderer.render(instances, camera, 0, pixelRatio);
   if (current >= 0) vertices(renderer.drawnVertices - drawnBefore);
+  placeGizmo();
   if (fitPasses > 0 && current >= 0) {
     fitPasses--;
     fit();

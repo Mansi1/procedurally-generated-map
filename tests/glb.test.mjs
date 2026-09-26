@@ -20,6 +20,13 @@ test('jedes Modell lässt sich lesen und unverändert wieder schreiben', () => {
   }
 });
 
+test('aufgemalte Details (Bild "Detail…") kommen als map_detail mit Texturkoordinaten an', () => {
+  const { obj, mtl } = readModel('villager_male');
+  assert.match(mtl, /^map_detail data:image\/png;base64,/m);
+  assert.doesNotMatch(mtl, /^map_Kd /m, 'Details dürfen keine Bildtextur werden');
+  assert.match(obj, /^f \d+\/\d+ /m);
+});
+
 test('Namen im Spiel: bis zum "#", Kopien aus Blender ohne ".001"', () => {
   const names = new Set(['Window.Bar', 'Berry.100', 'Entry']);
   assert.equal(gameName('Window.Bar#3', names), 'Window.Bar');

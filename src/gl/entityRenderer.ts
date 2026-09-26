@@ -629,6 +629,7 @@ layout(location = 4) in vec4 aMotion;   // Figuren: Blickrichtung, Phase, Pose, 
 layout(location = 5) in vec3 aAccent;   // Figuren: Farbe der Last
 layout(location = 6) in vec4 aMaterial; // Modelle: Materialfarbe, w = Rolle (MATERIAL_ROLE)
 layout(location = 7) in float aGround;  // Geländehöhe in Tiles, oder ${GROUND_UNKNOWN} = ausrechnen
+layout(location = 8) in vec2 aDetail;   // Modelle: u, v der aufgemalten Details (uDetailLayer), < 0 = keine
 
 /** Untergrenze für die Größe, damit Gebäude beim Herauszoomen sichtbar bleiben. */
 uniform float uMinSizeTiles;
@@ -648,6 +649,7 @@ uniform vec3  uLoadAnchor;   // Befestigung der Last am Ruecken
 // sich von selbst bewegt.
 uniform float uModelScale;
 uniform float uModelTop;     // Höhe des Modells in Modell-Einheiten (Bäume: Absägen)
+uniform mat3 uModelRot;      // Galerie: Drehung um die Modellmitte in Weltachsen (Dreh-Gizmo), sonst Einheit
 uniform float uStump;        // Bäume: Höhe des Stumpfs in Modell-Einheiten
 uniform float uStumpRadius;  // Bäume: Halbmesser des Stumpfs in Modell-Einheiten
 // Bäume: diese Ecke liegt auf der Schnittfläche eines abgesägten Stamms.
@@ -861,7 +863,9 @@ void main() {
   vec3 world;
   vBent = vec3(0.0, 0.0, 1.0);
   vFoliage = -1.0;
-  vBillboardUV = vec2(0.0);
+  // Modelle: Texturkoordinaten der aufgemalten Details - ein Varying weniger
+  // als eigene; Billboards setzen es unten neu. Ohne aDetail (0, 0).
+  vBillboardUV = aDetail;
 
   if (uBillboard == 1) {
     // Baum weit draußen: ein Rechteck zur Kamera mit dem vorab aus dem Modell
@@ -1134,6 +1138,11 @@ void main() {
     float heading = field ? 0.0 : aMotion.x;
     vec2 forward = vec2(cos(heading), sin(heading));
     vec2 left = vec2(-forward.y, forward.x);
+    // Galerie: in Weltachsen um die halbe Modellhöhe drehen, dann zurück in
+    // Modellachsen - der Rest (Blickrichtung, Umfallen ...) bleibt gleich.
+    vec3 pivot = vec3(0.0, 0.0, uModelTop * 0.5);
+    vec3 turned = uModelRot * (vec3(forward * p.x + left * p.y, p.z) - pivot) + pivot;
+    p = vec3(dot(turned.xy, forward), dot(turned.xy, left), turned.z);
     vec2 offset = (forward * p.x + left * p.y) * scale;
 
     // Laub wie eine weiche Kugel beleuchten statt Fläche für Fläche: die
@@ -1349,6 +1358,7 @@ float texDetail(float freq, float px) {
 }
 
 uniform highp sampler2DArray uModelImages; // Bildtexturen der Modelle (IMAGE_ROLE)
+uniform int uDetailLayer;                   // Schicht der aufgemalten Details des Modells, -1 = keine
 uniform sampler2D uLeafTex;  // Foto eines Birkenblatts (Blatt- und Astkarten)
 
 // Birkenrinde wie am Stamm (treeTexture, vTex 4), für gemalte Äste und Zweige:
@@ -1641,6 +1651,10 @@ vec3 treeTexture(vec3 base) {
 }
 // 1: Umriss-Durchgang - nur die verdeckten Teile einer Figur, in Spielerfarbe.
 uniform int uSilhouette;
+// Galerie: 1 = ohne Texturen, nur Materialfarben (Karten der Blumen bleiben - sie geben die Form).
+uniform int uPlain;
+// Galerie: a > 0 = Modelle nur in dieser Farbe (weißes Drahtgitter).
+uniform vec4 uWire;
 flat in vec3 vParams;
 flat in float vRoof;
 out vec4 fragColor;
@@ -1765,6 +1779,11 @@ void main() {
   if (cutFace) normal = normalize(vCapNormal);
   if (dot(normal, uToCamera) < 0.0) normal = -normal;
 
+  if (uWire.a > 0.0) {
+    fragColor = uWire;
+    return;
+  }
+
   if (uSilhouette == 1) {
     // Verdeckte Figur: halbdurchsichtig in der Spielerfarbe, Flächen, die zur
     // Seite zeigen, heller und deckender - so liest sie sich als Umriss.
@@ -1775,6 +1794,9 @@ void main() {
 
   vec3 base = vColor;
   if (cutFace) base = vec3(0.86, 0.71, 0.48) * (0.9 + 0.1 * texNoise(vLocal.xy * 6.0));
+  // Ohne Texturen: Bilder tragen statt einer Farbe (u, v, Schicht) - dann grau.
+  else if (uPlain == 1 && vTex == ${IMAGE_ROLE}) base = vec3(0.7);
+  else if (uPlain == 1 && vTex != ${BLOSSOM_CARD_ROLE} && vTex != ${FLOWER_SHADOW_ROLE}) base = vColor;
   else if (vTex == ${IMAGE_ROLE}) base = vSawn > 0.5 ? treeTexture(vec3(0.86, 0.71, 0.48)) : imageTexture(base);
   else if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
   else if (vTex == ${BLOSSOM_CARD_ROLE}) base = blossomCard(base, shape);
@@ -1785,6 +1807,11 @@ void main() {
     base = vec3(0.02, 0.05, 0.01);
   }
   else if (vTex != 0) base = treeTexture(base);
+  if (uPlain == 0 && uDetailLayer >= 0 && vBillboardUV.x >= 0.0) {
+    // Aufgemalt (Augen, Nähte, Schnürung ...): über Farbe und Muster, nach Deckkraft.
+    vec4 d = texture(uModelImages, vec3(vBillboardUV.x, 1.0 - vBillboardUV.y, float(uDetailLayer)));
+    base = mix(base, d.rgb, d.a);
+  }
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
     // Spitzdächer bekommen einen dunklen Ziegelton, damit man Dach und Wand
     // auseinanderhält. Flachdächer bleiben in der Gebäudefarbe.
@@ -1954,8 +1981,15 @@ const MATERIAL_ROLE: Record<string, number> = {
 };
 
 interface Model {
-  /** Je Eckpunkt: x vorn, y links, z oben (Modell-Einheiten), Teil, r, g, b, Rolle. */
+  /**
+   * Je Eckpunkt: x vorn, y links, z oben (Modell-Einheiten), Teil, r, g, b,
+   * Rolle - und bei aufgemalten Details (map_detail) dazu u, v, Schicht + 1.
+   */
   vertices: Float32Array;
+  /** Floats je Eckpunkt: 8, mit aufgemalten Details 10. */
+  floats: number;
+  /** Schicht der aufgemalten Details in uModelImages (ein Bild je Modell), -1 = keine. */
+  detail: number;
   /**
    * Vereinfachte Fassungen fürs Herauszoomen (siehe LOD_PARTS): ohne die
    * kleinen Teile - Beeren, Blattbüschel, Rinde. Nur bei Vorkommen.
@@ -2113,6 +2147,10 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
   const triangles = all.filter((t) => !isMarker(t.object));
   const colors = parseMtl(mtl);
   const images = parseMtlImages(mtl);
+  // Aufgemalt (Augen, Nähte ...): liegt über Farbe und Muster, siehe aDetail.
+  const details = parseMtlImages(mtl, 'map_detail');
+  const floats = details.size ? 10 : 8;
+  let detailLayer = -1;
   if (triangles.length === 0) throw new Error('Figuren-Modell ist leer');
 
   let minY = Infinity;
@@ -2280,6 +2318,10 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     const image = images.get(t.material);
     const layer = image && t.uvs ? imageLayer(image, color) : undefined;
     const vertexRole = layer === undefined ? role : IMAGE_ROLE;
+    const detail = details.get(t.material);
+    const layerHere = detail && t.uvs ? imageLayer(detail, [1, 1, 1]) : -1;
+    if (layerHere >= 0 && detailLayer >= 0 && layerHere !== detailLayer) throw new Error(`${t.object}: nur ein Detail-Bild je Modell`);
+    if (layerHere >= 0) detailLayer = layerHere;
     for (const k of inward.has(t.index) && isLog(t) ? [0, 2, 1] : [0, 1, 2]) {
       const p = t.points[k];
       const [x, y, z] = local(p);
@@ -2309,13 +2351,14 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
         // Stammstück (19 + Ansatzhöhe): über dem Schnitt verschwindet es ganz.
         : sawable ? 19 + (bottom.get(t.index) ?? 0) * 0.45
         : part;
-      v.push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], vertexRole);
+      const vertex = [x, y, z, partValue, rgb[0], rgb[1], rgb[2], vertexRole];
+      if (floats === 10) vertex.push(...(layerHere >= 0 ? t.uvs![k] : [-1, -1]));
+      v.push(...vertex);
       if (lod) {
         LOD_PARTS.forEach((min, i) => {
           // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
-          // Stammstücke bleiben immer - sie sind kurz, der Stamm aber nicht.
           // Blattkarten auch: ohne sie stünde die Birke weit draußen kahl da.
-          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) lods[i].push(x, y, z, partValue, rgb[0], rgb[1], rgb[2], vertexRole);
+          if ((extent.get(t.index) ?? 1) >= min || t.object.startsWith('Trunk') || card) lods[i].push(...vertex);
         });
       }
       // Hüfte und Schulter sitzen an der Oberkante von Beinen und Armen.
@@ -2376,6 +2419,8 @@ function loadModel(obj: string | ObjTriangle[], mtl: string, unit: 'height' | 'w
     work: stand && aim && { stand, aim },
     stockSlots,
     vertices: new Float32Array(v),
+    floats,
+    detail: detailLayer,
     lods: lod ? lods.map((l) => new Float32Array(l)) : undefined,
     hip,
     shoulder,
@@ -2496,9 +2541,10 @@ const MODELS: {
   /** Anhang: der Körper, dessen Gelenke, Clips und Hand es beim Zeichnen nutzt. */
   body?: number;
 }[] = [
-  { shape: SHAPE.villager, model: loadModel(villagerMaleModel.obj, villagerMtl, 'height'), scale: 1.7 },
+  // Das eigene MTL zuletzt: seine aufgemalten Details (map_detail) gelten, nicht die des anderen Körpers.
+  { shape: SHAPE.villager, model: loadModel(villagerMaleModel.obj, `${villagerMtl}\n${villagerMaleModel.mtl}`, 'height'), scale: 1.7 },
   // Kürzere Schritte, sonst treten die Beine hinten aus dem langen Rock.
-  { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleModel.obj, villagerMtl, 'height'), scale: 1.7, stride: 0.6 },
+  { shape: SHAPE.villagerFemale, model: loadModel(villagerFemaleModel.obj, `${villagerMtl}\n${villagerFemaleModel.mtl}`, 'height'), scale: 1.7, stride: 0.6 },
   // Werkzeuge als Anhänge: Beil und Zugmesser einmal für beide Körper, die
   // Sense je Körper (ihr Stiel liegt in der Mäh-Haltung in beiden Händen).
   { shape: SHAPE.propAxe, model: PROP_AXE, scale: 1.7, body: SHAPE.villager },
@@ -2782,6 +2828,12 @@ export class EntityRenderer {
   skirts = true;
   /** Nur die Kanten der Dreiecke zeichnen (Galerie) - siehe draw(). */
   wireframe = false;
+  /** Galerie: Farbe des Drahtgitters (RGBA 0..1), null = Materialfarben. */
+  wireColor: [number, number, number, number] | null = null;
+  /** Galerie: ohne Texturen, nur Materialfarben. */
+  plain = false;
+  /** Galerie: Drehung der Modelle um ihre Mitte in Weltachsen (spaltenweise 3x3), sonst Einheit. */
+  modelRotation = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
   /** Gezeichnete Eckpunkte der Modelle seit dem Start - die Galerie liest den Zuwachs je Bild. */
   drawnVertices = 0;
   /** Kanten je Dreieck (3i-3i+1, 3i+1-3i+2, 3i+2-3i) für das Drahtgitter, wächst bei Bedarf. */
@@ -2846,8 +2898,8 @@ export class EntityRenderer {
     this.quad = this.createMesh(new Float32Array([0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 0]));
     this.models = MODELS.map((m) => ({
       ...m,
-      mesh: this.createMesh(m.model.vertices, 8),
-      lodMeshes: (m.model.lods ?? []).map((l) => this.createMesh(l, 8)),
+      mesh: this.createMesh(m.model.vertices, m.model.floats),
+      lodMeshes: (m.model.lods ?? []).map((l) => this.createMesh(l, m.model.floats)),
       list: [],
     }));
     for (const m of this.models) this.modelByShape.set(m.shape, m);
@@ -3004,7 +3056,7 @@ export class EntityRenderer {
     return texture;
   }
 
-  /** @param components Floats je Eckpunkt: 4 (aCorner) oder 8 (aCorner + aMaterial). */
+  /** @param components Floats je Eckpunkt: 4 (aCorner), 8 (+ aMaterial) oder 10 (+ aDetail). */
   private createMesh(vertices: Float32Array, components = 4): Mesh {
     const gl = this.gl;
     const vao = gl.createVertexArray()!;
@@ -3015,9 +3067,14 @@ export class EntityRenderer {
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 4, gl.FLOAT, false, components * 4, 0);
-    if (components === 8) {
+    if (components >= 8) {
       gl.enableVertexAttribArray(6);
-      gl.vertexAttribPointer(6, 4, gl.FLOAT, false, 32, 16);
+      gl.vertexAttribPointer(6, 4, gl.FLOAT, false, components * 4, 16);
+    }
+    // Ohne aDetail liefert der Shader (0, 0) - gemalt wird nur mit uDetailLayer >= 0.
+    if (components === 10) {
+      gl.enableVertexAttribArray(8);
+      gl.vertexAttribPointer(8, 2, gl.FLOAT, false, 40, 32);
     }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
@@ -3030,6 +3087,12 @@ export class EntityRenderer {
   }
 
   /** Datei des Modells einer Form (tree_oak.glb) - oder keine (Felder, Klötze). */
+  /** Höhe eines Modells der Größe 1 in Tiles (Galerie: Mitte des Dreh-Gizmos). */
+  modelHeight(shape: number): number | undefined {
+    const m = this.modelByShape.get(shape);
+    return m && m.model.top * m.scale;
+  }
+
   modelFile(shape: number): string | undefined {
     return this.modelByShape.get(shape)?.model.file;
   }
@@ -3095,7 +3158,7 @@ export class EntityRenderer {
         const heading = (k * 2 * Math.PI) / BILLBOARD_HEADINGS;
         const c = Math.cos(heading), sn = Math.sin(heading);
         let u0 = Infinity, u1 = -Infinity, g0 = Infinity, g1 = -Infinity;
-        for (let i = 0; i < v.length; i += 8) {
+        for (let i = 0; i < v.length; i += m.model.floats) {
           const g = worldToGround((c * v[i] - sn * v[i + 1]) * s, (sn * v[i] + c * v[i + 1]) * s);
           const gy = g.v - zScreen * v[i + 2] * s;
           u0 = Math.min(u0, g.u); u1 = Math.max(u1, g.u);
@@ -3339,6 +3402,11 @@ export class EntityRenderer {
     // Ohne eingeebnete Flächen liest der Shader das Feld nicht - 192 Werte weniger je Bild.
     if (this.flatCount > 0) gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
     gl.uniform1i(this.location('uFlatCount'), this.flatCount);
+    gl.uniform1i(this.location('uPlain'), this.plain ? 1 : 0);
+    gl.uniformMatrix3fv(this.location('uModelRot'), false, this.modelRotation);
+    gl.uniform4fv(this.location('uWire'), this.wireframe && this.wireColor ? this.wireColor : [0, 0, 0, 0]);
+    // Nur Modelle setzen ihr Detail-Bild (drawModel) - alles andere malt nichts auf.
+    gl.uniform1i(this.location('uDetailLayer'), -1);
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -3371,6 +3439,7 @@ export class EntityRenderer {
       // seines Körpers - er bewegt sich genau mit dessen Unterarm.
       const b = m.body === undefined ? m : this.modelByShape.get(m.body) ?? m;
       gl.uniform1f(this.location('uModelScale'), m.scale);
+      gl.uniform1i(this.location('uDetailLayer'), m.model.detail);
       gl.uniform3fv(this.location('uSocket'), b.model.hand);
       gl.uniform1f(this.location('uKnifeScale'), Math.abs(b.model.hand[1]) * b.model.meters / KNIFE_HALF_SPAN);
       gl.uniform1f(this.location('uHip'), b.model.hip);
@@ -3438,6 +3507,7 @@ export class EntityRenderer {
       for (const [m, offset] of figures) drawModel(m, offset);
     }
 
+    gl.uniform1i(this.location('uDetailLayer'), -1);
     // Staub zuletzt: halbdurchsichtig über allem, was dahinter steht, ohne
     // selbst Tiefe zu schreiben.
     if (puffs.length > 0) {

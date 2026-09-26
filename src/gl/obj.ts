@@ -88,14 +88,17 @@ export function parseMtl(source: string): Map<string, RGB01> {
   return colors;
 }
 
-/** Bildtextur (map_Kd) je Material - bei Modellen aus .glb eine data:-URL (tools/models/glb.mjs). */
-export function parseMtlImages(source: string): Map<string, string> {
+/**
+ * Bildtextur (map_Kd) bzw. aufgemalte Details (map_detail) je Material - bei
+ * Modellen aus .glb eine data:-URL (tools/models/glb.mjs).
+ */
+export function parseMtlImages(source: string, keyword = 'map_Kd'): Map<string, string> {
   const images = new Map<string, string>();
   let current = '';
   for (const raw of source.split('\n')) {
-    const [keyword, ...args] = raw.trim().split(/\s+/);
-    if (keyword === 'newmtl') current = args.join(' ');
-    if (keyword === 'map_Kd' && current && args.length) images.set(current, args.join(' '));
+    const [key, ...args] = raw.trim().split(/\s+/);
+    if (key === 'newmtl') current = args.join(' ');
+    if (key === keyword && current && args.length) images.set(current, args.join(' '));
   }
   return images;
 }

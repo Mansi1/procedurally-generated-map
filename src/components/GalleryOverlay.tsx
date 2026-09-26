@@ -30,6 +30,12 @@ export interface GalleryHooks {
   wireframe(): boolean;
   /** Stück Boden unter den Modellen ein oder aus - liefert, ob es jetzt an ist. */
   ground(): boolean;
+  /** Drahtgitter weiß statt in den Materialfarben - liefert, ob es jetzt weiß ist. */
+  whiteWire(): boolean;
+  /** Texturen aus oder an - liefert, ob sie jetzt aus sind. */
+  plain(): boolean;
+  /** Dreh-Gizmo: das Modell um Achse 0 (x), 1 (y) oder 2 (z, oben) um `radians` weiterdrehen. */
+  turn(axis: number, radians: number): void;
 }
 
 export interface GalleryElements {
@@ -44,6 +50,12 @@ export interface GalleryElements {
   files(names: readonly string[]): void;
   /** Gezeichnete Eckpunkte des gezeigten Modells. */
   vertices(count: number): void;
+  /**
+   * Dreh-Gizmo: Mitte (CSS-Pixel) und je Achse die Ringpunkte - null blendet
+   * ihn aus. `winding` je Ring: +1, wenn er auf dem Bildschirm im Uhrzeigersinn
+   * läuft, sonst -1 - daraus die Drehrichtung beim Ziehen.
+   */
+  gizmo(center: { x: number; y: number } | null, ring?: { points: string; winding: number }[]): void;
 }
 
 /**
@@ -63,12 +75,46 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
   const countLine = createRef<HTMLDivElement>();
   const wireButton = createRef<HTMLButtonElement>();
   const groundButton = createRef<HTMLButtonElement>();
+  const whiteButton = createRef<HTMLButtonElement>();
+  const plainButton = createRef<HTMLButtonElement>();
+  const gizmoSvg = createRef<SVGSVGElement>();
+  /** Stand des Gizmos aus gallery.ts - Mitte und Umlaufsinn der Ringe. */
+  let gizmoCenter = { x: 0, y: 0 };
+  let windings = [1, 1, 1];
+
+  // Ziehen an einem Ring: der Winkel des Zeigers um die Mitte, je nach
+  // Umlaufsinn des Rings vorwärts oder rückwärts.
+  const startTurn = (e: PointerEvent, axis: number) => {
+    e.preventDefault();
+    const angle = (ev: PointerEvent) => Math.atan2(ev.clientY - gizmoCenter.y, ev.clientX - gizmoCenter.x);
+    let last = angle(e);
+    const move = (ev: PointerEvent) => {
+      const a = angle(ev);
+      let d = a - last;
+      if (d > Math.PI) d -= 2 * Math.PI;
+      if (d < -Math.PI) d += 2 * Math.PI;
+      last = a;
+      hooks.turn(axis, d * windings[axis]);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
   const groups = [...new Set(items.map((it) => it.group))];
   render(
     <>
       <canvas ref={canvas} class="gal-canvas" />
       {/* Übersicht: Beschriftungen, gesetzt je Bild von gallery.ts */}
+      {/* Dreh-Gizmo über dem Modell: X rot, Y grün, Z blau - Ziehen an einem Ring dreht um seine Achse. */}
+      <svg class="gal-gizmo" ref={gizmoSvg} style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none">
+        {['#e04848', '#5cc85c', '#4a78e8'].map((color, axis) => (
+          <polyline fill="none" stroke={color} stroke-width="3" data-axis={String(axis)} style="pointer-events:stroke;cursor:grab" />
+        ))}
+      </svg>
       <div class="gal-labels" ref={overview}>
         {labels.map((text, i) => <div ref={labelRefs[i]} class="gal-label">{text}</div>)}
         {titles.map((text, i) => <div ref={titleRefs[i]} class="gal-row-title">{text}</div>)}
@@ -102,12 +148,20 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
             onClick={() => wireButton.current.classList.toggle('active', hooks.wireframe())}>Gitter</button>
           <button type="button" class="wood-btn gal-chip" ref={groundButton} title="Stück Boden unter den Modellen ein/aus"
             onClick={() => groundButton.current.classList.toggle('active', hooks.ground())}>Boden</button>
+          <button type="button" class="wood-btn gal-chip" ref={whiteButton} title="Drahtgitter weiß statt in den Materialfarben"
+            onClick={() => whiteButton.current.classList.toggle('active', hooks.whiteWire())}>Gitter weiß</button>
+          <button type="button" class="wood-btn gal-chip" ref={plainButton} title="Texturen aus/an - nur die Materialfarben"
+            onClick={() => plainButton.current.classList.toggle('active', hooks.plain())}>Ohne Texturen</button>
         </div>
       </div>
       <div class="gal-help">Ziehen dreht in alle Richtungen · rechts ziehen verschiebt · Mausrad zoomt · Q/E drehen · W/S neigen · ↑/↓ Modell · ←/→ Animation</div>
     </>,
     root,
   );
+
+  // Die Ringe des Gizmos - wie die Knöpfe der Liste nicht über Refs (siehe unten).
+  const rings = [...root.querySelectorAll<SVGPolylineElement>('.gal-gizmo polyline')];
+  rings.forEach((ring, axis) => ring.addEventListener('pointerdown', (e) => startTurn(e, axis)));
 
   // Die Knöpfe der Liste - Refs in der verschachtelten Liste setzt defuss nicht.
   const itemButtons = [...root.querySelectorAll<HTMLButtonElement>('.gal-item[data-index]')];
@@ -144,6 +198,13 @@ export function mountGallery(root: HTMLElement, items: GalleryItem[], labels: st
     files: (names) => {
       const text = names.join(' · ');
       if (fileLine.current.textContent !== text) fileLine.current.textContent = text;
+    },
+    gizmo: (center, ring) => {
+      gizmoSvg.current.style.display = center ? '' : 'none';
+      if (!center || !ring) return;
+      gizmoCenter = center;
+      windings = ring.map((r) => r.winding);
+      ring.forEach((r, i) => rings[i].setAttribute('points', r.points));
     },
     vertices: (count) => {
       const text = `${count.toLocaleString('de-DE')} Eckpunkte · ${Math.round(count / 3).toLocaleString('de-DE')} Dreiecke`;
