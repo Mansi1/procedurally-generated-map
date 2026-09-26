@@ -527,6 +527,34 @@ export class MapGenerator {
     return { height, tileType: this.classify(height, moisture, temperature) };
   }
 
+  /**
+   * Wie viele Blumen an (x, y) wachsen (0..1) - wie bloomOf() im
+   * Gelände-Shader: nur mitten in der Wiese, zu Wald, Wüste, Strand und Fels
+   * hin keine. Ohne die Fransen des Shaders, die Dichte braucht sie nicht.
+   */
+  bloomAt(x: number, y: number): number {
+    const nx = x * MAP_SCALE;
+    const ny = y * MAP_SCALE;
+    const height = this.elevation(nx, ny);
+    const { moisture, temperature } = this.climate(nx, ny, height);
+    if (this.classify(height, moisture, temperature) === "snow") return 0;
+    const smooth = (a: number, b: number, v: number) => {
+      const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    };
+    const wood = smooth(0.02, 0.18, moisture);
+    const desert = Math.min(smooth(0.15, 0.35, temperature), 1 - smooth(-0.2, 0, moisture));
+    const shoreBand = (SHORE_LEVEL - SEA_LEVEL) * 0.6;
+    const beach = 1 - smooth(SHORE_LEVEL - shoreBand, SHORE_LEVEL + shoreBand, height);
+    const rock = smooth(HILL_LEVEL - 0.05, HILL_LEVEL + 0.05, height);
+    return (1 - smooth(0, 0.35, beach)) * (1 - smooth(0, 0.4, desert)) * (1 - smooth(0, 0.6, wood)) * (1 - smooth(0, 0.4, rock));
+  }
+
+  /** Das Detail-Rauschen (-1..1) - dieselbe Ebene wie L_DETAIL im Gelände-Shader. */
+  detail(x: number, y: number): number {
+    return this.detailNoise.noise2D(x, y);
+  }
+
   /** Höhe -1..1 an einer beliebigen Welt-Position (in Tiles, nicht gerundet). */
   heightAt(x: number, y: number, step: number = 1): number {
     return this.elevation(x * MAP_SCALE, y * MAP_SCALE, step);

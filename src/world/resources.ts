@@ -13,7 +13,7 @@ import type { DepositType } from './catalog';
 import type { ViewRect, World } from './world';
 
 /** Klein genug, dass ein Stück das Zeitbudget eines Bildes nicht sprengt. */
-const CHUNK = 16;
+export const CHUNK = 16;
 /** So viele Stücke bleiben im Speicher - grob das Zehnfache eines Bildschirms. */
 const MAX_CHUNKS = 6400;
 
@@ -116,7 +116,7 @@ interface ResourceNode {
 }
 
 /** Deterministischer Zufall 0..1 je Tile und Kanal - gleiche Welt, gleiche Bäume. */
-function hash(x: number, y: number, channel: number): number {
+export function hash(x: number, y: number, channel: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(channel, 2246822519);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -172,37 +172,7 @@ export class ResourceField {
    * bis das Zeitbudget dieses Bildes aufgebraucht ist.
    */
   update(view: ViewRect, centerX: number, centerY: number, budgetMs = 4) {
-    const missing: [number, number][] = [];
-    const cx0 = Math.floor(view.x / CHUNK);
-    const cy0 = Math.floor(view.y / CHUNK);
-    const cx1 = Math.floor((view.x + view.width) / CHUNK);
-    const cy1 = Math.floor((view.y + view.height) / CHUNK);
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        if (!this.chunks.has(`${cx},${cy}`)) missing.push([cx, cy]);
-      }
-    }
-    if (missing.length === 0) return;
-
-    const distance = ([cx, cy]: [number, number]) =>
-      Math.hypot((cx + 0.5) * CHUNK - centerX, (cy + 0.5) * CHUNK - centerY);
-    missing.sort((a, b) => distance(a) - distance(b));
-
-    const start = performance.now();
-    for (const [cx, cy] of missing) {
-      this.chunks.set(`${cx},${cy}`, this.generate(cx, cy));
-      if (performance.now() - start > budgetMs) break;
-    }
-
-    // Zu viele gemerkt: die am weitesten entfernten fallen weg.
-    if (this.chunks.size > MAX_CHUNKS) {
-      const keys = [...this.chunks.keys()].map((k) => {
-        const [cx, cy] = k.split(',').map(Number);
-        return { k, d: distance([cx, cy]) };
-      });
-      keys.sort((a, b) => b.d - a.d);
-      for (let i = 0; i < this.chunks.size - MAX_CHUNKS; i++) this.chunks.delete(keys[i].k);
-    }
+    fillChunks(this.chunks, view, centerX, centerY, budgetMs, MAX_CHUNKS, (cx, cy) => this.generate(cx, cy));
   }
 
   private generate(cx: number, cy: number): ResourceNode[] {
@@ -299,5 +269,47 @@ export class ResourceField {
         }
       }
     }
+  }
+}
+
+/**
+ * Rechnet fehlende Stücke (CHUNK x CHUNK Tiles) im Rechteck aus, die der
+ * Mitte nächsten zuerst, bis das Zeitbudget dieses Bildes aufgebraucht ist.
+ * Sind mehr als `maxChunks` gemerkt, fallen die am weitesten entfernten weg.
+ */
+export function fillChunks<T>(
+    chunks: Map<string, T>, view: ViewRect, centerX: number, centerY: number,
+    budgetMs: number, maxChunks: number, generate: (cx: number, cy: number) => T,
+) {
+  const missing: [number, number][] = [];
+  const cx0 = Math.floor(view.x / CHUNK);
+  const cy0 = Math.floor(view.y / CHUNK);
+  const cx1 = Math.floor((view.x + view.width) / CHUNK);
+  const cy1 = Math.floor((view.y + view.height) / CHUNK);
+  for (let cy = cy0; cy <= cy1; cy++) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      if (!chunks.has(`${cx},${cy}`)) missing.push([cx, cy]);
+    }
+  }
+  if (missing.length === 0) return;
+
+  const distance = ([cx, cy]: [number, number]) =>
+    Math.hypot((cx + 0.5) * CHUNK - centerX, (cy + 0.5) * CHUNK - centerY);
+  missing.sort((a, b) => distance(a) - distance(b));
+
+  const start = performance.now();
+  for (const [cx, cy] of missing) {
+    chunks.set(`${cx},${cy}`, generate(cx, cy));
+    if (performance.now() - start > budgetMs) break;
+  }
+
+  // Zu viele gemerkt: die am weitesten entfernten fallen weg.
+  if (chunks.size > maxChunks) {
+    const keys = [...chunks.keys()].map((k) => {
+      const [cx, cy] = k.split(',').map(Number);
+      return { k, d: distance([cx, cy]) };
+    });
+    keys.sort((a, b) => b.d - a.d);
+    for (let i = 0; i < chunks.size - maxChunks; i++) chunks.delete(keys[i].k);
   }
 }
