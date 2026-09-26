@@ -10,7 +10,7 @@
 // rechts ziehen verschiebt, das Mausrad zoomt.
 
 import {
-  ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, POSE, SHAPE, animationTime,
+  ANIMAL_CLIPS, ANIMAL_POSE, BUILDING_HEADING, CLIPS, CLIP_POSE, EntityRenderer, FALL_LYING, FIELDS, POSE, SHAPE, animationTime,
   buildingHeading, figureProps, frozenMillMotion, millMotion, modelWorkSpot,
   type EntityInstance,
 } from './gl/entityRenderer';
@@ -257,7 +257,7 @@ const ROWS: { title: string; gap: number; depth: number; items: Exhibit[] }[] = 
   },
   {
     title: 'Felder', gap: 4.4, depth: 0,
-    items: [field('wheat'), field('corn')],
+    items: [field('wheat'), field('corn'), field('tomato'), field('potato'), field('hop')],
   },
 ];
 
@@ -372,6 +372,9 @@ const SHOWCASE: Showcase[] = [
     .map(([label, sh]) => depleting(label, sh, 0.45, [62, 115, 52], false)), 400, 0.3),
   showcase('Felder', 'Weizen', [field('wheat')], 130, 0.5, ['säen, wachsen, ernten']),
   showcase('Felder', 'Mais', [field('corn')], 130, 0.6, ['säen, wachsen, ernten']),
+  showcase('Felder', 'Tomaten', [field('tomato')], 130, 0.6, ['säen, wachsen, ernten']),
+  showcase('Felder', 'Kartoffeln', [field('potato')], 130, 0.5, ['säen, wachsen, ernten']),
+  showcase('Felder', 'Hopfen', [field('hop')], 130, 0.7, ['säen, wachsen, ernten']),
 ];
 
 // --- Seite ------------------------------------------------------------------
@@ -608,7 +611,7 @@ function spinAll(out: EntityInstance[], angle: number) {
   if (angle === 0) return;
   const [c, s] = [Math.cos(angle), Math.sin(angle)];
   for (const e of out) {
-    if (e.shape >= SHAPE.farmWheat && e.shape < SHAPE.farmCorn + FIELD_ROWS) continue;
+    if (FIELDS.includes(e.shape)) continue;
     const [x, y] = [e.x + 0.5, e.y + 0.5];
     e.x = x * c - y * s - 0.5;
     e.y = x * s + y * c - 0.5;

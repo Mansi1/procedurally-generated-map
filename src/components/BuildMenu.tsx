@@ -2,7 +2,7 @@
 // Baumenü in der Steintafel der Befehlsleiste: je Gebäudetyp ein
 // quadratischer Knopf mit dem Modell in Spielerfarbe und der Taste oben
 // links; Name, Kosten und Nutzen im Tooltip. Das Feld öffnet ein Untermenü:
-// Weizenfeld, Maisfeld, Zurück. Einmal gerendert; danach setzt die Klasse
+// Weizen-, Mais-, Tomaten-, Kartoffel-, Hopfenfeld, Zurück. Einmal gerendert; danach setzt die Klasse
 // nur noch, welche Seite zu sehen ist, welcher Knopf gedrückt ist, welche
 // man sich leisten kann und - nach einem Farbwechsel - die Bilder.
 

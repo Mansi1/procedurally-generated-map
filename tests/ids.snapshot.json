@@ -993,9 +993,26 @@
    "Stalk",
    "Tassel"
   ],
+  "field_hop": [
+   "Bine",
+   "Cone",
+   "Leaf",
+   "Pole"
+  ],
+  "field_potato": [
+   "Flower",
+   "Leaf",
+   "Stem"
+  ],
   "field_stake": [
    "Stake",
    "Stake.Top"
+  ],
+  "field_tomato": [
+   "Fruit",
+   "Leaf",
+   "Stake",
+   "Stem"
   ],
   "field_wheat_leaf": [
    "Leaf"

@@ -22,7 +22,8 @@ src/models/                           Modelle - je Objekt eine .glb, eingecheckt
   deer, hare, cow, sheep, goat, boar
   prop_axe, prop_knife, prop_scythe_male/_female, bow, rally_flag, marker_arrow
   field_stake, field_cord, field_wheat_leaf,
-  field_wheat_stalk(_light, _dark), field_corn_1, field_corn_2
+  field_wheat_stalk(_light, _dark), field_corn_1, field_corn_2,
+  field_tomato, field_potato, field_hop
   humanoid, quadruped, mill, flag _clips.glb + .json
                                       Bewegungen - je Skelett eine Bibliothek
 ```
@@ -131,6 +132,9 @@ wie früher, die Felder sehen aus wie vorher.
 | `field_wheat_leaf` | Blatt am Boden - 1 m nach oben, gestreckt auf 0,35–0,6 m und schräg gestellt |
 | `field_wheat_stalk`, `_light`, `_dark` | Halm mit Ähre (drei Farben: 30 %, 55 %, 15 %) - Halm 1 m, gestreckt auf 0,8–1,05 m und geneigt, die Ähre sitzt darüber |
 | `field_corn_1`, `field_corn_2` | Maispflanze mit einem bzw. zwei Kolben, 2,2 m - gedreht; was über 2 m liegt (Stängelspitze, Rispe), wächst mit der Höhe der Pflanze (2,0–2,45 m) |
+| `field_tomato` | Tomatenstaude am Holzpfahl mit drei Rispen, 1,45 m - gedreht, vier je Pflanzplatz |
+| `field_potato` | Kartoffelstaude mit weißen Blüten, 0,5 m - gedreht, sechs je Pflanzplatz |
+| `field_hop` | Hopfenrebe, die sich an einem Draht mit Pfahl hochwindet, 3,2 m, mit Dolden - gedreht, zwei je Pflanzplatz |
 
 Halm, Blatt und Schnur werden entlang ihrer Achse gestreckt, quer dazu
 behalten sie ihre Dicke. Wer eine Maispflanze in Blender ändert: Blätter und

@@ -579,7 +579,7 @@ const keyboard = new Keyboard({
   train: (count) => actions.trainVillagers(count),
   farmsOpen: () => ui.farmsOpen,
   chooseCrop: (index) => ui.chooseCrop(index),
-  // Das Feld öffnet das Untermenü (Weizen, Mais); sonst Baumodus an oder aus.
+  // Das Feld öffnet das Untermenü (Weizen, Mais, Tomaten, Kartoffeln, Hopfen); sonst Baumodus an oder aus.
   build: (type) => {
     if (type === 'farm') ui.openFarms();
     else ui.setPlacing(placement.placingType === type ? null : type);

@@ -182,6 +182,8 @@ export const SHAPE = {
    */
   farmWheat: 50,
   farmCorn: 59,
+  farmTomato: 68,
+  farmPotato: 77,
   /**
    * Wild zum Jagen (models/deer.obj, hare.obj, cow.obj, sheep.obj, goat.obj, boar.obj): motion = [Blickrichtung,
    * Phase, Pose (ANIMAL_POSE), 0] - siehe "beast" im Shader.
@@ -228,6 +230,8 @@ export const SHAPE = {
   flowerPoppy: 110,
   flowerCornflower: 111,
   flowerClover: 112,
+  /** Hopfenfeld - wie die Felder oben, nur hinter den Blumen: ab 86 war kein Platz mehr für neun Furchen. */
+  farmHop: 113,
 } as const;
 
 /** Die Blumen-Formen, in der Reihenfolge von FLOWER_KINDS. */
@@ -490,11 +494,13 @@ const ARMORY_CUT_METERS = '1.1';
 
 /** Furchen je Feld (FIELD_ROWS in world/catalog.ts, ROWS in farmsGen.mjs). */
 const FIELD_FURROWS = 9;
-const FIELD_BASES = [SHAPE.farmWheat, SHAPE.farmCorn];
+const FIELD_BASES = [SHAPE.farmWheat, SHAPE.farmCorn, SHAPE.farmTomato, SHAPE.farmPotato, SHAPE.farmHop];
 
 /** Alle Formen der Felder - sie liegen genau auf ihren Tiles, schräg ragten die Ecken hinaus. */
 export const FIELDS: number[] = FIELD_BASES.flatMap((base) => Array.from({ length: FIELD_FURROWS }, (_, row) => base + row));
 
+/** Ist die Form ein Feld? Zwei Bereiche - siehe SHAPE.farmHop. */
+const FIELD_TEST = `((shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmPotato + FIELD_FURROWS}) || (shape >= ${SHAPE.farmHop} && shape < ${SHAPE.farmHop + FIELD_FURROWS}))`;
 /** FIELDS zum Nachschlagen - je Instanz und Bild gefragt. */
 const FIELD_SET = new Set(FIELDS);
 
@@ -900,7 +906,7 @@ void main() {
     bool prop = shape >= ${SHAPE.propAxe} && shape <= ${SHAPE.propKnifeFemale};
     bool beast = ${BEASTS.map((n) => `shape == ${n}`).join(' || ')};
     bool natural = ${NATURAL.map((n) => `shape == ${n}`).join(' || ')};
-    bool field = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
+    bool field = ${FIELD_TEST};
     // Mindestgröße nur für Gebäude und Figuren: Bäume auf Mindestgröße
     // aufgeblasen würden herausgezoomt jeden Wald zu einem Brei machen.
     float size = natural ? aParams.z
@@ -1261,7 +1267,7 @@ void main() {
     // die Last in der Farbe der Ressource, alles andere wie in der MTL-Datei.
     int role = int(aMaterial.w + 0.5);
     // Felder: aColor trägt das Gefälle, der Anstrich (Pfosten) kommt als Uniform.
-    bool fieldShape = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
+    bool fieldShape = ${FIELD_TEST};
     vec3 paint = fieldShape ? uPlayerColor : aColor;
     vColor = role == 1 ? paint : role == 2 ? aAccent : aMaterial.rgb;
     if (gSawn > 0.5 && role != ${IMAGE_ROLE}) vColor = vec3(0.86, 0.71, 0.48);
@@ -1290,7 +1296,7 @@ void main() {
   if (${FIGURE_TEST} || shape == ${SHAPE_RING} || ${BEASTS.map((n) => `shape == ${n}`).join(' || ')}) gl_Position.z -= 0.5 / uDepthRange;
   // Felder ebenso ein Stück: ihre Erde liegt nur wenige Zentimeter über dem
   // Gelände, das zwischen ihren Eckpunkten sonst hier und da durchsticht.
-  if (shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS}) gl_Position.z -= 0.2 / uDepthRange;
+  if (${FIELD_TEST}) gl_Position.z -= 0.2 / uDepthRange;
 }
 `;
 
@@ -1908,7 +1914,8 @@ const MATERIAL_ROLE: Record<string, number> = {
   BranchCard: BRANCH_CARD_ROLE,
   BlossomCard: BLOSSOM_CARD_ROLE,
   FlowerShadow: FLOWER_SHADOW_ROLE,
-  // Felder (tools/models/farmsGen.mjs): Getreide, Blätter, Kolben.
+  // Felder (tools/models/farmsGen.mjs): Getreide, Blätter, Kolben; Tomaten,
+  // Kartoffelblüten und Hopfendolden ohne Muster (Rolle 0).
   Wheat: 7,
   WheatDark: 7,
   WheatEar: 7,
@@ -1918,6 +1925,9 @@ const MATERIAL_ROLE: Record<string, number> = {
   CornLeaf: 8,
   CornHusk: 8,
   Vine: 8,
+  TomatoLeaf: 8,
+  PotatoLeaf: 8,
+  HopLeaf: 8,
   Soil: 9,
   SoilDark: 9,
   SoilLight: 9,

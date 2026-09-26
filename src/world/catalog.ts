@@ -44,7 +44,7 @@ export const MAX_BUILD_SLOPE = 0.3;
 // Gebäude: Arten, Definitionen und Reihenfolge kommen aus den Klassen (building/).
 export { BUILDINGS, BUILDING_ORDER, type BuildingType, type BuildingDefinition } from './building';
 
-export type CropType = 'wheat' | 'corn';
+export type CropType = 'wheat' | 'corn' | 'tomato' | 'potato' | 'hop';
 
 export interface CropDef {
   label: string;
@@ -67,6 +67,11 @@ export const CROPS: Record<CropType, CropDef> = {
   wheat: { label: 'Weizen', shape: SHAPE.farmWheat, food: 175, growTime: 40, rate: 1, scythe: true },
   // Maiskolben werden von Hand gebrochen - Weizen wird gemäht.
   corn: { label: 'Mais', shape: SHAPE.farmCorn, food: 250, growTime: 70, rate: 0.8, scythe: false },
+  // Tomaten reifen schnell, tragen aber wenig; Kartoffeln werden ausgegraben.
+  tomato: { label: 'Tomaten', shape: SHAPE.farmTomato, food: 150, growTime: 30, rate: 0.9, scythe: false },
+  potato: { label: 'Kartoffel', shape: SHAPE.farmPotato, food: 300, growTime: 90, rate: 0.7, scythe: false },
+  // Hopfen rankt am Draht hoch, die Dolden werden von Hand gezupft.
+  hop: { label: 'Hopfen', shape: SHAPE.farmHop, food: 200, growTime: 80, rate: 0.8, scythe: false },
 };
 
 /**
@@ -79,7 +84,7 @@ export const FIELD_ROWS = 9;
 export const PLOUGH_TIME = 12;
 export const SOW_TIME = 8;
 
-export const CROP_ORDER: CropType[] = ['wheat', 'corn'];
+export const CROP_ORDER: CropType[] = ['wheat', 'corn', 'tomato', 'potato', 'hop'];
 
 /** Nahrung je Sekunde, die ein Bauer erntet (mal CropDef.rate). */
 export const FARM_RATE = 0.7;

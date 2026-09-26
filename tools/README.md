@@ -12,7 +12,7 @@ sie brauchen keinen Export; ebenso die Clip-Bibliotheken `src/models/*_clips.glb
   Objektnamen; `models/check-models.mjs` prüft die Namen mit Bedeutung (`npm run check:models`)
 - `blender/parity*.mjs` - vergleicht die Clips mit den früheren Formeln (`npm run check:anim`)
 - `models/primitives.mjs` - Grundformen (für das L-System und die Felder)
-- `models/farmsGen.mjs` - stellt die Felder (Weizen, Mais) aus ihren Teilen aus Blender auf
+- `models/farmsGen.mjs` - stellt die Felder (Weizen, Mais, Tomaten, Kartoffeln, Hopfen) aus ihren Teilen aus Blender auf
   (`src/models/field_*.glb`); `node tools/models/farms.mjs <Ordner>` schreibt sie zum Ansehen als OBJ
 - Die früheren Generatoren (`villagers.mjs`, `buildings.mjs` ...) und der Export der Modelle
   aus `.blend` sind entfallen; sie stehen in der Git-Geschichte.

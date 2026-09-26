@@ -15,6 +15,7 @@ import { model } from './primitives.mjs';
 /** The parts a field is made of (src/models/field_<name>.glb). */
 export const FIELD_PARTS = [
   'stake', 'cord', 'wheat_leaf', 'wheat_stalk_light', 'wheat_stalk', 'wheat_stalk_dark', 'corn_1', 'corn_2',
+  'tomato', 'potato', 'hop',
 ];
 
 /**
@@ -245,9 +246,31 @@ function corn(m, put, detail = 1) {
   });
 }
 
-/** The fields, in the order of the SHAPE numbers (farmWheat, farmCorn). */
-export const FARM_KINDS = ['wheat', 'corn'];
-const MAKE = { wheat, corn };
+/**
+ * Bushes in two rows per furrow (tomatoes, potatoes, hops): `per` plants per spot,
+ * each turned and a little off its place. Fewer in the simpler versions.
+ */
+function bushes(part, seed, per) {
+  return (m, put, detail = 1) => {
+    const rnd = rng(seed);
+    const rows = ROWS, cols = 9;
+    ground(m, put);
+    const gapZ = (2 * INNER) / rows, gapX = (2 * INNER) / cols;
+    planted(rows, cols, (name, x, z) => {
+      const stride = detail >= 1 ? 1 : detail >= 0.3 ? 2 : 4;
+      for (let k = 0; k < per; k += stride) {
+        const half = Math.ceil(per / 2);
+        const px = x + ((k % half) + 0.5 - half / 2) * (gapX / half) + (rnd() - 0.5) * 0.12;
+        const pz = z + (k < half ? -0.22 : 0.22) * gapZ + (rnd() - 0.5) * 0.1;
+        put(name, part, stand(px, SOIL * 0.5, pz, rnd() * Math.PI * 2));
+      }
+    });
+  };
+}
+
+/** The fields, in the order of the SHAPE numbers (farmWheat, farmCorn, farmTomato, farmPotato, farmHop). */
+export const FARM_KINDS = ['wheat', 'corn', 'tomato', 'potato', 'hop'];
+const MAKE = { wheat, corn, tomato: bushes('tomato', 31, 4), potato: bushes('potato', 37, 6), hop: bushes('hop', 41, 2) };
 
 /**
  * OBJ and MTL text of one field, from its parts (`parts[name] = { obj, mtl }`,
