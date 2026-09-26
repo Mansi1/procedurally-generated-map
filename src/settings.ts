@@ -18,6 +18,8 @@ export interface Settings {
   showDebug: boolean;
   /** Himmelsrichtung, die oben im Bild liegt (Kompass) - bleibt beim Neuladen. */
   facing: string;
+  /** Blickwinkel über dem Horizont in Grad (Alt + rechte Maustaste) - bleibt beim Neuladen. */
+  tilt: number;
   /** Angehalten (F3) - bleibt beim Neuladen. */
   paused: boolean;
   /** Spielerfarbe - Schlüssel in PLAYER_COLORS. */
@@ -43,17 +45,17 @@ export interface Settings {
 export const ANIMALS_BELOW_DEFAULT = 16;
 
 const DEFAULTS: Settings = {
-  volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', paused: false,
+  volume: 1, music: 0.5, speed: 1, scroll: 1, showHelp: false, showDebug: false, facing: '', tilt: 30, paused: false,
   playerColor: 'green', billboards: 16, animalsBelow: {}, idleFps: true, minimapFps: true,
 };
 const STORAGE_KEY = 'pgm.settings';
 
 /**
  * Was "Zurücksetzen" im Menü zurücksetzt: alles, was man dort einstellt -
- * Blickrichtung und Pause bleiben, sie gehören zum laufenden Spiel.
+ * Blickrichtung, Blickwinkel und Pause bleiben, sie gehören zum laufenden Spiel.
  */
 export function resetSettings(s: Settings) {
-  Object.assign(s, { ...DEFAULTS, animalsBelow: {}, facing: s.facing, paused: s.paused });
+  Object.assign(s, { ...DEFAULTS, animalsBelow: {}, facing: s.facing, tilt: s.tilt, paused: s.paused });
 }
 
 export function loadSettings(): Settings {

@@ -5,6 +5,7 @@
 
 import { modelSize, TREES } from '../gl/entityRenderer';
 import { pickWorld, visibleWorldRect, worldToScreen } from '../gl/iso';
+import { addRenderStats } from '../renderStats';
 import { VILLAGER } from '../world/catalog';
 import type { ResourceField } from '../world/resources';
 import type { Villager, World } from '../world/world';
@@ -30,7 +31,11 @@ export class Picker {
 
   /** Welt-Punkt unter der Stelle, mit Relief. */
   point(px: number, py: number) {
-    return pickWorld(this.camera.view(), px, py, (x, y) => this.ground.heightAt(x, y));
+    // Der Sichtstrahl fragt bis zu 200 Geländehöhen ab - läuft je Bild und je Mausbewegung.
+    const start = performance.now();
+    const hit = pickWorld(this.camera.view(), px, py, (x, y) => this.ground.heightAt(x, y));
+    addRenderStats('pickMs', performance.now() - start);
+    return hit;
   }
 
   /** Tile unter der Stelle. */

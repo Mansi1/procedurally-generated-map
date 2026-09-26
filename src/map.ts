@@ -1,12 +1,13 @@
 import { MAX_FLAT_ZONES, packZones, type FlatZone } from './world/flatten';
 import { Color, type RGB } from './functions/Color';
 import { EntityRenderer, type EntityInstance, type StaticBatch } from './gl/entityRenderer';
-import { TerrainRenderer } from './gl/terrainRenderer';
+import { FLOWER_OBJECT_PIXELS, TerrainRenderer } from './gl/terrainRenderer';
 import {
   screenToGround,
   setViewElevation,
   snapCamera,
   viewElevation,
+  viewGroundV,
   visibleWorldRect,
   type IsoView,
 } from './gl/iso';
@@ -350,6 +351,9 @@ export class Terrain {
   }
 }
 
+/** Kleinste Zoomstufe in CSS-Pixeln je Tile (siehe game/Camera.ts) - kleiner wird nichts vorberechnet. */
+const MIN_TILE_SIZE = 1;
+
 /**
  * Hauptansicht in isometrischer 3D-Sicht. Das Gelände entsteht komplett auf der
  * GPU, die Gebäude kommen als zweiter, instanzierter Durchgang darüber.
@@ -363,6 +367,35 @@ export class MapRenderer {
    * würde ihn neu befüllen.
    */
   relief = 1;
+  /**
+   * CSS-Pixel je Tile, in denen der Gelände-Cache gerade berechnet ist. Beim
+   * weichen Zoomen bleibt er stehen und wird nur gestreckt - neu berechnet
+   * wird erst, wenn die Zoomstufe erreicht ist, oder beim Herauszoomen, sobald
+   * der Cache das Bild nicht mehr abdeckt.
+   */
+  private cacheTileSize = 0;
+  /**
+   * CSS-Pixel je Tile am Zoomziel (siehe Camera.targetTileSize). Liegt es
+   * über der Stufe des Caches, wird die Zielstufe schon vorberechnet, während
+   * der Zoom noch hingleitet.
+   */
+  targetTileSize = 0;
+  /**
+   * Wird gerade geneigt? Dann bleibt der Gelände-Cache auf seiner
+   * Bodenstauchung und wird nur gestreckt; neu berechnet wird, wenn der
+   * Blickwinkel steht - oder wenn die Streckung zu groß wird.
+   */
+  tilting = false;
+  /** Bodenstauchung, für die der Gelände-Cache gerade berechnet ist (0 = noch keine). */
+  private cacheGroundV = 0;
+
+  /**
+   * Stehen die Blumen als 3D-Objekte in der Wiese? Hängt an der Stufe des
+   * Gelände-Caches, nicht am Zoom: so malt er sie nie zugleich als Tupfen.
+   */
+  get flowerObjects(): boolean {
+    return this.cacheTileSize * this.pixelRatio >= FLOWER_OBJECT_PIXELS;
+  }
 
   constructor(
       canvas: HTMLCanvasElement,
@@ -416,6 +449,7 @@ export class MapRenderer {
     this.entities.flatCount = count;
   }
 
+  /** false, wenn in diesem Bild nichts gezeichnet wurde - dann steht noch das letzte. */
   render(
       centerX: number,
       centerY: number,
@@ -423,12 +457,31 @@ export class MapRenderer {
       mouseTileY?: number,
       overlay: EntityInstance[] = [],
       batches: readonly StaticBatch[] = [],
-  ) {
+  ): boolean {
     const canvas = this.terrain.context.canvas;
+    // Auf einer Zoomstufe (Zweierpotenz) genau so fein wie das Bild; dazwischen
+    // die bisherige Stufe, höchstens aber die nächstkleinere - deren Cache
+    // deckt das ganze Bild ab.
+    const level = 2 ** Math.floor(Math.log2(this.tileSize) + 1e-9);
+    this.cacheTileSize = level === this.tileSize ? level : Math.min(this.cacheTileSize || level, level);
+    // Beim Neigen: flacher gesehen deckt der gestreckte Cache nur so weit ab,
+    // wie seine Blase reicht (bis 1,25), steiler wird er unscharf (ab 1/1,6).
+    const groundV = viewGroundV();
+    const stretch = this.cacheGroundV / groundV;
+    if (!this.tilting || !this.cacheGroundV || stretch > 1.25 || stretch < 1 / 1.6) this.cacheGroundV = groundV;
+    // Die Stufe, auf der der Zoom zur Ruhe kommen wird.
+    const goal = 2 ** Math.ceil(Math.log2(this.targetTileSize || this.tileSize) - 1e-9);
     const camera = snapCamera({
       centerX,
       centerY,
       pixelsPerTile: this.tileSize * this.pixelRatio,
+      cachePixelsPerTile: this.cacheTileSize * this.pixelRatio,
+      cacheGroundV: this.cacheGroundV,
+      // Beim Hineinzoomen zuerst die Zielstufe, damit sie beim Ankommen fertig
+      // ist; die zwei nächstkleineren liegen so beim Herauszoomen bereit.
+      prefetchPixelsPerTile: [...(goal > this.cacheTileSize ? [goal] : []), this.cacheTileSize / 2, this.cacheTileSize / 4]
+          .filter((t) => t >= MIN_TILE_SIZE)
+          .map((t) => t * this.pixelRatio),
       reliefScale: this.relief,
     }, canvas.width, canvas.height);
 
@@ -437,11 +490,13 @@ export class MapRenderer {
         ? { x: mouseTileX, y: mouseTileY }
         : null;
 
-    this.terrain.render(camera);
+    // Nichts gezeichnet: das letzte Bild bleibt stehen - ohne Figuren darüber.
+    if (!this.terrain.render(camera)) return false;
     // Mindestens acht Geräte-Pixel: kleiner wird ein Gebäude auf der
     // herausgezoomten Karte zum Einzelpunkt und ist nicht mehr zu erkennen.
     this.entities.groundStep = this.terrain.gridCell;
     this.entities.render(overlay, camera, 8 / camera.pixelsPerTile, this.pixelRatio, true, batches);
+    return true;
   }
 }
 
@@ -506,7 +561,10 @@ export class MiniMap {
 
   /** u-Einheiten, die die Minimap waagerecht abdeckt. */
   private coverage(view: IsoView): number {
-    return Math.min(Math.max((view.width / view.tileSize) * MiniMap.OVERVIEW, MiniMap.MIN_COVERAGE), MiniMap.MAX_COVERAGE);
+    // Auf die nächste Zoomstufe gerundet: beim weichen Zoomen würde sich der
+    // Maßstab sonst je Bild ändern und die Minimap jedes Mal neu berechnet.
+    const tileSize = 2 ** Math.round(Math.log2(view.tileSize));
+    return Math.min(Math.max((view.width / tileSize) * MiniMap.OVERVIEW, MiniMap.MIN_COVERAGE), MiniMap.MAX_COVERAGE);
   }
 
   /** Dieselbe Mitte wie die Hauptansicht, in CSS-Pixeln der Minimap. */
@@ -539,7 +597,8 @@ export class MiniMap {
         width: w,
         height: h,
       };
-      this.terrain.render(camera);
+      // Nichts gezeichnet: das letzte Bild bleibt stehen - ohne Figuren darüber.
+      if (!this.terrain.render(camera)) return;
       // Auf der Minimap zählt nur, dass überhaupt etwas dasteht - vier Pixel
       // reichen dafür, die Form ist auf dieser Größe ohnehin nicht zu erkennen.
       this.entities.render(overlay, camera, 4 / camera.pixelsPerTile);

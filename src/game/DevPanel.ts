@@ -61,7 +61,8 @@ export class DevPanel {
   }
 
   showZoom(camera: Camera) {
-    setText(this.zoom, `${camera.zoomNumber} (${camera.tileSize}px)`);
+    // Beim weichen Zoomen liegt die Größe zwischen den Stufen - gerundet.
+    setText(this.zoom, `${camera.zoomNumber} (${Math.round(camera.tileSize * 10) / 10}px)`);
   }
 
   /** Tile unter dem Zeiger mit seinen Gelände-Werten - oder keins. */

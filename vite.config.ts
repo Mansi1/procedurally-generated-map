@@ -25,9 +25,9 @@ function glbModels(): Plugin {
 }
 
 /**
- * Nur mit `npm run dev`: nimmt die Baumbilder entgegen, die das Spiel rendert
- * (EntityRenderer.saveBillboard), und legt sie als PNG in
- * tools/export/out/billboards/ ab - zum Ansehen.
+ * Nur mit `npm run dev` und der Adresse mit ?saveBillboards: nimmt die
+ * Baumbilder entgegen, die das Spiel rendert (EntityRenderer.saveBillboard),
+ * und legt sie als PNG in tools/export/out/billboards/ ab - zum Ansehen.
  */
 function saveBillboards(): Plugin {
   const dir = join(import.meta.dirname, 'tools/export/out/billboards');
