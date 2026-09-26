@@ -645,6 +645,8 @@ flat out vec3 vTeam;     // Instanzfarbe (Spielerfarbe) - für den Umriss verdec
 // und die Lage im Modell in Metern - die Textur haftet am Stamm, auch wenn
 // er umfällt.
 flat out int vTex;
+// Gesägt (1) - bei Bildtexturen je Eckpunkt, ihre Farbe ist ja (u, v, Schicht).
+out float vSawn;
 out vec3 vLocal;
 // Laub von Bäumen und Sträuchern (siehe BUSH_AND_TREE_FOLIAGE): Normale von
 // der Kronenmitte nach außen und wie tief innen bzw. unten es sitzt (0 Mitte,
@@ -951,9 +953,10 @@ void main() {
         // Laub, Äste, Zapfen: weg, sobald der Schnitt unter ihrem Ansatz liegt.
         float from = (aCorner.w - 15.0) / 0.45 * uModelTop;
         if (from > cut) p = vec3(0.0);
-      } else if (part == P_TRUNK && (aCorner.w - 19.0) / 0.45 * uModelTop > cut) {
-        // Stammstück ganz über dem Schnitt: weg. Flach gedrückt ergäbe ein
-        // schräger Stamm eine lange Platte auf dem Stumpf.
+      } else if (part == P_TRUNK && (aCorner.w - 19.0) / 0.45 * uModelTop > cut - 0.001 * uModelTop) {
+        // Stammstück ganz über dem Schnitt (oder genau auf ihm, wie das
+        // unterste auf dem Stumpf): weg. Flach gedrückt ergäbe ein schräger
+        // Stamm eine lange Platte auf dem Stumpf.
         p = vec3(0.0);
       } else if (p.z > cut) {
         // Das Stück, durch das gerade gesägt wird: auf die Schnitthöhe
@@ -1206,6 +1209,7 @@ void main() {
   vColor = aColor;
   vTeam = aColor;
   vTex = 0;
+  vSawn = gSawn;
   vLocal = vec3(0.0);
   if (shape >= 5 && shape != ${SHAPE_RING}) {
     // Modelle färben nach Material: Kittel bzw. Anstrich in der Instanzfarbe,
@@ -1215,12 +1219,12 @@ void main() {
     bool fieldShape = shape >= ${SHAPE.farmWheat} && shape < ${SHAPE.farmCorn + FIELD_FURROWS};
     vec3 paint = fieldShape ? uPlayerColor : aColor;
     vColor = role == 1 ? paint : role == 2 ? aAccent : aMaterial.rgb;
-    if (gSawn > 0.5) vColor = vec3(0.86, 0.71, 0.48);
+    if (gSawn > 0.5 && role != ${IMAGE_ROLE}) vColor = vec3(0.86, 0.71, 0.48);
     vColor = mix(vColor, vec3(0.34, 0.56, 0.2), gUnripe * 0.85);
     bool tree = ${TREES.map((n) => `shape == ${n}`).join(' || ')};
     bool villager = ${FIGURE_TEST};
     bool figureTex = role >= ${FIGURE_TEX.cloth} && role <= ${FIGURE_TEX.skin};
-    vTex = role == ${IMAGE_ROLE} ? (gSawn > 0.5 ? 5 : role)
+    vTex = role == ${IMAGE_ROLE} ? role
       : figureTex ? (villager ? role : 0)
       : villager && (role == 1 || role == 2) ? ${FIGURE_TEX.cloth}
       : role >= 6 && role != ${FOLIAGE_ROLE} ? role : !tree ? 0 : gSawn > 0.5 ? 5 : (role == 3 || role == 4) ? role : 0;
@@ -1251,6 +1255,7 @@ in vec3 vWorld;
 in vec3 vColor;
 flat in vec3 vTeam;
 flat in int vTex;
+in float vSawn;
 in vec3 vLocal;
 in vec3 vBent;
 in float vFoliage;
@@ -1669,7 +1674,7 @@ void main() {
   }
 
   vec3 base = vColor;
-  if (vTex == ${IMAGE_ROLE}) base = imageTexture(base);
+  if (vTex == ${IMAGE_ROLE}) base = vSawn > 0.5 ? treeTexture(vec3(0.86, 0.71, 0.48)) : imageTexture(base);
   else if (vTex >= ${FIGURE_TEX.cloth} && vTex <= ${FIGURE_TEX.skin}) base = figureTexture(base);
   else if (vTex != 0) base = treeTexture(base);
   if (vRoof > 0.5 && shape != 0 && shape < 5) {
