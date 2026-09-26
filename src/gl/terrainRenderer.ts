@@ -842,7 +842,8 @@ export class TerrainRenderer {
     gl.uniform1f(this.location('uCacheScale'), ppt);
     // Beim Neigen senkrecht gestreckt: v des Bildes -> v des Caches.
     gl.uniform1f(this.location('uCacheStretch'), active.groundV / viewGroundV());
-    gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
+    // Ohne eingeebnete Flächen liest der Shader das Feld nicht.
+    if (this.flatCount > 0) gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
     gl.uniform1i(this.location('uFlatCount'), this.flatCount);
     gl.uniform2f(this.location('uWindowStart'), win.u / ppt, win.v / ppt);
     gl.uniform2f(this.location('uWindowMod'), mod(win.u, active.width), mod(win.v, active.height));

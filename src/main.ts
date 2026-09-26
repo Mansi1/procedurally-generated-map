@@ -539,6 +539,8 @@ function updateZoom(dt: number, now: number): boolean {
   // Das Ziel kennt der Renderer schon, bevor der Zoom dort ist - er bereitet
   // den Gelände-Cache der Zielstufe im Hintergrund vor.
   renderer.targetTileSize = camera.targetTileSize;
+  // Ohne Zoom kein Anker - der Sichtstrahl kostet sonst jedes Bild umsonst.
+  if (!camera.zooming) return false;
   // Welt-Punkt unter dem Anker vor dem Zoom ...
   const anchor = picker.point(ax, ay);
   if (!camera.stepZoom(dt, now)) return false;

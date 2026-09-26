@@ -49,6 +49,14 @@ Referenzszenarien zum Messen: (a) leere Karte herausgezoomt, (b) große Stadt mi
 
 Reihenfolge innerhalb der Phase beliebig; jeder Punkt ist isoliert mergebar.
 
+**Stand 2026-09-26:**
+- **Umgesetzt:** 2.1, 2.4, 2.5, 2.10 (`MODELS.find` → Map, `FIELDS` → Set, Prop-Body und Pose-Props nachgeschlagen), aus 2.9 `uFlat` nur bei `flatCount > 0`, aus 4.5 der Komparator ohne `Math.hypot`. Screenshots vorher/nachher gleich (Abweichung im Rauschen der Animationen), Zählwerte im Bench unverändert.
+- **Bewusst nicht:**
+  - 2.2: Ein grober Vorlauf kann schmale Grate überspringen, das Ergebnis wäre also nicht garantiert gleich. Nach 2.1 ist der Nutzen zudem klein.
+  - 2.8: Ein kleinerer Faktor baut den Index-Puffer beim Zoomen neu, das bedeutet je Stufe einen Ruckler.
+  - 3.5: Das `bufferData`-Orphaning vermeidet GPU-Wartezeiten, `bufferSubData` kann sie auslösen.
+  - `armoryStock`-Early-out: `render.ts` prüft `has()`, das Verhalten würde sich ändern.
+
 ### 2.1 `updateZoom` pickt jeden Frame umsonst — **trivial, hoch**
 
 - **Ort:** `src/main.ts:459`

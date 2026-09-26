@@ -89,7 +89,8 @@ export class Ground {
     }
     // Der Shader nimmt nur die der Bildmitte nächsten.
     const { x, y } = this.camera;
-    zones.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+    // Quadrate reichen zum Vergleichen - ohne Wurzel je Vergleich.
+    zones.sort((a, b) => (a.x - x) ** 2 + (a.y - y) ** 2 - ((b.x - x) ** 2 + (b.y - y) ** 2));
     this.flatZones = zones;
     this.renderer.setFlatZones(zones);
   }

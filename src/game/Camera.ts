@@ -81,6 +81,11 @@ export class Camera {
    * Bildrate); nach der letzten Eingabe rastet das Ziel auf eine Stufe ein.
    * false, wenn sich nichts geändert hat.
    */
+  /** Ist ein Zoom unterwegs (oder rastet noch ein)? Sonst tut stepZoom nichts. */
+  get zooming(): boolean {
+    return this.zoom !== this.targetZoom || !Number.isInteger(this.targetZoom);
+  }
+
   stepZoom(dt: number, now: number): boolean {
     if (now - this.lastInput > ZOOM_SETTLE && !Number.isInteger(this.targetZoom)) {
       const t = this.targetZoom;

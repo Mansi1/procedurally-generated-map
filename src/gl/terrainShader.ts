@@ -845,15 +845,27 @@ float groundBump(vec2 p, float ds, float wood, float sand, float rock, float sno
   float grass = (snoise(L_DETAIL, bp * vec2(34.0, 10.0) + vec2(-21.0, 7.0)) * 0.45
       + snoise(L_MICRO, bp * vec2(20.0, 7.0) + vec2(5.0, 9.0)) * 0.25) * detailFade(0.04, ds)
       + snoise(L_MICRO, p * 1.6 + vec2(3.7, -9.1)) * 0.06;
-  float conifer = clamp((height + 0.1) / 0.45, 0.0, 1.0);
-  float litter = forestGrain(p, ds, conifer) * 0.5 + snoise(L_MICRO, p * 2.2 + vec2(9.0, -44.0)) * 0.12;
-  float sandH = sandGrain(p, ds) * 0.5 + snoise(L_MICRO, p * 0.8 + vec2(6.0, 6.0)) * 0.08;
-  float blocks = rockGrit(p, ds) * 0.45 + (1.0 - abs(snoise(L_DETAIL, p * 0.9 + vec2(-60.0, 12.0)))) * 0.5;
-  float snowH = snowGrain(p, ds) * 0.4 + snoise(L_MICRO, p * 0.25 + vec2(-3.0, 17.0)) * 0.15;
-  float h = mix(grass, litter, wood);
-  h = mix(h, sandH, sand);
-  h = mix(h, blocks, rock);
-  return mix(h, snowH, snow);
+  // Die anderen Böden nur, wo sie vorkommen - mix mit Anteil 0 ließe h
+  // ohnehin unverändert. Auf reiner Wiese spart das drei Viertel der Arbeit.
+  float h = grass;
+  if (wood > 0.0) {
+    float conifer = clamp((height + 0.1) / 0.45, 0.0, 1.0);
+    float litter = forestGrain(p, ds, conifer) * 0.5 + snoise(L_MICRO, p * 2.2 + vec2(9.0, -44.0)) * 0.12;
+    h = mix(h, litter, wood);
+  }
+  if (sand > 0.0) {
+    float sandH = sandGrain(p, ds) * 0.5 + snoise(L_MICRO, p * 0.8 + vec2(6.0, 6.0)) * 0.08;
+    h = mix(h, sandH, sand);
+  }
+  if (rock > 0.0) {
+    float blocks = rockGrit(p, ds) * 0.45 + (1.0 - abs(snoise(L_DETAIL, p * 0.9 + vec2(-60.0, 12.0)))) * 0.5;
+    h = mix(h, blocks, rock);
+  }
+  if (snow > 0.0) {
+    float snowH = snowGrain(p, ds) * 0.4 + snoise(L_MICRO, p * 0.25 + vec2(-3.0, 17.0)) * 0.15;
+    h = mix(h, snowH, snow);
+  }
+  return h;
 }
 
 // Grundfarbe eines Land-Bioms ohne Textur: Verlauf nach Höhe im Biom.
@@ -879,9 +891,11 @@ void main() {
   float detailStep = step * uDetailPixels;
   float height = elevation(n, detailStep);
 
-  float moisture;
-  float temperature;
-  climate(n, height, moisture, temperature);
+  // Unter dem Meeresspiegel entscheidet allein die Höhe (classify), und das
+  // Wasser liest weder Feuchte noch Temperatur - 11 Noise-Aufrufe gespart.
+  float moisture = 0.0;
+  float temperature = 0.0;
+  if (height >= uSeaLevel) climate(n, height, moisture, temperature);
 
   int biome = classify(height, moisture, temperature);
   float variation = (snoise(L_DETAIL, tile * 0.35 / detailStep) + 1.0) * 0.5;

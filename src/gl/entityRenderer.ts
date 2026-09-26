@@ -495,9 +495,12 @@ const FIELD_BASES = [SHAPE.farmWheat, SHAPE.farmCorn];
 /** Alle Formen der Felder - sie liegen genau auf ihren Tiles, schräg ragten die Ecken hinaus. */
 export const FIELDS: number[] = FIELD_BASES.flatMap((base) => Array.from({ length: FIELD_FURROWS }, (_, row) => base + row));
 
+/** FIELDS zum Nachschlagen - je Instanz und Bild gefragt. */
+const FIELD_SET = new Set(FIELDS);
+
 /** Blickrichtung eines Gebäudemodells. */
 export function buildingHeading(shape: number): number {
-  return FIELDS.includes(shape) ? 0 : BUILDING_HEADING;
+  return FIELD_SET.has(shape) ? 0 : BUILDING_HEADING;
 }
 
 /**
@@ -2533,6 +2536,8 @@ const MODELS: {
   { shape: SHAPE.goat, model: loadModel(goatModel.obj, goatModel.mtl, 'height'), scale: 1 },
   { shape: SHAPE.boar, model: loadModel(boarModel.obj, boarModel.mtl, 'height'), scale: 1 },
 ];
+/** MODELS nach Art - modelSize läuft beim Zeigen je sichtbarem Vorkommen, find wäre dort teuer. */
+const MODEL_BY_SHAPE = new Map([...MODELS].reverse().map((m) => [m.shape, m]));
 
 /**
  * Halber Handabstand (Meter), für den das Zugmesser gebaut ist - der des
@@ -2557,9 +2562,11 @@ const FIGURE_PROPS: { bit: number; shapes: Record<number, number> }[] = [
  */
 function propsOfPose(pose: number): number {
   if (pose >= CLIP_POSE) return CLIPS[pose - CLIP_POSE]?.props ?? 0;
-  const clip = CLIPS.find((c) => c.pose === pose);
-  return clip?.props ?? 0;
+  return POSE_PROPS[pose] ?? 0;
 }
+
+/** props je Pose unter CLIP_POSE, einmal nachgeschlagen - figureProps fragt je Figur und Bild. */
+const POSE_PROPS = Array.from({ length: CLIP_POSE }, (_, pose) => CLIPS.find((c) => c.pose === pose)?.props ?? 0);
 
 /**
  * Die Anhänge (Werkzeuge) einer Figur als eigene Instanzen: gleiche Lage,
@@ -2580,7 +2587,7 @@ export function figureProps(figure: EntityInstance): EntityInstance[] {
  * Modell keinen Eingang markiert.
  */
 export function modelEntry(shape: number, x: number, y: number, size: number, heading: number): { x: number; y: number } | undefined {
-  const m = MODELS.find((entry) => entry.shape === shape);
+  const m = MODEL_BY_SHAPE.get(shape);
   return m?.model.entry && modelToWorld(m, m.model.entry, x, y, size, heading);
 }
 
@@ -2590,7 +2597,7 @@ export function modelEntry(shape: number, x: number, y: number, size: number, he
  */
 export function modelWorkSpot(shape: number, x: number, y: number, size: number, heading: number):
     { x: number; y: number; aimX: number; aimY: number } | undefined {
-  const m = MODELS.find((entry) => entry.shape === shape);
+  const m = MODEL_BY_SHAPE.get(shape);
   if (!m?.model.work) return undefined;
   const stand = modelToWorld(m, m.model.work.stand, x, y, size, heading);
   const aim = modelToWorld(m, m.model.work.aim, x, y, size, heading);
@@ -2599,7 +2606,7 @@ export function modelWorkSpot(shape: number, x: number, y: number, size: number,
 
 /** Wie viele Bögen im Modell sichtbar gestapelt werden können (Waffenkammer), sonst 0. */
 export function modelStockSlots(shape: number): number {
-  return MODELS.find((entry) => entry.shape === shape)?.model.stockSlots ?? 0;
+  return MODEL_BY_SHAPE.get(shape)?.model.stockSlots ?? 0;
 }
 
 /** Punkt im Modell (vorn, links) in der Welt - wie beim Zeichnen gedreht und skaliert. */
@@ -2614,7 +2621,7 @@ function modelToWorld(m: { scale: number }, [f, l]: [number, number], x: number,
  * Für das Anklicken von Bäumen und Felsen an ihrer Krone statt am Boden.
  */
 export function modelSize(shape: number): { height: number; width: number } | undefined {
-  const m = MODELS.find((entry) => entry.shape === shape);
+  const m = MODEL_BY_SHAPE.get(shape);
   return m && { height: m.model.top * m.scale, width: m.scale };
 }
 
@@ -2726,7 +2733,7 @@ function packInstance(d: Float32Array, o: number, e: EntityInstance) {
   d[o + 7] = e.size;
   const m = e.motion;
   // Ohne Angabe: Gebäude in ihrer Blickrichtung, Felder mit allen Furchen reif.
-  const field = !m && FIELDS.includes(e.shape);
+  const field = !m && FIELD_SET.has(e.shape);
   d[o + 8] = m ? m[0] : field ? -1 : buildingHeading(e.shape);
   d[o + 9] = m ? m[1] : field ? 3 : 0;
   d[o + 10] = m ? m[2] : field ? 1 : 0;
@@ -3281,7 +3288,8 @@ export class EntityRenderer {
     gl.uniform1f(this.location('uMinSizeTiles'), minSizeTiles);
     gl.uniform1i(this.location('uSilhouette'), 0);
     gl.uniform1f(this.location('uGroundStep'), this.groundStep);
-    gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
+    // Ohne eingeebnete Flächen liest der Shader das Feld nicht - 192 Werte weniger je Bild.
+    if (this.flatCount > 0) gl.uniform4fv(this.location('uFlat[0]'), this.flatZones);
     gl.uniform1i(this.location('uFlatCount'), this.flatCount);
 
     gl.enable(gl.BLEND);
@@ -3313,7 +3321,7 @@ export class EntityRenderer {
     const drawModel = (m: (typeof this.models)[number], offset: number) => {
       // Ein Anhang (Werkzeug) zeichnet sich mit Gelenken, Clips und Hand
       // seines Körpers - er bewegt sich genau mit dessen Unterarm.
-      const b = m.body === undefined ? m : this.models.find((x) => x.shape === m.body) ?? m;
+      const b = m.body === undefined ? m : this.modelByShape.get(m.body) ?? m;
       gl.uniform1f(this.location('uModelScale'), m.scale);
       gl.uniform3fv(this.location('uSocket'), b.model.hand);
       gl.uniform1f(this.location('uKnifeScale'), Math.abs(b.model.hand[1]) * b.model.meters / KNIFE_HALF_SPAN);
@@ -3338,7 +3346,7 @@ export class EntityRenderer {
       gl.uniform1iv(this.location('uPoseClip'), clips.poseClip);
       gl.uniform1fv(this.location('uPoseRate'), clips.poseRate);
       gl.uniform1fv(this.location('uPoseShift'), clips.poseShift);
-      const level = FIELDS.includes(m.shape) ? fieldLod : lod;
+      const level = FIELD_SET.has(m.shape) ? fieldLod : lod;
       // Hat ein Modell weniger Fassungen (Felder: zwei), gilt seine gröbste.
       const mesh = level > 0 && m.lodMeshes.length > 0 ? m.lodMeshes[Math.min(level, m.lodMeshes.length) - 1] : m.mesh;
       this.draw(mesh, offset, m.list.length);
@@ -3408,7 +3416,7 @@ export class EntityRenderer {
       d: Float32Array, o: number, e: EntityInstance,
       pixelsPerTile: number, minSizeTiles: number, pixelRatio: number,
   ) {
-    const model = this.models.find((m) => m.shape === e.shape);
+    const model = this.modelByShape.get(e.shape);
     const figure = e.shape === SHAPE.villager || e.shape === SHAPE.villagerFemale;
     // Dieselbe Mindestgröße wie im Vertex-Shader, sonst schwebt der Balken
     // herausgezoomt im Gebäude statt darüber.
